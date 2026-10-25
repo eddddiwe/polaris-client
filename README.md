@@ -40,7 +40,7 @@ cosmetics, and a customization layer for both the launcher and the game.
 
 ## Status
 
-Polaris is at **0.3.0** (the Aurora update). Installation, Fabric mod loading, launching, log
+Polaris is at **0.3.1** (the Aurora update). Installation, Fabric mod loading, launching, log
 capture, mod install/remove/toggle, curated packs, update checks, `.mrpack` modpack planning,
 dedicated server launch, performance plans, `options.txt` writes, the cosmetics store, launcher
 appearance and the in-game options panel are implemented. Core logic is covered by unit tests.
@@ -97,7 +97,7 @@ npm.cmd run test            # unit tests
 npm.cmd run typecheck
 npm.cmd run build           # production bundles into out/
 npm.cmd run dist            # current platform: installer on Windows, AppImage on Linux
-npm.cmd run dist:win        # unsigned NSIS installer: dist/Polaris-Setup-0.3.0.exe
+npm.cmd run dist:win        # unsigned NSIS installer: dist/Polaris-Setup-0.3.1.exe
 npm.cmd run dist:win:portable
 npm.cmd run dist:linux      # Linux AppImage (run on Linux or WSL2)
 npm.cmd run release:win     # installer + site download + out/site
@@ -165,7 +165,7 @@ Cosmetics are deliberately local-first:
   hidden admin screen.
 - The equipped badge/cape is stored in the local settings and appears next to the profile name in
   the launcher. Cross-player visibility in Minecraft requires shared infrastructure that is not
-  part of 0.3.0.
+  part of 0.3.1.
 
 Launcher appearance supports wallpaper presets, an animated aurora, direct GIF/WebP/MP4 wallpaper
 links, dim/blur tuning, accent colors and reduced-motion behavior. The in-game options panel is a
@@ -257,3 +257,4 @@ Minecraft is a trademark of Mojang Studios. Mod metadata and downloads are provi
 ## License
 
 GPL-3.0-only. See [LICENSE](LICENSE).
+

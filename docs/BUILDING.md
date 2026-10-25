@@ -38,8 +38,8 @@ npm.cmd run dist:win
 the NSIS installer. Output:
 
 ```text
-dist/Polaris-Setup-0.3.0.exe
-dist/Polaris-Setup-0.3.0.exe.blockmap
+dist/Polaris-Setup-0.3.1.exe
+dist/Polaris-Setup-0.3.1.exe.blockmap
 dist/win-unpacked/
 ```
 
@@ -92,20 +92,20 @@ npm run dist:linux
 Output:
 
 ```text
-dist/Polaris-Client-0.3.0-x86_64.AppImage
+dist/Polaris-Client-0.3.1-x86_64.AppImage
 ```
 
 Run it:
 
 ```bash
-chmod +x dist/Polaris-Client-0.3.0-x86_64.AppImage
-./dist/Polaris-Client-0.3.0-x86_64.AppImage
+chmod +x dist/Polaris-Client-0.3.1-x86_64.AppImage
+./dist/Polaris-Client-0.3.1-x86_64.AppImage
 ```
 
 If FUSE is unavailable:
 
 ```bash
-./dist/Polaris-Client-0.3.0-x86_64.AppImage --appimage-extract-and-run
+./dist/Polaris-Client-0.3.1-x86_64.AppImage --appimage-extract-and-run
 ```
 
 Linux notes:
@@ -153,8 +153,8 @@ npm run dist:linux
 A release flow is therefore:
 
 ```bash
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.3.1
+git push origin v0.3.1
 ```
 
 The release assets are the public download source. The static site's bundled installer is built
@@ -197,3 +197,4 @@ still selects a tier from CPU and RAM; an unknown GPU is treated conservatively.
 **The installer is too large for the host.** Serve it from a GitHub Release or object storage and
 update `site/public/downloads/latest.json` plus the download link. Do not fabricate a hosted URL
 that does not resolve.
+

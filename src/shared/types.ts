@@ -329,6 +329,7 @@ export interface Bootstrap {
   dataDir: string
   packs: PackDefinition[]
   latestVersion?: string
+  updateInfo?: UpdateInfo
 }
 
 export interface PerfPlan {
@@ -432,4 +433,13 @@ export interface PerfApplyResult {
 export interface ModSearchResult {
   hits: ModrinthSearchHit[]
   total: number
+}
+
+export interface UpdateInfo {
+  hasUpdate: boolean
+  currentVersion: string
+  latestVersion: string
+  releaseNotes?: string
+  downloadUrl: string
+  publishedAt: string
 }

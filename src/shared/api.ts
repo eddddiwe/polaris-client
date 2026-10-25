@@ -34,6 +34,7 @@ import type {
   ProgressEvent,
   Settings,
   ShardClaimResult,
+  UpdateInfo,
   VersionSummary
 } from './types'
 
@@ -111,6 +112,8 @@ export interface PolarisAPI {
   chooseJava(): Promise<{ path: string; java: JavaInfo[] }>
   rescanJava(): Promise<JavaInfo[]>
   settingsSnapshot(): Promise<Settings>
+  checkForUpdates(): Promise<UpdateInfo>
+  installUpdate(): Promise<void>
 
   onProgress(cb: (event: ProgressEvent) => void): () => void
   onLaunchState(cb: (state: LaunchState) => void): () => void

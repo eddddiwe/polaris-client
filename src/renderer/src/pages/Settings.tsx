@@ -435,6 +435,58 @@ export function SettingsPage(): JSX.Element {
         </section>
       </div>
 
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <span className="eyebrow">Updates</span>
+            <h2>Client Updates</h2>
+          </div>
+        </div>
+        <div className="settings-rows">
+          <div className="setting-row">
+            <div>
+              <strong>Current version</strong>
+              <span className="mono-path">{boot.appVersion}</span>
+            </div>
+            <button
+              className="btn btn-soft btn-sm"
+              onClick={async () => {
+                try {
+                  const info = await api.checkForUpdates()
+                  if (info.hasUpdate) {
+                    toast(`Update available: v${info.latestVersion}`, 'info')
+                  } else {
+                    toast('You are on the latest version', 'success')
+                  }
+                } catch (error) {
+                  toast(errorMessage(error), 'error')
+                }
+              }}
+            >
+              <Icon name="refresh" size={14} /> Check for updates
+            </button>
+          </div>
+          {boot.updateInfo?.hasUpdate && (
+            <div className="update-banner">
+              <div className="update-info">
+                <strong>Update available: v{boot.updateInfo.latestVersion}</strong>
+                <span>Current: v{boot.updateInfo.currentVersion}</span>
+                {boot.updateInfo.releaseNotes && <p className="release-notes">{boot.updateInfo.releaseNotes}</p>}
+              </div>
+              <button
+                className="btn btn-primary"
+                onClick={async () => {
+                  await api.installUpdate()
+                  toast('Opening download page...', 'info')
+                }}
+              >
+                <Icon name="download" size={14} /> Download Update
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+
       <section className="about-card">
         <div className="about-brand">
           <PolarisMark size={38} />

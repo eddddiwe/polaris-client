@@ -44,7 +44,9 @@ export const IPC = {
   settingsChooseJava: 'settings:chooseJava',
   settingsRescanJava: 'settings:rescanJava',
   settingsSnapshot: 'settings:snapshot',
-  serverCommand: 'server:command'
+  serverCommand: 'server:command',
+  checkForUpdates: 'app:checkForUpdates',
+  installUpdate: 'app:installUpdate'
 } as const
 
 export const EVENTS = {

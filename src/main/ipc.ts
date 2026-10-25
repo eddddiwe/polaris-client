@@ -133,6 +133,9 @@ export function registerIpc(services: AppServices): void {
 
   handle(IPC.settingsUpdate, async (patch) => services.updateSettings(patch))
 
+  handle(IPC.checkForUpdates, async () => services.checkForUpdates())
+  handle(IPC.installUpdate, async () => services.installUpdate())
+
   ipcMain.handle(IPC.settingsChooseJava, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     const options: Electron.OpenDialogOptions = {

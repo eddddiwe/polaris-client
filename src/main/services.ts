@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import os from 'node:os'
 import { join } from 'node:path'
-import { app } from 'electron'
+import { app, shell } from 'electron'
 import type {
   AccountSnapshot,
   Bootstrap,
@@ -35,6 +35,7 @@ import type {
   PerfScanResult,
   Settings,
   ShardClaimResult,
+  UpdateInfo,
   VersionSummary
 } from '../shared/types'
 import { createPaths, resolveRoot } from '../core/paths'
@@ -189,6 +190,7 @@ export class AppServices extends EventEmitter {
     const settings = this.settingsStore.get()
     const instances = await this.instances.list((id) => this.launcher.isRunning(id))
     const active = this.accounts.activeStored()
+    const updateInfo = await this.checkForUpdates()
     return {
       appVersion: app.getVersion(),
       settings,
@@ -200,7 +202,8 @@ export class AppServices extends EventEmitter {
       java: this.java,
       dataDir: this.paths.root,
       packs: PACKS,
-      latestVersion: this.latestVersion
+      latestVersion: this.latestVersion,
+      updateInfo
     }
   }
 
@@ -555,6 +558,53 @@ export class AppServices extends EventEmitter {
 
   async listMods(instanceId: string): Promise<InstalledMod[]> {
     return await this.mods.list(await this.instances.get(instanceId))
+  }
+
+  /** Check GitHub releases for a newer version. */
+  async checkForUpdates(): Promise<UpdateInfo> {
+    const currentVersion = app.getVersion()
+    const repo = 'eddddiwe/polaris-client'
+    const url = `https://api.github.com/repos/${repo}/releases/latest`
+    try {
+      const res = await fetch(url, {
+        headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'Polaris-Client' }
+      })
+      if (!res.ok) throw new Error(`GitHub API error: ${res.status}`)
+      const data = await res.json()
+      const latestVersion = data.tag_name?.replace(/^v/, '') ?? '0.0.0'
+      const hasUpdate = this.compareVersions(latestVersion, currentVersion) > 0
+      const asset = data.assets?.find((a: any) => a.name === 'Polaris-Setup.exe') || data.assets?.[0]
+      return {
+        hasUpdate,
+        currentVersion,
+        latestVersion,
+        releaseNotes: data.body ?? undefined,
+        downloadUrl: asset?.browser_download_url ?? `https://github.com/${repo}/releases/latest`,
+        publishedAt: data.published_at ?? new Date().toISOString()
+      }
+    } catch (err) {
+      this.logger.warn('Update check failed', err)
+      return { hasUpdate: false, currentVersion, latestVersion: currentVersion, downloadUrl: '', publishedAt: new Date().toISOString() }
+    }
+  }
+
+  private compareVersions(a: string, b: string): number {
+    const pa = a.split('.').map(Number)
+    const pb = b.split('.').map(Number)
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const na = pa[i] ?? 0
+      const nb = pb[i] ?? 0
+      if (na !== nb) return na - nb
+    }
+    return 0
+  }
+
+  /** Open the download page for the latest release. */
+  async installUpdate(): Promise<void> {
+    const info = await this.checkForUpdates()
+    if (info.hasUpdate && info.downloadUrl) {
+      await shell.openExternal(info.downloadUrl)
+    }
   }
 }
 
