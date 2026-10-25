@@ -1,0 +1,17 @@
+node_modules/
+out/
+dist/
+coverage/
+*.log
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+
+# Generated installer payload for the static site (built with npm run release:win)
+site/public/downloads/Polaris-Setup.exe
+site/public/downloads/latest.json
+site/public/downloads/Polaris-Setup.exe.sha256
+

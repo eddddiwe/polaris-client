@@ -1,0 +1,55 @@
+Polaris Client
+Copyright (C) 2026 Polaris Client Contributors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 3 only.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program. If not, see <https://www.gnu.org/licenses/>.
+
+The complete GPL-3.0 text is provided in LICENSE.
+
+--------------------------------------------------------------------------------
+Third-party components
+
+This project depends on third-party packages installed through npm. They are not
+vendored in this repository; their license texts are distributed with the
+packages under node_modules and the versions are locked in package-lock.json.
+
+  Electron ................................ MIT
+  React, React DOM ........................ MIT
+  adm-zip ................................. MIT
+  Vite .................................... MIT
+  electron-vite ........................... MIT
+  @vitejs/plugin-react .................... MIT
+  Vitest .................................. MIT
+  electron-builder ........................ MIT
+  TypeScript .............................. Apache-2.0
+  @types/node, @types/react,
+  @types/react-dom, @types/adm-zip ........ MIT
+
+Copyright and license notices for these components remain with their respective
+authors. No third-party code is relicensed by this project.
+
+--------------------------------------------------------------------------------
+Runtime downloads
+
+Polaris downloads Minecraft files, Fabric loader metadata and mods at runtime.
+It does not distribute Minecraft, the Minecraft client or its assets. Minecraft
+is a trademark of Mojang Studios. Use of Minecraft is subject to the Minecraft
+End User License Agreement. Mods downloaded through Modrinth remain subject to
+the licenses chosen by their authors.
+
+--------------------------------------------------------------------------------
+Behavioral references
+
+Prism Launcher (GPL-3.0), Polyfrost OneLauncher/OneClient (GPL-3.0), Dawn
+(proprietary, behavioral reference only) and REA (MIT, developer tool) are
+described in docs/ATTRIBUTION.md. No proprietary Dawn code or assets are
+included. No source code from Prism Launcher or OneLauncher is copied into this
+repository.

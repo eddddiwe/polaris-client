@@ -1,0 +1,1246 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Polaris — Every machine. Every frame.</title>
+    <meta
+      name="description"
+      content="Polaris is a performance-first Minecraft launcher for Windows, with Linux source builds. Hardware-aware profiles, verified Modrinth mods, Fabric modpacks, dedicated servers, and local-first cosmetics."
+    />
+    <meta name="theme-color" content="#06070c" />
+    <meta name="color-scheme" content="dark" />
+    <meta property="og:title" content="Polaris — Every machine. Every frame." />
+    <meta
+      property="og:description"
+      content="A performance-first Minecraft launcher for Windows, with Linux source builds. Tuned before the first frame."
+    />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href="assets/polaris.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+    <script>
+      document.documentElement.classList.add('js')
+    </script>
+  </head>
+  <body id="top">
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <svg class="icon-sprite" aria-hidden="true" focusable="false">
+      <defs>
+        <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></symbol>
+        <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" /></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="m20 6-11 11-5-5" /></symbol>
+        <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></symbol>
+        <symbol id="i-comet" viewBox="0 0 24 24">
+          <circle cx="15" cy="9" r="3.2" />
+          <path d="M12.6 11.4 3 21M13.9 13.1l-3 3M9.4 8.3 3 14.7" />
+        </symbol>
+        <symbol id="i-copy" viewBox="0 0 24 24">
+          <rect x="9" y="9" width="11" height="11" rx="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </symbol>
+        <symbol id="i-download" viewBox="0 0 24 24">
+          <path d="M12 3v12M7 10l5 5 5-5" />
+          <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+        </symbol>
+        <symbol id="i-cpu" viewBox="0 0 24 24">
+          <rect x="6" y="6" width="12" height="12" rx="2" />
+          <path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4" />
+        </symbol>
+        <symbol id="i-crown" viewBox="0 0 24 24">
+          <path d="m3 7 4 3 5-6 5 6 4-3-2 12H5L3 7Z" />
+          <path d="M5 19h14" />
+        </symbol>
+        <symbol id="i-eye" viewBox="0 0 24 24">
+          <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+          <circle cx="12" cy="12" r="3" />
+        </symbol>
+        <symbol id="i-flame" viewBox="0 0 24 24">
+          <path d="M12 3c1.5 3.5-1 5-1 7a2 2 0 0 0 4 0c0-.7-.2-1.4-.5-2 2.6 1.8 4.5 4.3 4.5 7a7 7 0 0 1-14 0c0-4 3-7 7-12Z" />
+        </symbol>
+        <symbol id="i-gem" viewBox="0 0 24 24">
+          <path d="M6 3h12l4 6-10 12L2 9l4-6Z" />
+          <path d="M2 9h20M8 3l4 18 4-18" />
+        </symbol>
+        <symbol id="i-image" viewBox="0 0 24 24">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <circle cx="8.5" cy="9.5" r="1.5" />
+          <path d="m21 16-5-5L5 20" />
+        </symbol>
+        <symbol id="i-info" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v5M12 8h.01" />
+        </symbol>
+        <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6" /></symbol>
+        <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></symbol>
+        <symbol id="i-monitor" viewBox="0 0 24 24">
+          <rect x="2" y="4" width="20" height="13" rx="2" />
+          <path d="M8 21h8M12 17v4" />
+        </symbol>
+        <symbol id="i-package" viewBox="0 0 24 24">
+          <path d="m12 3 9 5v8l-9 5-9-5V8l9-5Z" />
+          <path d="m3 8 9 5 9-5M12 13v8" />
+        </symbol>
+        <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z" /></symbol>
+        <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6" /></symbol>
+        <symbol id="i-server" viewBox="0 0 24 24">
+          <rect x="3" y="4" width="18" height="6" rx="2" />
+          <rect x="3" y="14" width="18" height="6" rx="2" />
+          <path d="M7 7h.01M7 17h.01" />
+        </symbol>
+        <symbol id="i-shield" viewBox="0 0 24 24">
+          <path d="m12 3 8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3Z" />
+          <path d="m8.8 12 2.2 2 4.2-4.5" />
+        </symbol>
+        <symbol id="i-snow" viewBox="0 0 24 24">
+          <path d="M12 2v20M4.2 6.5l15.6 11M19.8 6.5l-15.6 11M8 4l4 3 4-3M8 20l4-3 4 3" />
+        </symbol>
+        <symbol id="i-sparkles" viewBox="0 0 24 24">
+          <path d="m12 3 1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6L12 3Z" />
+          <path d="m19 16 .8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z" />
+        </symbol>
+        <symbol id="i-star" viewBox="0 0 24 24">
+          <path d="m12 3 2.6 5.9 6.4.6-4.8 4.3 1.4 6.3L12 16.8 6.4 20l1.4-6.3L3 9.5l6.4-.6L12 3Z" />
+        </symbol>
+        <symbol id="i-terminal" viewBox="0 0 24 24">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <path d="m7 9 3 3-3 3M13 15h4" />
+        </symbol>
+        <symbol id="i-volume" viewBox="0 0 24 24">
+          <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+          <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+        </symbol>
+      </defs>
+    </svg>
+
+    <header class="site-header" id="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="#top" aria-label="Polaris home">
+          <img class="brand-mark" src="assets/polaris.svg" alt="" width="36" height="36" />
+          <span class="brand-name">Polaris</span>
+          <span class="brand-version">0.3</span>
+        </a>
+        <nav class="site-nav" id="site-nav" aria-label="Main navigation">
+          <a href="#performance">Performance</a>
+          <a href="#features">Features</a>
+          <a href="#cosmetics">Cosmetics</a>
+          <a href="#screenshots">Screenshots</a>
+          <a href="#faq">FAQ</a>
+          <a class="nav-source" href="#download">Build</a>
+        </nav>
+        <div class="header-actions">
+          <a class="source-link" href="#download">Build</a>
+          <a class="btn btn-primary btn-small" href="#download">
+            Get Polaris
+            <svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg>
+          </a>
+          <button
+            class="nav-toggle"
+            type="button"
+            aria-label="Toggle menu"
+            aria-expanded="false"
+            aria-controls="site-nav"
+          >
+            <svg class="icon nav-icon-menu" aria-hidden="true"><use href="#i-menu" /></svg>
+            <svg class="icon nav-icon-close" aria-hidden="true"><use href="#i-close" /></svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-grid" aria-hidden="true"></div>
+        <div class="hero-stars" aria-hidden="true"></div>
+        <div class="wrap hero-inner">
+          <div class="hero-copy">
+            <span class="eyebrow-pill">
+              <i class="pulse-dot" aria-hidden="true"></i>
+              Windows-first · Linux builds from source
+            </span>
+            <h1 id="hero-title">
+              Every machine.<br />
+              <span class="gradient-text">Every frame.</span>
+            </h1>
+            <p class="hero-lede">
+              Polaris is a performance-first Minecraft launcher. It reads your hardware, matches
+              every mod to your exact version, and tunes the game before the first frame — then
+              gets out of the way.
+            </p>
+            <div class="hero-actions">
+              <a class="btn btn-primary" href="#download">
+                Get Polaris
+                <svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg>
+              </a>
+              <a class="btn btn-ghost" href="#performance">
+                Open the tuning lab
+                <svg class="icon" aria-hidden="true"><use href="#i-bolt" /></svg>
+              </a>
+            </div>
+            <ul class="hero-proof">
+              <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>Hardware-aware</li>
+              <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>Modrinth verified</li>
+              <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>No telemetry</li>
+            </ul>
+          </div>
+
+          <div class="hero-art" id="hero-art">
+            <div class="hero-halo" aria-hidden="true"></div>
+            <figure class="app-window">
+              <div class="window-bar">
+                <span class="traffic" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="window-title">Polaris <span>/</span> Home</span>
+                <span class="window-status"><i></i>Ready</span>
+              </div>
+              <img
+                src="assets/screenshots/home.jpg"
+                width="1464"
+                height="941"
+                alt="Polaris home screen with the Astra instance, performance stack, and a launch button."
+              />
+            </figure>
+            <div class="float-card float-tier" aria-hidden="true">
+              <span class="float-label">Hardware tier</span>
+              <div class="float-row"><strong>High</strong><span class="float-score">84</span></div>
+              <div class="float-meter"><i style="width: 84%"></i></div>
+            </div>
+            <div class="float-card float-verified" aria-hidden="true">
+              <span class="float-icon float-icon--green">
+                <svg class="icon"><use href="#i-check" /></svg>
+              </span>
+              <span>
+                <span class="float-label">Sodium · sha1 verified</span>
+                <strong>Pinned install</strong>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="wrap hero-foot">
+          <span><i class="status-dot" aria-hidden="true"></i>Ready on first launch</span>
+          <span>Windows 10 / 11 · Linux from source</span>
+          <span>Fabric 1.21+</span>
+          <span>GPL-3.0-only</span>
+        </div>
+      </section>
+
+      <section class="stats-section" aria-label="Polaris at a glance">
+        <div class="wrap">
+          <div class="stats">
+            <div class="stat">
+              <strong>4</strong>
+              <span>hardware tiers</span>
+              <p>Scanned locally, never uploaded.</p>
+            </div>
+            <div class="stat">
+              <strong>3</strong>
+              <span>tuned profiles</span>
+              <p>Competitive, Balanced, Quality.</p>
+            </div>
+            <div class="stat">
+              <strong>12</strong>
+              <span>cosmetics at launch</span>
+              <p>Eight badges. Four capes.</p>
+            </div>
+            <div class="stat">
+              <strong>0</strong>
+              <span>telemetry calls</span>
+              <p>Only the requests an install needs.</p>
+            </div>
+          </div>
+          <aside class="release-bar">
+            <span class="release-tag">New in 0.3.0</span>
+            <p>Cosmetics, animated wallpapers, and a full in-game interface panel.</p>
+            <a class="text-link" href="#cosmetics">
+              See what changed
+              <svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg>
+            </a>
+          </aside>
+        </div>
+      </section>
+
+      <section class="section" id="performance" aria-labelledby="performance-title">
+        <div class="wrap">
+          <header class="section-head" data-reveal>
+            <span class="eyebrow">01 · Performance</span>
+            <h2 id="performance-title">Tuned before the first frame.</h2>
+            <p>
+              Most launchers ask how much RAM you have. Polaris also asks what your GPU is, how
+              many threads you have, and which Java you actually installed. Then it writes a plan
+              you can read, edit, and undo.
+            </p>
+          </header>
+
+          <div class="tier-grid">
+            <article class="tier-card" data-reveal>
+              <div class="tier-card-top">
+                <span class="tier-kicker">Tier 01</span>
+                <span class="tier-bars" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></span>
+              </div>
+              <h3>Low</h3>
+              <p class="tier-system">8 GB · integrated or older GPU</p>
+              <div class="tier-metric">3 GB <span>heap</span></div>
+              <ul class="tier-specs">
+                <li>Render 6–14 chunks</li>
+                <li>Frame pacing first</li>
+                <li>All three profiles</li>
+              </ul>
+            </article>
+            <article class="tier-card" data-reveal>
+              <div class="tier-card-top">
+                <span class="tier-kicker">Tier 02</span>
+                <span class="tier-bars" aria-hidden="true"><i class="on"></i><i class="on"></i><i></i><i></i></span>
+              </div>
+              <h3>Mid</h3>
+              <p class="tier-system">16 GB · mainstream discrete GPU</p>
+              <div class="tier-metric">4 GB <span>heap</span></div>
+              <ul class="tier-specs">
+                <li>Render 8–16 chunks</li>
+                <li>The everyday default</li>
+                <li>Balanced by default</li>
+              </ul>
+            </article>
+            <article class="tier-card" data-reveal>
+              <div class="tier-card-top">
+                <span class="tier-kicker">Tier 03</span>
+                <span class="tier-bars" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>
+              </div>
+              <h3>High</h3>
+              <p class="tier-system">24 GB · RTX 30 / RX 6000</p>
+              <div class="tier-metric">6 GB <span>heap</span></div>
+              <ul class="tier-specs">
+                <li>Render 10–18 chunks</li>
+                <li>Headroom for modpacks</li>
+                <li>Strings deduplicated</li>
+              </ul>
+            </article>
+            <article class="tier-card" data-reveal>
+              <div class="tier-card-top">
+                <span class="tier-kicker">Tier 04</span>
+                <span class="tier-bars" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span>
+              </div>
+              <h3>Enthusiast</h3>
+              <p class="tier-system">32 GB+ · RTX 40/50 · RX 7000+</p>
+              <div class="tier-metric">8 GB <span>heap</span></div>
+              <ul class="tier-specs">
+                <li>Render 12–20 chunks</li>
+                <li>All profiles maxed</li>
+                <li>Aikar, low-latency or ZGC</li>
+              </ul>
+            </article>
+          </div>
+
+          <div class="lab" id="perf-lab" data-reveal>
+            <div class="lab-top">
+              <div>
+                <span class="mini-label">Interactive tuning plan</span>
+                <h3>Pick a machine. Pick a play style.</h3>
+              </div>
+              <div class="lab-tiers" role="group" aria-label="Hardware tier">
+                <button type="button" data-tier="entry" aria-pressed="false">Low</button>
+                <button type="button" data-tier="mainstream" aria-pressed="false">Mid</button>
+                <button type="button" data-tier="high" aria-pressed="true">High</button>
+                <button type="button" data-tier="enthusiast" aria-pressed="false">Enthusiast</button>
+              </div>
+            </div>
+            <div class="lab-grid">
+              <div class="lab-panel">
+                <div class="lab-panel-head">
+                  <span><i class="status-dot"></i> perf-plan</span>
+                  <code id="lab-plan-id">high · balanced</code>
+                </div>
+                <div class="lab-metrics">
+                  <div class="lab-metric"><span>Heap</span><strong id="lab-heap">6 GB</strong></div>
+                  <div class="lab-metric"><span>FPS cap</span><strong id="lab-fps">144</strong></div>
+                  <div class="lab-metric"><span>Graphics</span><strong id="lab-graphics">Fancy</strong></div>
+                  <div class="lab-metric"><span>Particles</span><strong id="lab-particles">Decreased</strong></div>
+                </div>
+                <div class="lab-bars">
+                  <div class="lab-bar-row">
+                    <span>Render distance</span>
+                    <div class="lab-bar-track"><i id="lab-render-bar" style="--v: 44%"></i></div>
+                    <b id="lab-render">14</b>
+                  </div>
+                  <div class="lab-bar-row">
+                    <span>Simulation distance</span>
+                    <div class="lab-bar-track"><i id="lab-sim-bar" style="--v: 50%"></i></div>
+                    <b id="lab-sim">8</b>
+                  </div>
+                </div>
+                <pre class="code-block" id="lab-code"></pre>
+                <p class="sr-only" id="lab-status" aria-live="polite"></p>
+              </div>
+              <div class="lab-side">
+                <div class="profile-switch" role="group" aria-label="Play style">
+                  <button type="button" data-profile="competitive" aria-pressed="false">Competitive</button>
+                  <button type="button" data-profile="balanced" aria-pressed="true">Balanced</button>
+                  <button type="button" data-profile="quality" aria-pressed="false">Quality</button>
+                </div>
+                <div class="profile-detail">
+                  <span class="profile-chip" id="lab-profile-chip">Balanced</span>
+                  <h4 id="lab-profile-name">The everyday plan</h4>
+                  <p id="lab-profile-copy">
+                    Useful draw distance, a 144 frame cap, and shadows kept for depth perception.
+                    The plan that fits most machines.
+                  </p>
+                  <ul class="profile-points" id="lab-profile-points"></ul>
+                </div>
+                <div class="lab-note">
+                  <svg class="icon" aria-hidden="true"><use href="#i-info" /></svg>
+                  <p>
+                    Every plan writes a timestamped <code>options.txt</code> backup before it
+                    changes a key. The game must be closed.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="footnote">
+            The render, simulation, graphics, particle, shadow, and FPS values are exactly what
+            Polaris writes for the selected tier and profile. Heap assumes the typical RAM shown for
+            that tier; the launcher sizes it from your actual system RAM. Frame rate still depends
+            on your world, shaders, drivers, and what else is running — this page does not invent
+            benchmark numbers.
+          </p>
+        </div>
+      </section>
+
+      <section class="section" id="features" aria-labelledby="features-title">
+        <div class="wrap">
+          <header class="section-head" data-reveal>
+            <span class="eyebrow">02 · The stack</span>
+            <h2 id="features-title">One launcher. The whole stack.</h2>
+            <p>
+              Install the game, curate the mods, tune the flags, and start the server from the
+              same place. Polaris is opinionated where defaults are bad and transparent
+              everywhere else.
+            </p>
+          </header>
+
+          <div class="feature-grid">
+            <article class="feature-card span-2" data-reveal>
+              <span class="feature-icon tone-violet">
+                <svg class="icon" aria-hidden="true"><use href="#i-cpu" /></svg>
+              </span>
+              <h3>Hardware scan, not guesswork</h3>
+              <p>
+                One local GPU query, thread count, system RAM, and the Java runtimes it can find.
+                Polaris classifies the machine, sizes the heap, and keeps every decision visible.
+              </p>
+              <div class="mini-rail" aria-hidden="true">
+                <span class="mini-rail-label">entry</span>
+                <span class="mini-node"></span>
+                <span class="mini-node"></span>
+                <span class="mini-node active"></span>
+                <span class="mini-node"></span>
+                <span class="mini-rail-label">enthusiast</span>
+              </div>
+            </article>
+
+            <article class="feature-card" data-reveal>
+              <span class="feature-icon tone-cyan">
+                <svg class="icon" aria-hidden="true"><use href="#i-shield" /></svg>
+              </span>
+              <h3>Verified installs</h3>
+              <p>
+                Tracked jars are pinned by version and sha1. One batch hash request tells Polaris
+                what drifted before it touches anything.
+              </p>
+              <div class="feature-facts" aria-hidden="true">
+                <span class="fact-pill"><i class="status-dot"></i>sha1 pinned</span>
+                <span class="fact-pill">1 batch query</span>
+              </div>
+            </article>
+
+            <article class="feature-card" data-reveal>
+              <span class="feature-icon tone-amber">
+                <svg class="icon" aria-hidden="true"><use href="#i-package" /></svg>
+              </span>
+              <h3>Packs that know your GPU</h3>
+              <p>
+                Client and server targets, plus hardware gates. A mod that needs NVIDIA is skipped
+                with a reason instead of quietly breaking the pack.
+              </p>
+              <div class="feature-facts" aria-hidden="true">
+                <span class="fact-pill"><code>requires: nvidia</code></span>
+                <span class="fact-pill">client | server</span>
+              </div>
+            </article>
+
+            <article class="feature-card span-2" data-reveal>
+              <span class="feature-icon tone-violet">
+                <svg class="icon" aria-hidden="true"><use href="#i-server" /></svg>
+              </span>
+              <h3>A server is another instance</h3>
+              <p>
+                Create a Fabric server with its own port, mods, EULA gate, and console. Stop it
+                gracefully by writing to stdin; the log streams into the same window.
+              </p>
+              <div class="mini-term" aria-hidden="true">
+                <span><b>[Server thread/INFO]</b> Starting minecraft server version 1.21.10</span>
+                <span><b class="ok">[Server thread/INFO]</b> <span class="ok">Done (2.314s)!</span> For help, type "help"</span>
+              </div>
+            </article>
+
+            <article class="feature-card" data-reveal>
+              <span class="feature-icon tone-cyan">
+                <svg class="icon" aria-hidden="true"><use href="#i-terminal" /></svg>
+              </span>
+              <h3>JVM, not guesswork</h3>
+              <p>
+                Aikar G1, low-latency G1, or Generational ZGC. The generational flag only appears
+                on Java 21–22, where it is actually accepted.
+              </p>
+              <div class="feature-facts" aria-hidden="true">
+                <span class="fact-pill"><code>-XX:+UseG1GC</code></span>
+                <span class="fact-pill"><code>-XX:+UseZGC</code></span>
+              </div>
+            </article>
+
+            <article class="feature-card" data-reveal>
+              <span class="feature-icon tone-green">
+                <svg class="icon" aria-hidden="true"><use href="#i-sparkles" /></svg>
+              </span>
+              <h3>Local-first progress</h3>
+              <p>
+                Shards, owned cosmetics, and wallpapers live in your local settings. No checkout,
+                no account server, no analytics calls.
+              </p>
+              <div class="feature-facts" aria-hidden="true">
+                <span class="fact-pill"><svg class="icon"><use href="#i-gem" /></svg>900 starter</span>
+                <span class="fact-pill">saved locally</span>
+              </div>
+            </article>
+          </div>
+
+          <div class="split">
+            <div class="split-media" data-reveal>
+              <figure class="shot-frame">
+                <img
+                  src="assets/screenshots/discover.jpg"
+                  width="1464"
+                  height="941"
+                  loading="lazy"
+                  alt="Polaris Discover page showing Minecraft mod search results and project cards."
+                />
+              </figure>
+              <span class="media-tag"><i class="status-dot" aria-hidden="true"></i>Modrinth · live</span>
+            </div>
+            <div class="split-copy" data-reveal>
+              <span class="eyebrow">Discovery</span>
+              <h2>Search once. Install exactly once.</h2>
+              <p>
+                Browse Modrinth without opening ten browser tabs. Polaris resolves the exact game
+                version and loader, pulls dependencies, and keeps the gallery, changelog, and
+                every compatible release one click away.
+              </p>
+              <ul class="check-list">
+                <li>
+                  <svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+                  Search, sort, and category filters with real project pages and Markdown
+                  descriptions.
+                </li>
+                <li>
+                  <svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+                  Version picker down to the exact game version and loader, with dependency
+                  resolution before the first byte.
+                </li>
+                <li>
+                  <svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+                  Curated client stacks for performance, QoL, HUD, and visuals — plus a dedicated
+                  server stack.
+                </li>
+                <li>
+                  <svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+                  One-click <code>.mrpack</code> installs with overrides, optional files, and a
+                  persisted pack reference.
+                </li>
+                <li>
+                  <svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+                  Update checks in a single batch hash lookup, with pinned versions and a local
+                  index.
+                </li>
+              </ul>
+              <p class="split-note">
+                <svg class="icon" aria-hidden="true"><use href="#i-info" /></svg>
+                Mods and modpacks are Fabric-only by design. Unsupported packs are rejected, not
+                half-installed.
+              </p>
+            </div>
+          </div>
+
+          <div class="split reverse">
+            <div class="split-media" data-reveal>
+              <figure class="shot-frame">
+                <img
+                  src="assets/screenshots/server.jpg"
+                  width="1464"
+                  height="941"
+                  loading="lazy"
+                  alt="Polaris server instance overview with a start button, port, and server-specific performance notes."
+                />
+              </figure>
+              <span class="media-tag"><i class="status-dot" aria-hidden="true"></i>Local server · 1.21.10</span>
+            </div>
+            <div class="split-copy" data-reveal>
+              <span class="eyebrow">Servers</span>
+              <h2>Your world. Your machine.</h2>
+              <p>
+                A dedicated server is just another instance in the sidebar. Same cards, same mods,
+                same console. No separate launcher, no remote panel you did not ask for.
+              </p>
+              <ul class="check-list">
+                <li>
+                  <svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+                  Server-targeted packs, so client-only mods never end up in the server folder.
+                </li>
+                <li>
+                  <svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+                  Explicit EULA gate, custom port, and a graceful <code>stop</code> written to
+                  stdin instead of killing the process.
+                </li>
+                <li>
+                  <svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+                  Live logs with a jump-to-end toggle, ready for the first “Done” line.
+                </li>
+                <li>
+                  <svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+                  Server-aware Home and tuning views: no render-distance advice on a headless box.
+                </li>
+              </ul>
+              <p class="split-note">
+                <svg class="icon" aria-hidden="true"><use href="#i-info" /></svg>
+                Servers run locally for now. There is no remote panel or multi-user management.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section cosmetics-section" id="cosmetics" aria-labelledby="cosmetics-title">
+        <div class="wrap">
+          <div class="cosmetics-intro">
+            <div class="cosmetics-copy" data-reveal>
+              <span class="eyebrow">03 · Cosmetics</span>
+              <h2 id="cosmetics-title">A little orbit for your profile.</h2>
+              <p>
+                Earn shards by playing. Spend them on badges and capes that sit next to your name
+                in the launcher. No checkout, no loot boxes, no expiry.
+              </p>
+              <div class="cos-stats">
+                <div><strong>900</strong><span>starter shards</span></div>
+                <div><strong>+40</strong><span>per tracked hour</span></div>
+                <div><strong>12</strong><span>items at launch</span></div>
+              </div>
+              <div class="boundary">
+                <svg class="icon" aria-hidden="true"><use href="#i-info" /></svg>
+                <p>
+                  <strong>Where it works:</strong> badges and capes appear on your profile, the
+                  account switcher, and the Home hero inside Polaris. Other players seeing them
+                  in-game needs a companion relay — that is roadmap, not a shipping claim.
+                </p>
+              </div>
+            </div>
+            <div class="cosmetics-media" data-reveal>
+              <figure class="shot-frame">
+                <img
+                  src="assets/screenshots/store.jpg"
+                  width="1464"
+                  height="941"
+                  loading="lazy"
+                  alt="Polaris cosmetics store showing the shard balance, profile preview, badges, capes, and purchase controls."
+                />
+              </figure>
+              <span class="media-tag media-tag--gem">
+                <svg class="icon" aria-hidden="true"><use href="#i-gem" /></svg>
+                Preview balance · 780
+              </span>
+            </div>
+          </div>
+
+          <div class="cos-rail">
+            <article class="cos-item" data-reveal>
+              <div class="cos-art badge-art" style="--c1: #5eead4; --c2: #6366f1" aria-hidden="true">
+                <span class="badge-emblem"><svg class="icon"><use href="#i-crown" /></svg></span>
+              </div>
+              <div class="cos-meta">
+                <div>
+                  <h3>Aurora Crown</h3>
+                  <p><span class="rarity legendary">Legendary</span> Badge</p>
+                </div>
+                <span class="cos-price"><svg class="icon" aria-hidden="true"><use href="#i-gem" /></svg>1,400</span>
+              </div>
+            </article>
+            <article class="cos-item" data-reveal>
+              <div class="cos-art cape-art" style="--c1: #fb7185; --c2: #fbbf24" aria-hidden="true">
+                <span class="cape-shape cape-supernova"><i></i></span>
+              </div>
+              <div class="cos-meta">
+                <div>
+                  <h3>Supernova</h3>
+                  <p><span class="rarity legendary">Legendary</span> Cape</p>
+                </div>
+                <span class="cos-price"><svg class="icon" aria-hidden="true"><use href="#i-gem" /></svg>1,600</span>
+              </div>
+            </article>
+            <article class="cos-item" data-reveal>
+              <div class="cos-art badge-art" style="--c1: #e0f2fe; --c2: #38bdf8" aria-hidden="true">
+                <span class="badge-emblem"><svg class="icon"><use href="#i-snow" /></svg></span>
+              </div>
+              <div class="cos-meta">
+                <div>
+                  <h3>Frostline</h3>
+                  <p><span class="rarity rare">Rare</span> Badge</p>
+                </div>
+                <span class="cos-price"><svg class="icon" aria-hidden="true"><use href="#i-gem" /></svg>500</span>
+              </div>
+            </article>
+            <article class="cos-item" data-reveal>
+              <div class="cos-art cape-art" style="--c1: #0f172a; --c2: #22d3ee" aria-hidden="true">
+                <span class="cape-shape cape-grid"><i></i></span>
+              </div>
+              <div class="cos-meta">
+                <div>
+                  <h3>Night Grid</h3>
+                  <p><span class="rarity rare">Rare</span> Cape</p>
+                </div>
+                <span class="cos-price"><svg class="icon" aria-hidden="true"><use href="#i-gem" /></svg>600</span>
+              </div>
+            </article>
+            <article class="cos-item" data-reveal>
+              <div class="cos-art badge-art" style="--c1: #f0abfc; --c2: #7c3aed" aria-hidden="true">
+                <span class="badge-emblem"><svg class="icon"><use href="#i-sparkles" /></svg></span>
+              </div>
+              <div class="cos-meta">
+                <div>
+                  <h3>Nova</h3>
+                  <p><span class="rarity epic">Epic</span> Badge</p>
+                </div>
+                <span class="cos-price"><svg class="icon" aria-hidden="true"><use href="#i-gem" /></svg>850</span>
+              </div>
+            </article>
+            <article class="cos-item" data-reveal>
+              <div class="cos-art badge-art" style="--c1: #a78bfa; --c2: #111827" aria-hidden="true">
+                <span class="badge-emblem"><svg class="icon"><use href="#i-eye" /></svg></span>
+              </div>
+              <div class="cos-meta">
+                <div>
+                  <h3>Void Eye</h3>
+                  <p><span class="rarity epic">Epic</span> Badge</p>
+                </div>
+                <span class="cos-price"><svg class="icon" aria-hidden="true"><use href="#i-gem" /></svg>900</span>
+              </div>
+            </article>
+          </div>
+
+          <div class="shard-steps">
+            <div class="shard-step">
+              <span class="step-index">01</span>
+              <div><strong>Start with 900.</strong><p>Free shards land in your local profile on first run.</p></div>
+            </div>
+            <div class="shard-step">
+              <span class="step-index">02</span>
+              <div><strong>Play to earn.</strong><p>Forty shards per tracked hour. No daily chores, no streaks.</p></div>
+            </div>
+            <div class="shard-step">
+              <span class="step-index">03</span>
+              <div><strong>Equip and go.</strong><p>One badge, one cape. The choice saves with your settings.</p></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="appearance" aria-labelledby="appearance-title">
+        <div class="wrap">
+          <div class="appearance-grid">
+            <div class="appearance-copy" data-reveal>
+              <span class="eyebrow">04 · Appearance</span>
+              <h2 id="appearance-title">The launcher should look like yours.</h2>
+              <p>
+                Four animated wallpapers, six accent colors, and a direct link for your own loop.
+                Tune the dim and blur until the text stays readable — then let it pause while
+                Minecraft is running.
+              </p>
+              <ul class="control-list">
+                <li>
+                  <span class="control-icon"><svg class="icon" aria-hidden="true"><use href="#i-sparkles" /></svg></span>
+                  <div>
+                    <strong>Animated by default</strong>
+                    <p>Aurora, Nebula, Starfield, and Night Grid. Pure CSS; no video files to install.</p>
+                  </div>
+                </li>
+                <li>
+                  <span class="control-icon"><svg class="icon" aria-hidden="true"><use href="#i-image" /></svg></span>
+                  <div>
+                    <strong>Your own media</strong>
+                    <p>Paste a direct HTTPS GIF, WebP, PNG, MP4, or WebM link. Nothing is uploaded.</p>
+                  </div>
+                </li>
+                <li>
+                  <span class="control-icon"><svg class="icon" aria-hidden="true"><use href="#i-monitor" /></svg></span>
+                  <div>
+                    <strong>Readable, not loud</strong>
+                    <p>Dim, blur, and accent presets keep contrast in the foreground.</p>
+                  </div>
+                </li>
+                <li>
+                  <span class="control-icon"><svg class="icon" aria-hidden="true"><use href="#i-bolt" /></svg></span>
+                  <div>
+                    <strong>Kind to slow machines</strong>
+                    <p>Animation pauses during a launch and follows your system reduce-motion setting.</p>
+                  </div>
+                </li>
+              </ul>
+            </div>
+
+            <div class="appearance-media" data-reveal>
+              <div class="wp-demo" aria-label="Animated launcher wallpaper preview">
+                <div class="wp-sky" aria-hidden="true"></div>
+                <div class="wp-stars" aria-hidden="true"></div>
+                <div class="wp-shade" aria-hidden="true"></div>
+                <div class="wp-ui">
+                  <aside class="wp-side" aria-hidden="true">
+                    <img src="assets/polaris.svg" width="26" height="26" alt="" />
+                    <i class="active"></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <span class="wp-avatar">N</span>
+                  </aside>
+                  <div class="wp-main">
+                    <span class="wp-status"><i></i>Ready to launch</span>
+                    <div class="wp-content">
+                      <span class="wp-kicker">Aurora · animated</span>
+                      <h3>Good evening, Nova.</h3>
+                      <p>Survival Server · 6 mods · 1.21.10</p>
+                      <div class="wp-actions">
+                        <span class="wp-play"><svg class="icon" aria-hidden="true"><use href="#i-play" /></svg>Play</span>
+                        <span class="wp-manage">Manage</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="wp-controls" aria-label="Example appearance settings">
+                <span class="control-chip active"><i class="swatch swatch-aurora"></i>Aurora</span>
+                <span class="control-chip">Dim 24%</span>
+                <span class="control-chip">Blur 8px</span>
+                <span class="control-chip"><svg class="icon" aria-hidden="true"><use href="#i-bolt" /></svg>Motion on</span>
+                <span class="accent-dots" aria-label="Accent colors">
+                  <i style="--dot: #8b5cf6" class="active"></i>
+                  <i style="--dot: #22d3ee"></i>
+                  <i style="--dot: #f472b6"></i>
+                  <i style="--dot: #34d399"></i>
+                  <i style="--dot: #fbbf24"></i>
+                  <i style="--dot: #fb7185"></i>
+                </span>
+              </div>
+              <p class="demo-note">
+                Live CSS preview. The real launcher persists every control and pauses the wallpaper
+                while the game is running.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="game-ui" aria-labelledby="game-ui-title">
+        <div class="wrap">
+          <div class="gameui-grid">
+            <div class="gameui-media" data-reveal>
+              <figure class="shot-frame">
+                <img
+                  src="assets/screenshots/game-ui.jpg"
+                  width="1464"
+                  height="941"
+                  loading="lazy"
+                  alt="Polaris in-game interface panel with sliders for GUI scale, FOV, brightness, chat, and screen effects."
+                />
+              </figure>
+              <span class="media-tag">In-game interface</span>
+            </div>
+            <div class="gameui-copy" data-reveal>
+              <span class="eyebrow">05 · In-game</span>
+              <h2 id="game-ui-title">Small knobs. Real comfort.</h2>
+              <p>
+                GUI scale, FOV, brightness, chat opacity and scale, screen effects, and the attack
+                indicator are the settings you actually feel. Tune them in one panel instead of
+                rebuilding the muscle memory every world.
+              </p>
+              <div class="option-chips" aria-label="Supported in-game options">
+                <span class="option-chip"><b>GUI scale</b>Auto</span>
+                <span class="option-chip"><b>FOV</b>70°</span>
+                <span class="option-chip"><b>Brightness</b>50%</span>
+                <span class="option-chip"><b>Chat opacity</b>100%</span>
+                <span class="option-chip"><b>Chat scale</b>100%</span>
+                <span class="option-chip"><b>Screen effects</b>100%</span>
+                <span class="option-chip"><b>Attack indicator</b>Crosshair</span>
+              </div>
+              <div class="inline-callout">
+                <svg class="icon" aria-hidden="true"><use href="#i-shield" /></svg>
+                <p>
+                  Writes only whitelisted vanilla keys to <code>options.txt</code> — with a
+                  timestamped backup first. Close the game before applying.
+                </p>
+              </div>
+              <p class="split-note">
+                <svg class="icon" aria-hidden="true"><use href="#i-info" /></svg>
+                No UI mods are injected, and animated in-game wallpapers are not faked. That would
+                need a client mod; Polaris stays vanilla-compatible.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="screenshots" aria-labelledby="screenshots-title">
+        <div class="wrap">
+          <header class="section-head section-head--row" data-reveal>
+            <div>
+              <span class="eyebrow">06 · Screenshots</span>
+              <h2 id="screenshots-title">A look around.</h2>
+            </div>
+            <p>Actual windows, actual data, no staged mockups. Click any shot to open it larger.</p>
+          </header>
+
+          <div class="gallery">
+            <button
+              class="shot shot-span-4"
+              type="button"
+              data-full="assets/screenshots/home.jpg"
+              data-title="Home"
+              data-caption="The active instance, performance stack, and launch controls in one view."
+              aria-label="Open screenshot: Home"
+              data-reveal
+            >
+              <img src="assets/screenshots/home.jpg" width="1464" height="941" loading="lazy" alt="Polaris home screen." />
+              <span class="shot-cap"><span><strong>Home</strong>Everything ready, nothing shouting.</span><span class="shot-open"><svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg></span></span>
+            </button>
+            <button
+              class="shot shot-span-2"
+              type="button"
+              data-full="assets/screenshots/discover.jpg"
+              data-title="Discover"
+              data-caption="Search, filters, galleries, and every compatible version."
+              aria-label="Open screenshot: Discover"
+              data-reveal
+            >
+              <img src="assets/screenshots/discover.jpg" width="1464" height="941" loading="lazy" alt="Modrinth discovery inside Polaris." />
+              <span class="shot-cap"><span><strong>Discover</strong>Mods without browser tabs.</span><span class="shot-open"><svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg></span></span>
+            </button>
+            <button
+              class="shot shot-span-2"
+              type="button"
+              data-full="assets/screenshots/mods.jpg"
+              data-title="Mod updates"
+              data-caption="Pinned hashes, update pills, and a per-instance mod index."
+              aria-label="Open screenshot: Mod updates"
+              data-reveal
+            >
+              <img src="assets/screenshots/mods.jpg" width="1464" height="941" loading="lazy" alt="Installed mods with update pills." />
+              <span class="shot-cap"><span><strong>Mod updates</strong>Only what drifted.</span><span class="shot-open"><svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg></span></span>
+            </button>
+            <button
+              class="shot shot-span-4"
+              type="button"
+              data-full="assets/screenshots/performance.jpg"
+              data-title="Performance plan"
+              data-caption="The exact keys, flags, and memory that Polaris will write."
+              aria-label="Open screenshot: Performance plan"
+              data-reveal
+            >
+              <img src="assets/screenshots/performance.jpg" width="1464" height="941" loading="lazy" alt="Per-instance performance plan." />
+              <span class="shot-cap"><span><strong>Performance plan</strong>Visible before the launch.</span><span class="shot-open"><svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg></span></span>
+            </button>
+            <button
+              class="shot shot-span-3"
+              type="button"
+              data-full="assets/screenshots/logs.jpg"
+              data-title="Server console"
+              data-caption="Start, stop, and read the log without leaving the launcher."
+              aria-label="Open screenshot: Server console"
+              data-reveal
+            >
+              <img src="assets/screenshots/logs.jpg" width="1464" height="941" loading="lazy" alt="Server console with startup logs." />
+              <span class="shot-cap"><span><strong>Server console</strong>Until the first “Done”.</span><span class="shot-open"><svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg></span></span>
+            </button>
+            <button
+              class="shot shot-span-3"
+              type="button"
+              data-full="assets/screenshots/store.jpg"
+              data-title="Cosmetics"
+              data-caption="Shards, badges, capes, and a local-first profile."
+              aria-label="Open screenshot: Cosmetics"
+              data-reveal
+            >
+              <img src="assets/screenshots/store.jpg" width="1464" height="941" loading="lazy" alt="Polaris cosmetics store." />
+              <span class="shot-cap"><span><strong>Cosmetics</strong>A little orbit for your name.</span><span class="shot-open"><svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg></span></span>
+            </button>
+            <button
+              class="shot shot-span-2"
+              type="button"
+              data-full="assets/screenshots/appearance.jpg"
+              data-title="Appearance"
+              data-caption="Four animated presets, custom media, dim, blur, and accents."
+              aria-label="Open screenshot: Appearance"
+              data-reveal
+            >
+              <img src="assets/screenshots/appearance.jpg" width="1464" height="941" loading="lazy" alt="Appearance settings with wallpaper presets." />
+              <span class="shot-cap"><span><strong>Appearance</strong>Make it yours.</span><span class="shot-open"><svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg></span></span>
+            </button>
+            <button
+              class="shot shot-span-4"
+              type="button"
+              data-full="assets/screenshots/wallpaper.jpg"
+              data-title="Aurora wallpaper"
+              data-caption="Animated, dimmed, blurred, and paused during gameplay."
+              aria-label="Open screenshot: Aurora wallpaper"
+              data-reveal
+            >
+              <img src="assets/screenshots/wallpaper.jpg" width="1464" height="941" loading="lazy" alt="Polaris home screen with an animated aurora wallpaper." />
+              <span class="shot-cap"><span><strong>Aurora, in place</strong>Motion that knows when to stop.</span><span class="shot-open"><svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg></span></span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="section download-section" id="download" aria-labelledby="download-title">
+        <div class="wrap">
+          <div class="download-card" data-reveal>
+            <img class="download-mark" src="assets/polaris.svg" alt="" aria-hidden="true" />
+            <div class="download-copy">
+              <span class="eyebrow">07 · Install &amp; build</span>
+              <h2 id="download-title">Take it for a spin.</h2>
+              <p>
+                Polaris 0.3.0 ships as a per-user Windows installer built from this source. Linux
+                builders can produce an AppImage from the same checkout.
+              </p>
+              <ul class="download-facts">
+                <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>Offline accounts work out of the box.</li>
+                <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>Core logic is covered by unit tests.</li>
+                <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>No account server, no telemetry, GPL-3.0-only.</li>
+              </ul>
+              <div class="download-actions">
+                <a
+                  class="btn btn-primary download-primary"
+                  href="downloads/Polaris-Setup.exe"
+                  download
+                  data-download-link
+                >
+                  <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
+                  <span class="download-label">Download Windows installer</span>
+                </a>
+                <button class="btn btn-ghost" type="button" data-copy-target="#build-commands">
+                  <svg class="icon" aria-hidden="true"><use href="#i-copy" /></svg>
+                  <span class="copy-label">Copy build commands</span>
+                </button>
+              </div>
+              <p class="download-note" data-download-note>
+                Unsigned NSIS installer · <span data-download-size>about 78 MB</span> · SHA-256
+                <code data-download-sha>generated when packaged</code>
+              </p>
+              <p class="download-note download-note-secondary">
+                Download Polaris-Setup.exe, then run it to install. The NSIS installer is per-user,
+                so there is no administrator prompt; remove it from Apps &amp; features. SmartScreen
+                may warn because the build is unsigned. Linux builders: run
+                <code>npm run dist:linux</code> on Linux or WSL2.
+              </p>
+            </div>
+
+            <div class="terminal">
+              <div class="terminal-bar">
+                <span class="traffic" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span>build · polaris</span>
+                <button type="button" data-copy-target="#build-commands" aria-label="Copy build commands">
+                  <svg class="icon" aria-hidden="true"><use href="#i-copy" /></svg>
+                </button>
+              </div>
+              <pre id="build-commands"><code><span class="comment"># install once</span>
+<span class="prompt">&gt;</span> npm install
+<span class="comment"># NSIS on Windows; AppImage on Linux or WSL2</span>
+<span class="prompt">&gt;</span> npm run dist
+<span class="comment"># explicit targets: npm run dist:win / npm run dist:linux</span></code></pre>
+            </div>
+          </div>
+
+          <div class="download-meta">
+            <div><strong>Windows</strong><span>10/11 x64 · per-user NSIS installer · unsigned</span></div>
+            <div><strong>Linux</strong><span>AppImage from source · Linux or WSL2 · experimental</span></div>
+            <div><strong>License</strong><span>GPL-3.0-only · no telemetry</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section faq-section" id="faq" aria-labelledby="faq-title">
+        <div class="wrap faq-grid">
+          <div class="faq-head" data-reveal>
+            <span class="eyebrow">08 · FAQ</span>
+            <h2 id="faq-title">The honest answers.</h2>
+            <p>
+              What Polaris does, what it deliberately does not do, and which parts are still
+              roadmap. If a feature needs a server or a mod, the page says so.
+            </p>
+            <a class="text-link" href="#download">
+              Install it or build it
+              <svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg>
+            </a>
+          </div>
+          <div class="faq-list">
+            <details data-reveal>
+              <summary>Is Polaris a hacked client?</summary>
+              <p>
+                No. Polaris does not inject modules into Minecraft, alter network packets, or ship
+                combat automation. It manages instances, downloads files, writes vanilla options,
+                and launches Fabric when you ask it to. The performance work is standard mods and
+                JVM tuning.
+              </p>
+            </details>
+            <details data-reveal>
+              <summary>Which versions and loaders are supported?</summary>
+              <p>
+                Vanilla launching works across the versions Polaris installs. Mods, curated packs,
+                and <code>.mrpack</code> imports are Fabric-only. Quilt, Forge, and NeoForge packs
+                are rejected rather than half-installed. Fabric must support the selected Minecraft
+                version before a fabric instance can be created.
+              </p>
+            </details>
+            <details data-reveal>
+              <summary>Does it phone home?</summary>
+              <p>
+                There is no telemetry and no analytics endpoint. Polaris talks to Mojang, Fabric
+                meta, and Modrinth only when it needs version data, files, or updates. Microsoft
+                sign-in is the device-code flow with an Azure client ID you supply; offline accounts
+                need no network at all.
+              </p>
+            </details>
+            <details data-reveal>
+              <summary>How do shards work?</summary>
+              <p>
+                You start with 900 shards and earn 40 for every tracked hour of playtime. The
+                balance, owned items, and equipped badge and cape are stored in your local settings.
+                There is no checkout and no way to buy shards in this build.
+              </p>
+            </details>
+            <details data-reveal>
+              <summary>Will other players see my badge or cape in-game?</summary>
+              <p>
+                Not yet. Cosmetics show next to your account inside Polaris — on Home, in Settings,
+                and in the account switcher. In-game visibility for other players requires a
+                companion mod or server relay, which is not shipped in 0.3.0. The website and the
+                store label it as roadmap instead of pretending it already works.
+              </p>
+            </details>
+            <details data-reveal>
+              <summary>Can Polaris host a server?</summary>
+              <p>
+                Yes, as a local dedicated-server instance. It handles the EULA gate, port, server
+                mods, console, and a graceful stop. It is not a remote panel: there is no multi-user
+                management, scheduled restart, or public hosting service built in.
+              </p>
+            </details>
+            <details data-reveal>
+              <summary>Does Microsoft sign-in work?</summary>
+              <p>
+                The flow is implemented, but it needs your own Azure public-client ID. Without one,
+                use an offline account. Polaris never ships or borrows someone else's OAuth client,
+                and unapproved apps can receive a 403 from Minecraft Services.
+              </p>
+            </details>
+            <details data-reveal>
+              <summary>How do I install the Windows build?</summary>
+              <p>
+                Download Polaris-Setup.exe from this page and run it. The NSIS installer is per-user
+                and lets you choose a folder, so it does not need administrator rights. If SmartScreen
+                warns because the build is unsigned, verify the SHA-256 shown on this page, then choose
+                More info and Run anyway. Uninstall it from Settings → Apps.
+              </p>
+            </details>
+            <details data-reveal>
+              <summary>Why is the build unsigned?</summary>
+              <p>
+                The Windows installer and portable build are produced locally and are not code-signed,
+                so SmartScreen may warn. The SHA-256 is published in downloads/latest.json; verify the
+                file with <code>Get-FileHash .\Polaris-Setup.exe -Algorithm SHA256</code> before running
+                it. Sign with a certificate you control before distributing it more widely.
+              </p>
+            </details>
+            <details data-reveal>
+              <summary>Is there a macOS or Linux build?</summary>
+              <p>
+                Windows 10/11 is the primary target. Linux packaging is available from source:
+                <code>npm run dist:linux</code> on Linux or WSL2 produces an AppImage, and CI is
+                configured to build it on Ubuntu. Java and GPU discovery now have Linux paths, but
+                Linux runtime support is still experimental. macOS is not tested. Server instances
+                are managed from the same app.
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap">
+        <div class="footer-top">
+          <div class="footer-brand">
+            <a class="brand" href="#top" aria-label="Polaris home">
+              <img class="brand-mark" src="assets/polaris.svg" alt="" width="36" height="36" />
+              <span class="brand-name">Polaris</span>
+              <span class="brand-version">0.3</span>
+            </a>
+            <p>
+              A performance-first Minecraft launcher for Windows, with Linux builds from source.
+              Built with Electron, React, and a healthy distrust of default settings.
+            </p>
+            <span class="footer-badge"><i class="status-dot" aria-hidden="true"></i>0.3.0 · Aurora update</span>
+          </div>
+          <div class="footer-col">
+            <h3>Explore</h3>
+            <a href="#performance">Performance</a>
+            <a href="#features">Features</a>
+            <a href="#cosmetics">Cosmetics</a>
+            <a href="#screenshots">Screenshots</a>
+          </div>
+          <div class="footer-col">
+            <h3>Project</h3>
+            <a href="#download">Download &amp; build</a>
+            <a href="#faq">FAQ</a>
+            <a href="#game-ui">In-game options</a>
+            <a href="#top">Back to top</a>
+          </div>
+        </div>
+        <div class="footer-wordmark" aria-hidden="true">POLARIS</div>
+        <div class="footer-bottom">
+          <span>© <span id="year">2026</span> Polaris Client Contributors · GPL-3.0-only</span>
+          <span>Not affiliated with Mojang Studios or Microsoft. Minecraft is a trademark of Mojang Synergies AB.</span>
+        </div>
+      </div>
+    </footer>
+
+    <dialog class="lightbox" id="lightbox" aria-labelledby="lightbox-title">
+      <div class="lightbox-inner">
+        <button class="lightbox-close" id="lightbox-close" type="button" aria-label="Close screenshot">
+          <svg class="icon" aria-hidden="true"><use href="#i-close" /></svg>
+        </button>
+        <img id="lightbox-image" src="" alt="" />
+        <div class="lightbox-bar">
+          <div>
+            <strong id="lightbox-title"></strong>
+            <span id="lightbox-caption"></span>
+          </div>
+          <div class="lightbox-tools">
+            <span id="lightbox-count"></span>
+            <button type="button" id="lightbox-prev" aria-label="Previous screenshot">
+              <svg class="icon" aria-hidden="true"><use href="#i-left" /></svg>
+            </button>
+            <button type="button" id="lightbox-next" aria-label="Next screenshot">
+              <svg class="icon" aria-hidden="true"><use href="#i-right" /></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>

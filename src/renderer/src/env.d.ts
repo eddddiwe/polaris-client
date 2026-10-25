@@ -1,0 +1,23 @@
+import type { JSX as ReactJSX } from 'react'
+import type { PolarisAPI } from '@shared/api'
+
+declare global {
+  interface Window {
+    polaris: PolarisAPI
+  }
+
+  // React 19 removed the global JSX namespace. These aliases keep the
+  // explicit `JSX.Element` return annotations used across the renderer valid.
+  namespace JSX {
+    type Element = ReactJSX.Element
+    type ElementType = ReactJSX.ElementType
+    interface ElementClass extends ReactJSX.ElementClass {}
+    interface ElementAttributesProperty extends ReactJSX.ElementAttributesProperty {}
+    interface ElementChildrenAttribute extends ReactJSX.ElementChildrenAttribute {}
+    interface IntrinsicAttributes extends ReactJSX.IntrinsicAttributes {}
+    interface IntrinsicClassAttributes<T> extends ReactJSX.IntrinsicClassAttributes<T> {}
+    interface IntrinsicElements extends ReactJSX.IntrinsicElements {}
+  }
+}
+
+export {}

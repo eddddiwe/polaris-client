@@ -1,0 +1,94 @@
+{
+  "name": "polaris-client",
+  "version": "0.3.0",
+  "description": "Polaris Client - a performance-first Minecraft launcher and client platform",
+  "main": "./out/main/index.js",
+  "author": "Polaris Client Contributors",
+  "license": "GPL-3.0-only",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "dev:web": "vite --config vite.web.config.ts",
+    "build": "electron-vite build",
+    "build:web": "vite build --config vite.web.config.ts",
+    "site": "vite --config vite.site.config.ts",
+    "build:site": "vite build --config vite.site.config.ts",
+    "preview": "electron-vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "icons": "electron scripts/render-icons.cjs",
+    "dist": "node scripts/dist.cjs",
+    "dist:win": "node scripts/dist.cjs win",
+    "dist:win:portable": "node scripts/dist.cjs win-portable",
+    "dist:linux": "node scripts/dist.cjs linux",
+    "sync:download": "node scripts/sync-site-download.cjs",
+    "release:win": "npm run dist:win && npm run sync:download && npm run build:site",
+    "release:site": "npm run sync:download && npm run build:site"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.3.0",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  },
+  "build": {
+    "appId": "dev.polaris.client",
+    "productName": "Polaris Client",
+    "copyright": "Copyright © 2026 Polaris Client Contributors",
+    "artifactName": "Polaris-Client-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/main/**/*",
+      "out/preload/**/*",
+      "out/renderer/**/*",
+      "resources/**/*"
+    ],
+    "compression": "maximum",
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "Polaris-Client-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Polaris Client",
+      "uninstallDisplayName": "Polaris Client ${version}",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Polaris-Setup-${version}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icon.png",
+      "category": "Game",
+      "executableName": "polaris-client",
+      "artifactName": "Polaris-Client-${version}-${arch}.${ext}",
+      "synopsis": "Performance-first Minecraft launcher",
+      "description": "Polaris Client is a performance-first Minecraft launcher with hardware-aware profiles, Modrinth mods and modpacks, local server management, and local-first cosmetics."
+    }
+  }
+}
+
