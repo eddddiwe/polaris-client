@@ -60,6 +60,7 @@
       "resources/**/*"
     ],
     "compression": "maximum",
+    "publish": null,
     "win": {
       "target": [
         "nsis"
