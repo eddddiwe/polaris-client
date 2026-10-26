@@ -128,6 +128,12 @@ export function InstancesPage(): JSX.Element {
           <button className="btn btn-primary" onClick={openNewInstance}>
             <Icon name="plus" size={15} /> New instance
           </button>
+          <button className="btn btn-secondary" onClick={importModpack} disabled={importing}>
+            <Icon name="folder" size={15} /> Import .mrpack
+          </button>
+          <button className="btn btn-primary" onClick={checkUpdates}>
+            <Icon name="refresh" size={15} /> Check for updates
+          </button>
         </div>
       </div>
       {boot.updateInfo?.hasUpdate && (
@@ -148,11 +154,6 @@ export function InstancesPage(): JSX.Element {
           </button>
         </div>
       )}
-  <Icon name="folder" size={15} /> Import .mrpack
-</button>
-          <button className="btn btn-primary" onClick={checkUpdates}>
-            <Icon name="refresh" size={15} /> Check for updates
-          </button>
 
       {filtered.length === 0 ? (
         <EmptyState
