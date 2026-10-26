@@ -573,6 +573,19 @@ export class AppServices extends EventEmitter {
     return await this.mods.list(await this.instances.get(instanceId))
   }
 
+  async fabricLoaders(mcVersion: string): Promise<{ version: string; stable: boolean }[]> {
+    const loaders = await this.fabric.loaders(mcVersion)
+    return loaders.map((entry) => ({
+      version: entry.loader.version,
+      stable: entry.loader.stable
+    }))
+  }
+
+  async fabricEnsure(mcVersion: string, preferredLoader?: string): Promise<{ versionId: string; loaderVersion: string }> {
+    const install = await this.fabric.ensure(mcVersion, preferredLoader)
+    return { versionId: install.versionId, loaderVersion: install.loaderVersion }
+  }
+
   /** Check GitHub releases for a newer version. */
   async checkForUpdates(): Promise<UpdateInfo> {
     const currentVersion = app.getVersion()

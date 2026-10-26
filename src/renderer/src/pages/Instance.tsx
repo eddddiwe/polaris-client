@@ -9,6 +9,7 @@ import type {
   PerfProfileId
 } from '@shared/types'
 import { packsFor } from '@shared/packs'
+import type { PolarisAPI } from '@shared/api'
 import { errorMessage, formatBytes, formatPlaytime, formatRelative, useApp } from '../context'
 import { Icon } from '../components/Icons'
 import { EmptyState, Spinner, Switch } from '../components/Feedback'
@@ -427,7 +428,11 @@ function Overview({
             </div>
             <div>
               <span>Loader</span>
-              <b>{instance.loader === 'fabric' ? `Fabric ${instance.loaderVersion ?? ''}` : 'Vanilla'}</b>
+              {instance.loader === 'fabric' ? (
+                <FabricLoaderSelector instance={instance} api={api} reloadDetail={reloadDetail} toast={toast} />
+              ) : (
+                <b>Vanilla</b>
+              )}
             </div>
             <div>
               <span>Created</span>
@@ -1202,4 +1207,55 @@ function optionValue(key: string, value: string): string {
   if (value === 'true') return 'On'
   if (value === 'false') return 'Off'
   return value
+}
+
+function FabricLoaderSelector({ instance, api, reloadDetail, toast }: {
+  instance: import('@shared/types').InstanceConfig
+  api: PolarisAPI
+  reloadDetail: () => Promise<void>
+  toast: (message: string, kind?: 'info' | 'success' | 'error') => void
+}): JSX.Element {
+  const [loaders, setLoaders] = useState<{ version: string; stable: boolean }[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    api.fabricLoaders(instance.mcVersion).then((result) => {
+      if (!cancelled) {
+        setLoaders(result)
+        setLoading(false)
+      }
+    }).catch(() => {
+      if (!cancelled) setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [api, instance.mcVersion])
+
+  if (loading) return <span>Loading...</span>
+
+  return (
+    <select
+      className="select-sm"
+      value={instance.loaderVersion ?? ''}
+      onChange={async (e) => {
+        const newVersion = e.target.value
+        if (newVersion && newVersion !== instance.loaderVersion) {
+          try {
+            await api.fabricEnsure(instance.mcVersion, newVersion)
+            await api.updateInstance(instance.id, { loaderVersion: newVersion })
+            await reloadDetail()
+            toast(`Fabric loader updated to ${newVersion}`, 'success')
+          } catch (err) {
+            toast(errorMessage(err), 'error')
+          }
+        }
+      }}
+    >
+      {loaders.map((loader) => (
+        <option key={loader.version} value={loader.version}>
+          {loader.version} {loader.stable ? '(stable)' : '(beta)'}
+        </option>
+      ))}
+    </select>
+  )
 }
