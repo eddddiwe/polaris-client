@@ -55,8 +55,73 @@ jobs:
           path: out/site
           if-no-files-found: error
 
+  macos:
+    name: macOS installer
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Build DMG and ZIP
+        run: npm run dist:mac
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: polaris-macos
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: error
+
   linux:
     name: Linux AppImage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libfuse2 fuse rpm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Build AppImage
+        run: npm run dist:linux
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: polaris-linux
+          path: dist/*.AppImage
+          if-no-files-found: error
+
+  linux-deb:
+    name: Ubuntu DEB
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -78,14 +143,47 @@ jobs:
       - name: Tests
         run: npm test
 
-      - name: Build AppImage
-        run: npm run dist:linux
+      - name: Build DEB
+        run: npm run dist:linux:deb
 
-      - name: Upload Linux artifact
+      - name: Upload DEB artifact
         uses: actions/upload-artifact@v4
         with:
-          name: polaris-linux
-          path: dist/*.AppImage
+          name: polaris-linux-deb
+          path: dist/*.deb
+          if-no-files-found: error
+
+  linux-rpm:
+    name: Fedora RPM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libfuse2 fuse rpm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Build RPM
+        run: npm run dist:linux:rpm
+
+      - name: Upload RPM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: polaris-linux-rpm
+          path: dist/*.rpm
           if-no-files-found: error
 
   release:
@@ -93,7 +191,10 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs:
       - windows
+      - macos
       - linux
+      - linux-deb
+      - linux-rpm
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -104,11 +205,29 @@ jobs:
           name: polaris-windows
           path: release-assets/windows
 
+      - name: Download macOS installer
+        uses: actions/download-artifact@v4
+        with:
+          name: polaris-macos
+          path: release-assets/macos
+
       - name: Download Linux AppImage
         uses: actions/download-artifact@v4
         with:
           name: polaris-linux
           path: release-assets/linux
+
+      - name: Download Linux DEB
+        uses: actions/download-artifact@v4
+        with:
+          name: polaris-linux-deb
+          path: release-assets/linux-deb
+
+      - name: Download Linux RPM
+        uses: actions/download-artifact@v4
+        with:
+          name: polaris-linux-rpm
+          path: release-assets/linux-rpm
 
       - name: Attach installers to the release
         uses: softprops/action-gh-release@v2
@@ -118,6 +237,10 @@ jobs:
           files: |
             release-assets/windows/*.exe
             release-assets/windows/*.exe.blockmap
+            release-assets/macos/*.dmg
+            release-assets/macos/*.zip
             release-assets/linux/*.AppImage
+            release-assets/linux-deb/*.deb
+            release-assets/linux-rpm/*.rpm
           fail_on_unmatched_files: true
           generate_release_notes: true

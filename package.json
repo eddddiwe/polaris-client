@@ -22,6 +22,9 @@
     "dist:win": "node scripts/dist.cjs win",
     "dist:win:portable": "node scripts/dist.cjs win-portable",
     "dist:linux": "node scripts/dist.cjs linux",
+    "dist:mac": "node scripts/dist.cjs mac",
+    "dist:linux:deb": "node scripts/dist.cjs linux-deb",
+    "dist:linux:rpm": "node scripts/dist.cjs linux-rpm",
     "sync:download": "node scripts/sync-site-download.cjs",
     "release:win": "npm run dist:win && npm run sync:download && npm run build:site",
     "release:site": "npm run sync:download && npm run build:site"
@@ -79,9 +82,20 @@
       "deleteAppDataOnUninstall": false,
       "artifactName": "Polaris-Setup-${version}.${ext}"
     },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.games",
+      "artifactName": "Polaris-Client-${version}-${arch}.${ext}"
+    },
     "linux": {
       "target": [
-        "AppImage"
+        "AppImage",
+        "deb",
+        "rpm"
       ],
       "icon": "build/icon.png",
       "category": "Game",

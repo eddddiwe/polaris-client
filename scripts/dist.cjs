@@ -42,10 +42,10 @@ function run(command, args, label) {
 function main() {
   const requested = (process.argv[2] || '').toLowerCase()
   const target =
-    requested || (isWindows ? 'win' : process.platform === 'linux' ? 'linux' : '')
+    requested || (isWindows ? 'win' : process.platform === 'linux' ? 'linux' : process.platform === 'darwin' ? 'mac' : '')
 
-  if (!['win', 'win-portable', 'linux'].includes(target)) {
-    console.error('Unsupported packaging target. Use win, win-portable, or linux on a supported host.')
+  if (!['win', 'win-portable', 'linux', 'mac', 'linux-deb', 'linux-rpm'].includes(target)) {
+    console.error('Unsupported packaging target. Use win, win-portable, linux, mac, linux-deb, or linux-rpm on a supported host.')
     process.exit(1)
   }
 
@@ -67,6 +67,24 @@ function main() {
       path.join('scripts', 'prepare-win-codesign.ps1')
     ])
     run(npx, ['--no-install', 'electron-builder', '--win', target === 'win' ? 'nsis' : 'portable'])
+  } else if (target === 'mac') {
+    if (process.platform !== 'darwin') {
+      console.error('macOS artifacts need a macOS host. Use GitHub Actions or a macOS machine.')
+      process.exit(1)
+    }
+    run(npx, ['--no-install', 'electron-builder', '--mac', 'dmg', 'zip'])
+  } else if (target === 'linux-deb') {
+    if (process.platform !== 'linux') {
+      console.error('Linux artifacts need a Linux host. Use GitHub Actions, native Linux, or WSL2.')
+      process.exit(1)
+    }
+    run(npx, ['--no-install', 'electron-builder', '--linux', 'deb'])
+  } else if (target === 'linux-rpm') {
+    if (process.platform !== 'linux') {
+      console.error('Linux artifacts need a Linux host. Use GitHub Actions, native Linux, or WSL2.')
+      process.exit(1)
+    }
+    run(npx, ['--no-install', 'electron-builder', '--linux', 'rpm'])
   } else {
     if (process.platform !== 'linux') {
       console.error(
@@ -80,7 +98,7 @@ function main() {
 
   const dist = path.join(root, 'dist')
   if (fs.existsSync(dist)) {
-    const files = fs.readdirSync(dist).filter((name) => /\.(exe|AppImage|deb)$/i.test(name))
+    const files = fs.readdirSync(dist).filter((name) => /\.(exe|AppImage|deb|rpm|dmg|zip)$/i.test(name))
     if (files.length) {
       console.log('\nArtifacts:')
       for (const file of files) console.log(`  dist/${file}`)
