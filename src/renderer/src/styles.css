@@ -270,6 +270,39 @@ p {
   font-weight: 500;
   text-align: left;
   transition: background 0.16s, color 0.16s;
+  overflow: hidden;
+}
+
+.nav-item::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(255, 255, 255, 0.03) 1px, rgba(255, 255, 255, 0.03) 2px),
+    repeating-linear-gradient(90deg, transparent, transparent 1px, rgba(255, 255, 255, 0.03) 1px, rgba(255, 255, 255, 0.03) 2px);
+  background-size: 3px 3px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+
+.nav-item:hover::before {
+  opacity: 1;
+}
+
+.nav-item::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.08), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+.nav-item:hover::after {
+  opacity: 1;
 }
 
 .nav-item svg {
@@ -363,6 +396,40 @@ p {
   background: rgba(255, 255, 255, 0.03);
   text-align: left;
   transition: border-color 0.16s, background 0.16s;
+  position: relative;
+  overflow: hidden;
+}
+
+.account-chip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(255, 255, 255, 0.03) 1px, rgba(255, 255, 255, 0.03) 2px),
+    repeating-linear-gradient(90deg, transparent, transparent 1px, rgba(255, 255, 255, 0.03) 1px, rgba(255, 255, 255, 0.03) 2px);
+  background-size: 3px 3px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+
+.account-chip:hover::before {
+  opacity: 1;
+}
+
+.account-chip::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.08), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+.account-chip:hover::after {
+  opacity: 1;
 }
 
 .account-chip:hover {
@@ -596,6 +663,40 @@ button:focus-visible {
   border-radius: 8px;
   color: var(--muted);
   transition: background 0.15s, color 0.15s;
+  position: relative;
+  overflow: hidden;
+}
+
+.icon-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(255, 255, 255, 0.03) 1px, rgba(255, 255, 255, 0.03) 2px),
+    repeating-linear-gradient(90deg, transparent, transparent 1px, rgba(255, 255, 255, 0.03) 1px, rgba(255, 255, 255, 0.03) 2px);
+  background-size: 3px 3px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+
+.icon-btn:hover:not(:disabled)::before {
+  opacity: 1;
+}
+
+.icon-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.12), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+.icon-btn:hover:not(:disabled)::after {
+  opacity: 1;
 }
 
 .icon-btn:hover:not(:disabled) {
