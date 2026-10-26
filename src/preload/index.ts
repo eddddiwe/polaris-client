@@ -61,6 +61,7 @@ const api: PolarisAPI & { platform: NodeJS.Platform } = {
   settingsSnapshot: () => ipcRenderer.invoke(IPC.settingsSnapshot),
   checkForUpdates: () => ipcRenderer.invoke(IPC.checkForUpdates),
   installUpdate: () => ipcRenderer.invoke(IPC.installUpdate),
+  importMrpack: () => ipcRenderer.invoke(IPC.importMrpack),
   onProgress: (cb) => subscribe(EVENTS.progress, cb),
   onLaunchState: (cb) => subscribe(EVENTS.launchState, cb),
   onGameLog: (cb) => subscribe(EVENTS.gameLog, cb),

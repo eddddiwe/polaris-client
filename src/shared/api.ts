@@ -114,6 +114,7 @@ export interface PolarisAPI {
   settingsSnapshot(): Promise<Settings>
   checkForUpdates(): Promise<UpdateInfo>
   installUpdate(): Promise<void>
+  importMrpack(): Promise<InstanceSummary>
 
   onProgress(cb: (event: ProgressEvent) => void): () => void
   onLaunchState(cb: (state: LaunchState) => void): () => void

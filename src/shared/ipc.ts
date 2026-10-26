@@ -46,7 +46,8 @@ export const IPC = {
   settingsSnapshot: 'settings:snapshot',
   serverCommand: 'server:command',
   checkForUpdates: 'app:checkForUpdates',
-  installUpdate: 'app:installUpdate'
+  installUpdate: 'app:installUpdate',
+  importMrpack: 'app:importMrpack'
 } as const
 
 export const EVENTS = {

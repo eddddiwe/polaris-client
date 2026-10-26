@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
 import os from 'node:os'
-import { join } from 'node:path'
+import { join, dirname, resolve } from 'node:path'
+import { writeFile } from 'node:fs/promises'
 import { app, shell } from 'electron'
 import type {
   AccountSnapshot,
@@ -52,7 +53,8 @@ import { SettingsStore } from '../core/settings'
 import { InstanceStore } from '../core/instances'
 import { ModrinthClient, mapVersionEntry, type ModrinthVersion } from '../core/modrinth'
 import { ModsService } from '../core/mods'
-import { ModpackService } from '../core/modpacks'
+import { ModpackService, safeOverridePath } from '../core/modpacks'
+import { ensureDir } from '../core/fsutil'
 import { ServerService } from '../core/server'
 import { LaunchService } from '../core/launch'
 import { PACKS, packById } from '../core/packs'
@@ -605,6 +607,51 @@ export class AppServices extends EventEmitter {
     if (info.hasUpdate && info.downloadUrl) {
       await shell.openExternal(info.downloadUrl)
     }
+  }
+
+  /** Import a local .mrpack file: parse manifest, create instance, return summary. */
+  async importMrpack(): Promise<InstanceSummary> {
+    const { dialog } = await import('electron')
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Modpack Files', extensions: ['mrpack'] }]
+    })
+    if (!result.filePaths?.[0]) throw new Error('No file selected')
+
+    const AdmZip = (await import('adm-zip')).default
+    const zip = new AdmZip(result.filePaths[0])
+    const manifestEntry = zip.getEntry('manifest.json')
+    if (!manifestEntry) throw new Error('Invalid .mrpack: missing manifest.json')
+
+    const manifest = JSON.parse(zip.readAsText(manifestEntry))
+    const modCount = manifest.mods ? manifest.mods.length : 0
+    const modNames = manifest.mods?.map((m: any) => m.name).join(', ') || 'unknown'
+
+    const config = await this.instances.create(
+      {
+        name: manifest.name || 'Imported Modpack',
+        mcVersion: manifest.mc_version || '1.20.1',
+        loader: (manifest.loaders?.[0] || 'fabric') as LoaderType,
+        kind: 'game',
+        packs: []
+      },
+      this.settingsStore.get(),
+      { memoryMb: this.hardware.recommendedMemoryMb }
+    )
+
+    // Extract overrides if present
+    const instanceDir = join(this.paths.instances, config.id)
+    for (const entry of zip.getEntries()) {
+      if (entry.isDirectory) continue
+      const target =
+        safeOverridePath(instanceDir, entry.entryName, 'overrides/') ??
+        safeOverridePath(instanceDir, entry.entryName, 'client-overrides/')
+      if (!target) continue
+      await ensureDir(dirname(target))
+      await writeFile(target, entry.getData())
+    }
+
+    return await this.summarize(await this.instances.get(config.id))
   }
 }
 
