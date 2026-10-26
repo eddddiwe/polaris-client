@@ -5338,6 +5338,18 @@ body[data-wallpaper='none'] .wallpaper {
   background: rgba(251, 191, 36, 0.09);
 }
 
+.rarity-mythic {
+  color: #ff6b6b;
+  border-color: rgba(255, 107, 107, 0.3);
+  background: rgba(255, 107, 107, 0.09);
+}
+
+.rarity-exclusive {
+  color: #00ff88;
+  border-color: rgba(0, 255, 136, 0.3);
+  background: rgba(0, 255, 136, 0.09);
+}
+
 .cosmetic-copy p {
   margin: 6px 0 14px;
   font-size: 10px;

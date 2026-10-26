@@ -226,6 +226,26 @@ export const COSMETICS: CosmeticItem[] = [
     colors: ['#a78bfa', '#7c3aed']
   },
   {
+    id: 'badge-mythic',
+    name: 'Mythic Core',
+    kind: 'badge',
+    tagline: 'Power beyond comprehension.',
+    rarity: 'mythic',
+    price: 2500,
+    glyph: 'nova',
+    colors: ['#ff6b6b', '#c0392b']
+  },
+  {
+    id: 'badge-exclusive',
+    name: "Founder's Mark",
+    kind: 'badge',
+    tagline: 'For those who were here from the start.',
+    rarity: 'exclusive',
+    price: 5000,
+    glyph: 'crown',
+    colors: ['#00ff88', '#00b894']
+  },
+  {
     id: 'cape-classic',
     name: 'Midnight',
     kind: 'cape',
@@ -324,6 +344,26 @@ export const COSMETICS: CosmeticItem[] = [
     price: 600,
     colors: ['#f8fafc', '#1e293b'],
     pattern: 'checker'
+  },
+  {
+    id: 'cape-mythic',
+    name: 'Mythic Shroud',
+    kind: 'cape',
+    tagline: 'Power woven into fabric.',
+    rarity: 'mythic',
+    price: 2500,
+    colors: ['#ff6b6b', '#991b1b'],
+    pattern: 'flames'
+  },
+  {
+    id: 'cape-exclusive',
+    name: "Founder's Cloak",
+    kind: 'cape',
+    tagline: 'Worn by those who built the foundation.',
+    rarity: 'exclusive',
+    price: 5000,
+    colors: ['#00ff88', '#00b894'],
+    pattern: 'gradient'
   },
   {
     id: 'cape-spiral',
