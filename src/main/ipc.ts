@@ -135,6 +135,7 @@ export function registerIpc(services: AppServices): void {
 
   handle(IPC.checkForUpdates, async () => services.checkForUpdates())
   handle(IPC.installUpdate, async () => services.installUpdate())
+  handle(IPC.importMrpack, async () => services.importMrpack())
 
   ipcMain.handle(IPC.settingsChooseJava, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
