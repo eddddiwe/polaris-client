@@ -6,7 +6,7 @@ export type ModSource = 'performance' | 'qol' | 'hud' | 'shaders' | 'server' | '
 export type ModSortIndex = 'relevance' | 'downloads' | 'follows' | 'newest' | 'updated'
 export type WallpaperPreset = 'none' | 'aurora' | 'nebula' | 'starfield' | 'grid' | 'custom'
 export type CosmeticKind = 'badge' | 'cape'
-export type CosmeticRarity = 'common' | 'rare' | 'epic' | 'legendary'
+export type CosmeticRarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'exclusive'
 
 export interface JavaInfo {
   path: string
