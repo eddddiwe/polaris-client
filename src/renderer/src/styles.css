@@ -546,8 +546,8 @@ p {
   position: absolute;
   inset: 0;
   background-image:
-    repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(255, 255, 255, 0.03) 1px, rgba(255, 255, 255, 0.03) 2px),
-    repeating-linear-gradient(90deg, transparent, transparent 1px, rgba(255, 255, 255, 0.03) 1px, rgba(255, 255, 255, 0.03) 2px);
+    repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(255, 255, 255, 0.06) 1px, rgba(255, 255, 255, 0.06) 2px),
+    repeating-linear-gradient(90deg, transparent, transparent 1px, rgba(255, 255, 255, 0.06) 1px, rgba(255, 255, 255, 0.06) 2px);
   background-size: 3px 3px;
   opacity: 0;
   transition: opacity 0.2s;
@@ -563,7 +563,7 @@ p {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.12), transparent 70%);
+  background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255, 255, 255, 0.2), transparent 60%);
   opacity: 0;
   transition: opacity 0.3s;
   pointer-events: none;
@@ -571,6 +571,11 @@ p {
 
 .btn:hover:not(:disabled)::after {
   opacity: 1;
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.1);
 }
 
 .btn:disabled {
