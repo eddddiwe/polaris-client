@@ -226,6 +226,36 @@ export const COSMETICS: CosmeticItem[] = [
     colors: ['#a78bfa', '#7c3aed']
   },
   {
+    id: 'cape-classic',
+    name: 'Midnight',
+    kind: 'cape',
+    tagline: 'The default Polaris silhouette.',
+    rarity: 'common',
+    price: 0,
+    colors: ['#1e1b4b', '#8b5cf6'],
+    pattern: 'classic'
+  },
+  {
+    id: 'cape-grid',
+    name: 'Night Grid',
+    kind: 'cape',
+    tagline: 'A neon horizon that follows your back.',
+    rarity: 'rare',
+    price: 600,
+    colors: ['#0f172a', '#22d3ee'],
+    pattern: 'grid'
+  },
+  {
+    id: 'cape-aurora',
+    name: 'Aurora Drift',
+    kind: 'cape',
+    tagline: 'Curtains of light with every step.',
+    rarity: 'epic',
+    price: 900,
+    colors: ['#2dd4bf', '#7c3aed'],
+    pattern: 'aurora'
+  },
+  {
     id: 'cape-supernova',
     name: 'Supernova',
     kind: 'cape',
