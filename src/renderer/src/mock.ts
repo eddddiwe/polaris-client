@@ -993,6 +993,25 @@ export function createMockApi(): Window['polaris'] {
     settingsSnapshot: async () => settings,
     checkForUpdates: async () => ({ hasUpdate: false, currentVersion: '0.3.0', latestVersion: '0.3.0', downloadUrl: '', publishedAt: new Date().toISOString() }),
     installUpdate: async () => {},
+    importMrpack: async () => {
+      const created: InstanceSummary = {
+        ...baseInstance(
+          `imported-modpack-${Math.random().toString(16).slice(2, 8)}`,
+          'Imported Modpack',
+          '1.21.1',
+          'fabric',
+          '#34d399',
+          4096,
+          [],
+          0,
+          0
+        ),
+        kind: 'game'
+      }
+      instances = [created, ...instances]
+      await sleep(300)
+      return created
+    },
     onProgress: () => () => undefined,
     onLaunchState: () => () => undefined,
     onGameLog: () => () => undefined,

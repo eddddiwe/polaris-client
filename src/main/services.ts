@@ -20,6 +20,7 @@ import type {
   JavaInfo,
   JvmPresetId,
   LaunchState,
+  LoaderType,
   ModCategory,
   ModDetail,
   ModInstallResult,
@@ -61,7 +62,6 @@ import { PACKS, packById } from '../core/packs'
 import { detectHardware, makePlan, applyOptions, readGameUi, writeGameUi } from '../core/performance'
 import { CosmeticsService } from '../core/cosmetics'
 import { scanJava, inspectJava } from '../core/java'
-import { ensureDir } from '../core/fsutil'
 
 export class AppServices extends EventEmitter {
   readonly paths = createPaths(resolveRoot())
