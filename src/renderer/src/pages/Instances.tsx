@@ -6,6 +6,12 @@ import { EmptyState } from '../components/Feedback'
 export function InstancesPage(): JSX.Element {
   const { instances, navigate, launch, gameRunning, openNewInstance, api, refresh, toast, selectInstance, confirm } = useApp()
   const [query, setQuery] = useState('')
+  const [updateInfo, setUpdateInfo] = useState<{
+    hasUpdate: boolean
+    latestVersion: string
+    currentVersion: string
+    releaseNotes?: string
+  } | null>(null)
 
   const filtered = useMemo(
     () => instances.filter((instance) => `${instance.name} ${instance.mcVersion} ${instance.loader}`.toLowerCase().includes(query.toLowerCase())),
@@ -87,6 +93,25 @@ export function InstancesPage(): JSX.Element {
     }
   }
 
+  const checkUpdates = async () => {
+    try {
+      const info = await api.checkForUpdates()
+      setUpdateInfo({
+        hasUpdate: info.hasUpdate,
+        latestVersion: info.latestVersion ?? 'unknown',
+        currentVersion: boot.appVersion ?? 'unknown',
+        releaseNotes: info.releaseNotes
+      })
+      if (info.hasUpdate) {
+        toast(`Update available: v${info.latestVersion}`, 'info')
+      } else {
+        toast('You are on the latest version', 'success')
+      }
+    } catch (error) {
+      toast(errorMessage(error), 'error')
+    }
+  }
+
   return (
     <div className="instances-page">
       <div className="page-head">
@@ -94,6 +119,24 @@ export function InstancesPage(): JSX.Element {
           <span className="eyebrow">Workspace</span>
           <h1>Instances</h1>
           <p className="page-sub">Isolated game directories, per-instance Java, mods and performance policy.</p>
+          {boot.updateInfo?.hasUpdate && (
+            <div className="update-banner">
+              <div className="update-info">
+                <strong>Update available: v{boot.updateInfo.latestVersion}</strong>
+                <span>Current: v{boot.updateInfo.currentVersion}</span>
+                {boot.updateInfo.releaseNotes && <p className="release-notes">{boot.updateInfo.releaseNotes}</p>}
+              </div>
+              <button
+                className="btn btn-primary"
+                onClick={async () => {
+                  await api.installUpdate()
+                  toast('Opening download page...', 'info')
+                }}
+              >
+                <Icon name="download" size={14} /> Download Update
+              </button>
+            </div>
+          )}
         </div>
         <div className="page-actions">
           <div className="search-field compact">
@@ -108,6 +151,9 @@ export function InstancesPage(): JSX.Element {
       <button className="btn btn-secondary" onClick={importModpack} disabled={importing}>
   <Icon name="folder" size={15} /> Import .mrpack
 </button>
+          <button className="btn btn-primary" onClick={checkUpdates}>
+            <Icon name="refresh" size={15} /> Check for updates
+          </button>
 
       {filtered.length === 0 ? (
         <EmptyState
