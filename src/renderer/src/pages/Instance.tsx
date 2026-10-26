@@ -130,6 +130,7 @@ function Overview({
   const { boot, api, java, settings, gameRunning, activeInstance } = useApp()
   const [busy, setBusy] = useState<string | null>(null)
   const [memory, setMemory] = useState(instance.memoryMb)
+  const [name, setName] = useState(instance.name)
   const [notes, setNotes] = useState(instance.notes)
   const [saving, setSaving] = useState(false)
   const [port, setPort] = useState(instance.port ?? 25565)
@@ -155,6 +156,16 @@ function Overview({
     }
   }
 
+  const saveName = async (): Promise<void> => {
+    if (!name.trim() || name === instance.name) return
+    try {
+      await api.updateInstance(instance.id, { name: name.trim() })
+      await refresh()
+      toast('Instance name updated', 'success')
+    } catch (error) {
+      toast(errorMessage(error), 'error')
+    }
+  }
   const saveMemory = async (): Promise<void> => {
     setSaving(true)
     try {
@@ -422,6 +433,24 @@ function Overview({
             </div>
           </div>
           <div className="kv-list">
+            <div>
+              <span>Name</span>
+              <div className="row-input">
+                <input
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  onKeyDown={(event) => event.key === 'Enter' && void saveName()}
+                  className="input-sm"
+                />
+                <button
+                  className="btn btn-soft btn-sm"
+                  onClick={() => void saveName()}
+                  disabled={name.trim() === instance.name || !name.trim()}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
             <div>
               <span>Minecraft</span>
               <b>{instance.mcVersion}</b>
