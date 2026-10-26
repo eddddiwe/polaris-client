@@ -34,64 +34,6 @@ export function InstancesPage(): JSX.Element {
       toast(errorMessage(error), 'error')
     }
   }
-  const [importing, setImporting] = useState(false)
-
-  const importModpack = async () => {
-    // Step 1: Prompt for CurseForge ID or .mrpack upload
-    const projectId = window.prompt(
-      'CurseForge Project ID (leave empty to upload .mrpack file):'
-    )
-    
-    if (projectId?.trim()) {
-      // CurseForge ID provided (placeholder - swap with your API logic later)
-      toast('CurseForge integration pending – add your API key later')
-      return
-    }
-
-    setImporting(true)
-    try {
-      // Step 2: Upload .mrpack file via Electron dialog
-      const { filePaths } = await window.require('electron').dialog.showOpenDialog({
-        properties: ['openFile'],
-        filters: [{ name: 'Modpack Files', extensions: ['mrpack'] }]
-      })
-      if (!filePaths?.[0]) return // user cancelled
-
-      // Step 3: Validate file is a valid .mrpack (zip with manifest.json)
-      const zip = await window.require('jszip').loadAsync(
-        window.require('fs').readFileSync(filePaths[0])
-      )
-      if (!zip.file('manifest.json')) {
-        toast('Invalid .mrpack: missing manifest.json')
-        return
-      }
-
-      // Step 4: Parse the manifest
-      const manifest = JSON.parse(
-        await zip.file('manifest.json').async('text')
-      )
-      const modCount = manifest.mods ? manifest.mods.length : 0
-      const modNames = manifest.mods?.map((m: any) => m.name).join(', ') || 'unknown'
-      toast(`Imported modpack with ${modCount} mods: ${modNames}`)
-
-      // Step 5: Auto-create instance with extracted modpack data
-      try {
-        await api.createInstance({
-          name: manifest.name || 'Imported Modpack',
-          mcVersion: manifest.mc_version || '1.20.1',
-          loader: manifest.loaders?.[0] || 'fabric'
-        })
-        toast('Instance created successfully – mods can be installed from the mod list below')
-      } catch (createErr) {
-        toast('Failed to create instance: ' + (createErr instanceof Error ? createErr.message : 'unknown error'))
-      }
-      toast('Modpack parsed – ready for instance creation')
-    } catch (err) {
-      toast('Failed to parse .mrpack: ' + (err instanceof Error ? err.message : 'unknown error'))
-    } finally {
-      setImporting(false)
-    }
-  }
 
   const checkUpdates = async () => {
     try {
@@ -119,24 +61,6 @@ export function InstancesPage(): JSX.Element {
           <span className="eyebrow">Workspace</span>
           <h1>Instances</h1>
           <p className="page-sub">Isolated game directories, per-instance Java, mods and performance policy.</p>
-          {boot.updateInfo?.hasUpdate && (
-            <div className="update-banner">
-              <div className="update-info">
-                <strong>Update available: v{boot.updateInfo.latestVersion}</strong>
-                <span>Current: v{boot.updateInfo.currentVersion}</span>
-                {boot.updateInfo.releaseNotes && <p className="release-notes">{boot.updateInfo.releaseNotes}</p>}
-              </div>
-              <button
-                className="btn btn-primary"
-                onClick={async () => {
-                  await api.installUpdate()
-                  toast('Opening download page...', 'info')
-                }}
-              >
-                <Icon name="download" size={14} /> Download Update
-              </button>
-            </div>
-          )}
         </div>
         <div className="page-actions">
           <div className="search-field compact">
@@ -146,14 +70,29 @@ export function InstancesPage(): JSX.Element {
           <button className="btn btn-primary" onClick={openNewInstance}>
             <Icon name="plus" size={15} /> New instance
           </button>
-        </div>
-      </div>
-      <button className="btn btn-secondary" onClick={importModpack} disabled={importing}>
-  <Icon name="folder" size={15} /> Import .mrpack
-</button>
           <button className="btn btn-primary" onClick={checkUpdates}>
             <Icon name="refresh" size={15} /> Check for updates
           </button>
+        </div>
+      </div>
+      {boot.updateInfo?.hasUpdate && (
+        <div className="update-banner">
+          <div className="update-info">
+            <strong>Update available: v{boot.updateInfo.latestVersion}</strong>
+            <span>Current: v{boot.updateInfo.currentVersion}</span>
+            {boot.updateInfo.releaseNotes && <p className="release-notes">{boot.updateInfo.releaseNotes}</p>}
+          </div>
+          <button
+            className="btn btn-primary"
+            onClick={async () => {
+              await api.installUpdate()
+              toast('Opening download page...', 'info')
+            }}
+          >
+            <Icon name="download" size={14} /> Download Update
+          </button>
+        </div>
+      )}
 
       {filtered.length === 0 ? (
         <EmptyState
