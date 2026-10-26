@@ -129,6 +129,18 @@ export class InstanceStore {
       await ensureDir(join(root, folder))
     }
     await ensureServersDat(root)
+    // Copy PolarisConfig mod if bundled
+    try {
+      const { copyFile } = await import('node:fs/promises')
+      const { app } = await import('electron')
+      const resourcePath = join(app.getAppPath(), 'resources', 'mods', 'polaris-config-1.0.0.jar')
+      const destPath = join(root, 'mods', 'polaris-config-1.0.0.jar')
+      if (await pathExists(resourcePath) && !(await pathExists(destPath))) {
+        await copyFile(resourcePath, destPath)
+      }
+    } catch {
+      // Ignore errors - mod is optional
+    }
   }
 
   async isInstalled(config: InstanceConfig): Promise<boolean> {
