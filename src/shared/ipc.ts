@@ -27,6 +27,8 @@ export const IPC = {
   packsStatus: 'packs:status',
   packsApply: 'packs:apply',
   packsCreateFromModpack: 'packs:createFromModpack',
+  fabricLoaders: 'fabric:loaders',
+  fabricEnsure: 'fabric:ensure',
   perfScan: 'perf:scan',
   perfPlan: 'perf:plan',
   perfApply: 'perf:apply',

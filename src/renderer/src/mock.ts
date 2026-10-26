@@ -692,6 +692,8 @@ export function createMockApi(): Window['polaris'] {
     openInstanceFolder: async () => undefined,
     openLogsFolder: async (_id) => undefined,
     versions: async (includeSnapshots) => (includeSnapshots ? versions : versions.filter((v) => v.type === 'release')),
+    fabricLoaders: async (mcVersion) => [{ version: '0.16.0', stable: true }, { version: '0.15.11', stable: true }],
+    fabricEnsure: async (mcVersion, preferredLoader) => ({ versionId: `fabric-loader-${preferredLoader ?? '0.16.0'}-${mcVersion}`, loaderVersion: preferredLoader ?? '0.16.0' }),
     getInstance: async (id) => {
       await sleep(80)
       return detailFor(id)

@@ -48,6 +48,8 @@ export interface PolarisAPI {
   openLogsFolder(id: string): Promise<void>
 
   versions(includeSnapshots: boolean): Promise<VersionSummary[]>
+  fabricLoaders(mcVersion: string): Promise<{ version: string; stable: boolean }[]>
+  fabricEnsure(mcVersion: string, preferredLoader?: string): Promise<{ versionId: string; loaderVersion: string }>
   getInstance(id: string): Promise<InstanceDetail>
   createInstance(input: CreateInstanceInput): Promise<InstanceSummary>
   updateInstance(id: string, patch: Partial<InstanceConfig>): Promise<InstanceSummary>

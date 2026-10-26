@@ -560,6 +560,19 @@ export class AppServices extends EventEmitter {
     return await this.mods.list(await this.instances.get(instanceId))
   }
 
+  async fabricLoaders(mcVersion: string): Promise<{ version: string; stable: boolean }[]> {
+    const loaders = await this.fabric.loaders(mcVersion)
+    return loaders.map((entry) => ({
+      version: entry.loader.version,
+      stable: entry.loader.stable
+    }))
+  }
+
+  async fabricEnsure(mcVersion: string, preferredLoader?: string): Promise<{ versionId: string; loaderVersion: string }> {
+    const install = await this.fabric.ensure(mcVersion, preferredLoader)
+    return { versionId: install.versionId, loaderVersion: install.loaderVersion }
+  }
+
   /** Check GitHub releases for a newer version. */
   async checkForUpdates(): Promise<UpdateInfo> {
     const currentVersion = app.getVersion()
@@ -599,12 +612,55 @@ export class AppServices extends EventEmitter {
     return 0
   }
 
-  /** Open the download page for the latest release. */
+  /** Download and install the latest release. */
   async installUpdate(): Promise<void> {
     const info = await this.checkForUpdates()
-    if (info.hasUpdate && info.downloadUrl) {
-      await shell.openExternal(info.downloadUrl)
+    if (!info.hasUpdate || !info.downloadUrl) return
+
+    // Download the installer to a temp location
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    const os = await import('node:os')
+    const https = await import('node:https')
+
+    const tempDir = os.tmpdir()
+    const fileName = info.downloadUrl.split('/').pop() || 'Polaris-Setup.exe'
+    const destPath = path.join(tempDir, fileName)
+
+    // Download the file
+    await new Promise<void>((resolve, reject) => {
+      const file = fs.createWriteStream(destPath)
+      https.get(info.downloadUrl, (response) => {
+        if (response.statusCode !== 200) {
+          reject(new Error(`Download failed: ${response.statusCode}`))
+          return
+        }
+        response.pipe(file)
+        file.on('finish', () => {
+          file.close()
+          resolve()
+        })
+      }).on('error', (err) => {
+        fs.unlinkSync(destPath)
+        reject(err)
+      })
+    })
+
+    // Run the installer
+    const { spawn } = await import('node:child_process')
+    if (process.platform === 'win32') {
+      // NSIS installer - run with /S for silent install
+      spawn(destPath, ['/S'], { detached: true, stdio: 'ignore' }).unref()
+    } else if (process.platform === 'darwin') {
+      // macOS - open the DMG
+      await shell.openPath(destPath)
+    } else {
+      // Linux - open the file
+      await shell.openPath(destPath)
     }
+
+    // Quit the app after a short delay
+    setTimeout(() => app.quit(), 1000)
   }
 }
 
