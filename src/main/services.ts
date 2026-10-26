@@ -55,7 +55,7 @@ import { InstanceStore } from '../core/instances'
 import { ensureServersDat } from '../core/nbt'
 import { ModrinthClient, mapVersionEntry, type ModrinthVersion } from '../core/modrinth'
 import { ModsService } from '../core/mods'
-import { ModpackService, safeOverridePath } from '../core/modpacks'
+import { ModpackService, safeOverridePath, parseMrpackIndex } from '../core/modpacks'
 import { ensureDir } from '../core/fsutil'
 import { ServerService } from '../core/server'
 import { LaunchService } from '../core/launch'
@@ -631,8 +631,46 @@ export class AppServices extends EventEmitter {
 
     const AdmZip = (await import('adm-zip')).default
     const zip = new AdmZip(result.filePaths[0])
+
+    // Try Modrinth format first (modrinth.index.json)
+    const modrinthEntry = zip.getEntry('modrinth.index.json')
+    if (modrinthEntry) {
+      const plan = parseMrpackIndex(zip.readAsText(modrinthEntry), '1.21.1')
+      const config = await this.instances.create(
+        {
+          name: plan.name || 'Imported Modpack',
+          mcVersion: plan.mcVersion,
+          loader: plan.loader,
+          kind: 'game',
+          packs: []
+        },
+        this.settingsStore.get(),
+        { memoryMb: this.hardware.recommendedMemoryMb }
+      )
+      if (plan.loaderVersion) {
+        await this.instances.update(config.id, { loaderVersion: plan.loaderVersion })
+      }
+
+      // Populate: download mods + extract overrides
+      const populated = await this.modpacks.populate(config, result.filePaths[0], plan, { includeOptional: false })
+      await this.instances.update(config.id, {
+        modpack: {
+          projectId: 'local',
+          slug: 'local',
+          name: plan.name,
+          versionId: plan.packVersion,
+          versionNumber: plan.packVersion,
+          filesTotal: plan.files.length,
+          filesInstalled: populated.filesInstalled
+        },
+        packs: []
+      })
+      return await this.summarize(await this.instances.get(config.id))
+    }
+
+    // Fall back to CurseForge format (manifest.json)
     const manifestEntry = zip.getEntry('manifest.json')
-    if (!manifestEntry) throw new Error('Invalid .mrpack: missing manifest.json')
+    if (!manifestEntry) throw new Error('Invalid .mrpack: missing manifest.json or modrinth.index.json')
 
     const manifest = JSON.parse(zip.readAsText(manifestEntry))
     const modCount = manifest.mods ? manifest.mods.length : 0
