@@ -477,7 +477,7 @@ export function SettingsPage(): JSX.Element {
                 className="btn btn-primary"
                 onClick={async () => {
                   await api.installUpdate()
-                  toast('Opening download page...', 'info')
+                  toast('Downloading and installing update...', 'info')
                 }}
               >
                 <Icon name="download" size={14} /> Download Update

@@ -92,18 +92,18 @@ export function InstancesPage(): JSX.Element {
           </button>
         </div>
       </div>
-      {boot.updateInfo?.hasUpdate && (
+      {updateInfo?.hasUpdate && (
         <div className="update-banner">
           <div className="update-info">
-            <strong>Update available: v{boot.updateInfo.latestVersion}</strong>
-            <span>Current: v{boot.updateInfo.currentVersion}</span>
-            {boot.updateInfo.releaseNotes && <p className="release-notes">{boot.updateInfo.releaseNotes}</p>}
+            <strong>Update available: v{updateInfo.latestVersion}</strong>
+            <span>Current: v{updateInfo.currentVersion}</span>
+            {updateInfo.releaseNotes && <p className="release-notes">{updateInfo.releaseNotes}</p>}
           </div>
           <button
             className="btn btn-primary"
             onClick={async () => {
               await api.installUpdate()
-              toast('Opening download page...', 'info')
+              toast('Downloading and installing update...', 'info')
             }}
           >
             <Icon name="download" size={14} /> Download Update
