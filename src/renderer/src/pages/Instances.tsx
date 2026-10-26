@@ -4,7 +4,7 @@ import { Icon } from '../components/Icons'
 import { EmptyState } from '../components/Feedback'
 
 export function InstancesPage(): JSX.Element {
-  const { instances, navigate, launch, gameRunning, openNewInstance, api, refresh, toast, selectInstance, confirm } = useApp()
+  const { instances, navigate, launch, gameRunning, openNewInstance, api, refresh, toast, selectInstance, confirm, boot } = useApp()
   const [query, setQuery] = useState('')
   const [updateInfo, setUpdateInfo] = useState<{
     hasUpdate: boolean
