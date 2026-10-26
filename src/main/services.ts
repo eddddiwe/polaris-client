@@ -523,7 +523,8 @@ export class AppServices extends EventEmitter {
   }
 
   async beginMicrosoftLogin(): Promise<import('../shared/types').DeviceCodeInfo> {
-    return await this.auth.beginDeviceLogin(this.settingsStore.get().msClientId, {
+    const clientId = this.settingsStore.get().msClientId || '09aa1d05-9369-4725-bdb8-a46e54149e71'
+    return await this.auth.beginDeviceLogin(clientId, {
       onDeviceCode: (info) => this.emit('device-code', info),
       onAccount: (account) => this.emit('account-changed', this.accountSnapshot()),
       onError: (message) => this.emit('account-error', message)

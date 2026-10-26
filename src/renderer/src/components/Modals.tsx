@@ -301,7 +301,6 @@ export function AccountModal({
   const { api, boot, settings, toast, refresh } = useApp()
   const [tab, setTab] = useState<'offline' | 'microsoft'>('offline')
   const [name, setName] = useState('')
-  const [clientId, setClientId] = useState(settings.msClientId)
   const [device, setDevice] = useState<DeviceCodeInfo | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -321,20 +320,10 @@ export function AccountModal({
     }
   }
 
-  const saveClientId = async (): Promise<void> => {
-    try {
-      await updateSettings({ msClientId: clientId.trim() })
-      toast('Microsoft client ID saved', 'success')
-    } catch (err) {
-      setError(errorMessage(err))
-    }
-  }
-
   const signIn = async (): Promise<void> => {
     setBusy(true)
     setError('')
     try {
-      if (clientId.trim() !== settings.msClientId) await updateSettings({ msClientId: clientId.trim() })
       const info = await api.microsoftLogin()
       setDevice(info)
     } catch (err) {
@@ -400,38 +389,6 @@ export function AccountModal({
         </>
       ) : (
         <>
-          <p className="modal-copy">
-            Polaris does not ship a Microsoft OAuth client. Register your own free Azure app (public client) and paste its
-            client ID. No client secret is needed.
-          </p>
-          <ol className="steps">
-            <li>
-              Open{' '}
-              <button
-                className="link"
-                onClick={() => void api.openExternal('https://learn.microsoft.com/entra/identity-platform/quickstart-register-app')}
-              >
-                Azure app registrations
-              </button>{' '}
-              and create an app.
-            </li>
-            <li>Add the personal Microsoft account sign-in type, then enable “Allow public client flows”.</li>
-            <li>Copy the Application (client) ID into the field below.</li>
-          </ol>
-          <div className="field">
-            <label htmlFor="client-id">Application client ID</label>
-            <div className="row-input">
-              <input
-                id="client-id"
-                value={clientId}
-                placeholder="00000000-0000-0000-0000-000000000000"
-                onChange={(event) => setClientId(event.target.value)}
-              />
-              <button className="btn btn-ghost" onClick={() => void saveClientId()} disabled={!clientId.trim()}>
-                Save
-              </button>
-            </div>
-          </div>
           {device ? (
             <div className="device-code">
               <span className="eyebrow">Enter this code</span>
@@ -448,19 +405,12 @@ export function AccountModal({
             </div>
           ) : (
             <div className="modal-actions">
-              <button className="btn btn-primary" onClick={() => void signIn()} disabled={busy || !clientId.trim()}>
+              <button className="btn btn-primary" onClick={() => void signIn()} disabled={busy}>
                 {busy ? <span className="spinner spinner-sm" /> : <Icon name="user" size={15} />} Sign in with Microsoft
               </button>
             </div>
           )}
-          <p className="fine-print">
-            Minecraft Services only accepts authorized applications. A new Azure app can complete the Microsoft and Xbox
-            steps but still be rejected with “Invalid app registration.” Check Mojang’s access process at{' '}
-            <button className="link" onClick={() => void api.openExternal('https://aka.ms/AppRegInfo')}>
-              aka.ms/AppRegInfo
-            </button>
-            . Polaris will not reuse another launcher’s client ID or tokens.
-          </p>
+          {error && <p className="error-text">{error}</p>}
         </>
       )}
 

@@ -15,7 +15,7 @@ export function defaultSettings(root: string): Settings {
     dataDir: root,
     javaPath: '',
     memoryMb: 4096,
-    msClientId: '',
+    msClientId: '09aa1d05-9369-4725-bdb8-a46e54149e71',
     closeLauncherOnPlay: true,
     lowerLauncherPriority: true,
     pauseUiDuringGame: true,
