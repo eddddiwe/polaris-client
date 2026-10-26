@@ -12,6 +12,7 @@ export function StorePage(): JSX.Element {
   const [snapshot, setSnapshot] = useState<CosmeticSnapshot | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
   const [busy, setBusy] = useState<string | null>(null)
+  const [showCosmetics, setShowCosmetics] = useState(boot.appVersion >= '0.3.3')
   const [claiming, setClaiming] = useState(false)
   const active = boot.accounts.find((account) => account.id === boot.activeAccountId)
 
@@ -175,6 +176,7 @@ export function StorePage(): JSX.Element {
         <span className="panel-hint">Unlocks are stored locally · no real-money purchases</span>
       </div>
 
+      {showCosmetics ? (
       <div className="cosmetic-grid">
         {items.map((item) => {
           const owned = snapshot.owned.includes(item.id)
@@ -235,6 +237,11 @@ export function StorePage(): JSX.Element {
           )
         })}
       </div>
+    ) : (
+      <div className="cosmetic-grid-dimmed">
+        <p>Cosmetics coming in update 0.3.3</p>
+      </div>
+    )}
 
       <section className="store-notes">
         <div className="store-note">
@@ -262,6 +269,18 @@ export function StorePage(): JSX.Element {
           <div>
             <strong>In-game next</strong>
             <p>Badges show beside your name in the launcher today. In-game nametags and capes need a companion/server relay, which is not part of this build.</p>
+          </div>
+        </div>
+
+        <div className="store-note">
+          <span className="store-note-icon">
+            <Icon name="heart" size={18} />
+          </span>
+          <div>
+            <strong>Support the project</strong>
+            <p>
+              If you enjoy Polaris, you can <a href="https://paypal.me/ledrinkossoss" target="_blank" rel="noopener">support development via PayPal</a>. Donations help fund servers, features, and continued development. No purchase is required to enjoy all cosmetics — they are earned through playtime.
+            </p>
           </div>
         </div>
       </section>
