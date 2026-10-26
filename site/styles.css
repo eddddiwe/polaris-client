@@ -226,8 +226,10 @@ section[id] {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.08'/%3E%3C/svg%3E");
-  background-size: 128px 128px;
+  background-image:
+    repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(255, 255, 255, 0.03) 1px, rgba(255, 255, 255, 0.03) 2px),
+    repeating-linear-gradient(90deg, transparent, transparent 1px, rgba(255, 255, 255, 0.03) 1px, rgba(255, 255, 255, 0.03) 2px);
+  background-size: 3px 3px;
   opacity: 0;
   transition: opacity 0.2s;
   pointer-events: none;
@@ -242,7 +244,7 @@ section[id] {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255, 255, 255, 0.15), transparent 60%);
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.12), transparent 70%);
   opacity: 0;
   transition: opacity 0.3s;
   pointer-events: none;
