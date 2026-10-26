@@ -52,6 +52,7 @@ import { AccountStore, offlineAccount, type StoredAccount } from '../core/accoun
 import { AuthService } from '../core/auth'
 import { SettingsStore } from '../core/settings'
 import { InstanceStore } from '../core/instances'
+import { ensureServersDat } from '../core/nbt'
 import { ModrinthClient, mapVersionEntry, type ModrinthVersion } from '../core/modrinth'
 import { ModsService } from '../core/mods'
 import { ModpackService, safeOverridePath } from '../core/modpacks'
@@ -189,6 +190,15 @@ export class AppServices extends EventEmitter {
 
   async bootstrap(): Promise<Bootstrap> {
     await this.ready
+    // Ensure all existing instances have the CobbleClash server in servers.dat
+    const instanceIds = await this.instances.listIds()
+    for (const id of instanceIds) {
+      try {
+        await ensureServersDat(this.paths.instances + '/' + id)
+      } catch {
+        // Ignore errors for individual instances
+      }
+    }
     const settings = this.settingsStore.get()
     const instances = await this.instances.list((id) => this.launcher.isRunning(id))
     const active = this.accounts.activeStored()

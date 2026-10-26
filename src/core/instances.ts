@@ -3,6 +3,7 @@ import { readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { CreateInstanceInput, InstanceConfig, InstanceSummary } from '../shared/types'
 import { assertSafeSegment, dirSize, ensureDir, isSafeSegment, pathExists, readJson, writeJson } from './fsutil'
+import { ensureServersDat } from './nbt'
 import type { Paths } from './paths'
 import type { Settings } from '../shared/types'
 
@@ -41,6 +42,16 @@ export class InstanceStore {
       })
     }
     return summaries.sort((a, b) => (b.lastPlayed ?? b.createdAt) - (a.lastPlayed ?? a.createdAt))
+  }
+
+  async listIds(): Promise<string[]> {
+    try {
+      const { readdir } = await import('node:fs/promises')
+      const ids = await readdir(this.paths.instances)
+      return ids.filter((id) => isSafeSegment(id))
+    } catch {
+      return []
+    }
   }
 
   async get(id: string): Promise<InstanceConfig> {
@@ -117,6 +128,7 @@ export class InstanceStore {
     for (const folder of ['mods', 'config', 'logs', 'saves', 'resourcepacks', 'shaderpacks', 'screenshots', 'natives']) {
       await ensureDir(join(root, folder))
     }
+    await ensureServersDat(root)
   }
 
   async isInstalled(config: InstanceConfig): Promise<boolean> {
