@@ -58,6 +58,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())
+        .plugin(tauri_plugin_dialog::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             bootstrap,
@@ -86,8 +87,16 @@ pub fn run() {
             cosmetic_sync_get,
             import_mrpack,
             update_instance,
-            launch_game,
-            stop_game,
+            instance_get,
+            versions_list,
+            settings_snapshot,
+            settings_rescan_java,
+            settings_choose_java,
+            open_instance_folder,
+            open_logs,
+            launch_tail,
+            launch_start,
+            launch_stop,
             search_mods,
             mod_detail,
             mod_versions,
@@ -440,7 +449,7 @@ fn cosmetic_sync_get(player_name: String, player_uuid: String) -> Result<serde_j
 }
 
 #[tauri::command]
-async fn launch_game(instance_id: String, state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+async fn launch_start(instance_id: String, state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
     // Get instance
     let instance = {
         let instances = state.instances.lock().unwrap();
@@ -521,7 +530,7 @@ async fn launch_game(instance_id: String, state: tauri::State<'_, AppState>) -> 
 }
 
 #[tauri::command]
-fn stop_game(state: tauri::State<'_, AppState>) -> Result<(), String> {
+fn launch_stop(state: tauri::State<'_, AppState>) -> Result<(), String> {
     *state.launch_state.lock().unwrap() = crate::models::LaunchState {
         instance_id: None,
         status: "idle".to_string(),
@@ -533,6 +542,114 @@ fn stop_game(state: tauri::State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn instance_get(id: String, state: tauri::State<'_, AppState>) -> Result<Instance, String> {
+    let instance_store = state.instance_store.lock().unwrap();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(instance_store.get(&id)).map_err(|e| e)
+}
+
+#[tauri::command]
+async fn versions_list(include_snapshots: bool, state: tauri::State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
+    let client = reqwest::Client::new();
+    let res = client.get("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
+        .send().await.map_err(|e| e.to_string())?;
+    let manifest: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    let versions = manifest.get("versions").and_then(|v| v.as_array()).ok_or("No versions")?;
+    let mut out = Vec::new();
+    for v in versions {
+        let vtype = v.get("type").and_then(|t| t.as_str()).unwrap_or("release");
+        if !include_snapshots && vtype != "release" { continue; }
+        out.push(serde_json::json!({
+            "id": v.get("id"),
+            "type": vtype,
+            "releaseTime": v.get("releaseTime"),
+        }));
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+fn settings_snapshot(state: tauri::State<'_, AppState>) -> Result<Settings, String> {
+    Ok(state.settings.lock().unwrap().clone())
+}
+
+#[tauri::command]
+async fn settings_rescan_java(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
+    let paths = scan_java(&[]);
+    *state.java.lock().unwrap() = paths.clone();
+    Ok(paths)
+}
+
+#[tauri::command]
+async fn settings_choose_java(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let file = app.dialog().file().add_filter("Java runtime", &["exe", "*"]).blocking_pick_file();
+    match file {
+        Some(path) => {
+            let path_str = path.to_string();
+            let java = scan_java(&[path_str.clone()]);
+            *state.java.lock().unwrap() = java.clone();
+            // Update settings
+            {
+                let mut s = state.settings.lock().unwrap();
+                s.java_path = path_str.clone();
+            }
+            Ok(serde_json::json!({"path": path_str, "java": java}))
+        }
+        None => Ok(serde_json::json!({"path": "", "java": state.java.lock().unwrap().clone()})),
+    }
+}
+
+#[tauri::command]
+async fn open_instance_folder(id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let instance_store = state.instance_store.lock().unwrap();
+    let dir = instance_store.dir(&id);
+    if !dir.exists() {
+        return Err("Instance not found".to_string());
+    }
+    #[cfg(target_os = "windows")]
+    { std::process::Command::new("explorer").arg(&dir).spawn().ok(); }
+    #[cfg(target_os = "macos")]
+    { std::process::Command::new("open").arg(&dir).spawn().ok(); }
+    #[cfg(target_os = "linux")]
+    { std::process::Command::new("xdg-open").arg(&dir).spawn().ok(); }
+    Ok(())
+}
+
+#[tauri::command]
+async fn open_logs(id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let instance_store = state.instance_store.lock().unwrap();
+    let dir = instance_store.dir(&id).join("logs");
+    std::fs::create_dir_all(&dir).ok();
+    #[cfg(target_os = "windows")]
+    { std::process::Command::new("explorer").arg(&dir).spawn().ok(); }
+    #[cfg(target_os = "macos")]
+    { std::process::Command::new("open").arg(&dir).spawn().ok(); }
+    #[cfg(target_os = "linux")]
+    { std::process::Command::new("xdg-open").arg(&dir).spawn().ok(); }
+    Ok(())
+}
+
+#[tauri::command]
+async fn launch_tail(id: String, lines: Option<u32>, state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
+    let instance_store = state.instance_store.lock().unwrap();
+    let log_dir = instance_store.dir(&id).join("logs");
+    // Find latest log file
+    let mut log_files: Vec<_> = std::fs::read_dir(&log_dir)
+        .map(|rd| rd.filter_map(|e| e.ok()).map(|e| e.path()).collect())
+        .unwrap_or_default();
+    log_files.sort();
+    let last = log_files.last().cloned();
+    let n = lines.unwrap_or(250) as usize;
+    if let Some(path) = last {
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        let all_lines: Vec<&str> = content.lines().collect();
+        let start = all_lines.len().saturating_sub(n);
+        return Ok(all_lines[start..].iter().map(|s| s.to_string()).collect());
+    }
+    Ok(Vec::new())
+}
 #[tauri::command]
 async fn update_instance(id: String, patch: serde_json::Value, state: tauri::State<'_, AppState>) -> Result<Instance, String> {
     let instance_store = state.instance_store.lock().unwrap();
