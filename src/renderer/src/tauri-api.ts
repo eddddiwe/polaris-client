@@ -62,12 +62,33 @@ export function createTauriApi(): PolarisAPI {
     settingsSnapshot: () => invoke('settings_snapshot'),
     checkForUpdates: () => invoke('check_for_updates'),
     installUpdate: () => invoke('install_update'),
-    onProgress: (cb) => { return () => {} },
-    onLaunchState: (cb) => { return () => {} },
-    onGameLog: (cb) => { return () => {} },
-    onGameState: (cb) => { return () => {} },
-    onAccountChanged: (cb) => { return () => {} },
-    onAccountError: (cb) => { return () => {} },
-    onDeviceCode: (cb) => { return () => {} },
+    onProgress: (cb) => {
+      const unlisten = (window as any).__TAURI__?.event?.listen('progress', (e: any) => cb(e.payload))
+      return () => { unlisten?.then((f: any) => f()) }
+    },
+    onLaunchState: (cb) => {
+      const unlisten = (window as any).__TAURI__?.event?.listen('launch-state', (e: any) => cb(e.payload))
+      return () => { unlisten?.then((f: any) => f()) }
+    },
+    onGameLog: (cb) => {
+      const unlisten = (window as any).__TAURI__?.event?.listen('game-log', (e: any) => cb(e.payload))
+      return () => { unlisten?.then((f: any) => f()) }
+    },
+    onGameState: (cb) => {
+      const unlisten = (window as any).__TAURI__?.event?.listen('game-state', (e: any) => cb(e.payload))
+      return () => { unlisten?.then((f: any) => f()) }
+    },
+    onAccountChanged: (cb) => {
+      const unlisten = (window as any).__TAURI__?.event?.listen('account-changed', (e: any) => cb(e.payload))
+      return () => { unlisten?.then((f: any) => f()) }
+    },
+    onAccountError: (cb) => {
+      const unlisten = (window as any).__TAURI__?.event?.listen('account-error', (e: any) => cb(e.payload))
+      return () => { unlisten?.then((f: any) => f()) }
+    },
+    onDeviceCode: (cb) => {
+      const unlisten = (window as any).__TAURI__?.event?.listen('device-code', (e: any) => cb(e.payload))
+      return () => { unlisten?.then((f: any) => f()) }
+    },
   }
 }

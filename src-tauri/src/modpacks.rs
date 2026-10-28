@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -10,7 +11,7 @@ pub struct MrpackIndex {
     pub name: Option<String>,
     pub summary: Option<String>,
     pub files: Vec<MrpackFile>,
-    pub dependencies: Option<std::collections::HashMap<String, String>>,
+    pub dependencies: Option<HashMap<String, String>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -51,6 +52,13 @@ pub struct MrpackPlanFile {
     pub sha1: Option<String>,
     pub size: Option<u64>,
     pub optional: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ModpackPopulateResult {
+    pub files_installed: u32,
+    pub files_skipped: u32,
+    pub overrides_extracted: u32,
 }
 
 pub struct ModpackService {
@@ -154,5 +162,54 @@ impl ModpackService {
             return None;
         }
         Some(target)
+    }
+
+    pub async fn populate(&self, instance_id: &str, archive_path: &str, plan: &MrpackPlan, include_optional: bool) -> Result<ModpackPopulateResult, String> {
+        let instance_dir = self.instances_dir.join(instance_id);
+        std::fs::create_dir_all(&instance_dir).ok();
+
+        // Extract overrides
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(archive_path).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+        let mut overrides_extracted = 0u32;
+        for i in 0..zip.len() {
+            let mut file = zip.by_index(i).map_err(|e| e.to_string())?;
+            let name = file.name().to_string();
+            if file.is_dir() { continue; }
+            let target = Self::safe_override_path(&instance_dir.to_string_lossy(), &name, "overrides/")
+                .or_else(|| Self::safe_override_path(&instance_dir.to_string_lossy(), &name, "client-overrides/"));
+            if let Some(target) = target {
+                if let Some(parent) = std::path::Path::new(&target).parent() {
+                    std::fs::create_dir_all(parent).ok();
+                }
+                let mut out = std::fs::File::create(&target).map_err(|e| e.to_string())?;
+                std::io::copy(&mut file, &mut out).map_err(|e| e.to_string())?;
+                overrides_extracted += 1;
+            }
+        }
+
+        // Download mod files
+        let wanted: Vec<&MrpackPlanFile> = plan.files.iter()
+            .filter(|f| !f.optional || include_optional)
+            .collect();
+        let skipped = plan.files.len() as u32 - wanted.len() as u32;
+
+        let downloader = crate::http::Downloader::new();
+        for file in &wanted {
+            let dest = instance_dir.join(&file.path);
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+            if let Err(e) = downloader.download(&file.url, &dest).await {
+                // Log error but continue
+                eprintln!("Failed to download {}: {}", file.path, e);
+            }
+        }
+
+        Ok(ModpackPopulateResult {
+            files_installed: wanted.len() as u32,
+            files_skipped: skipped,
+            overrides_extracted,
+        })
     }
 }

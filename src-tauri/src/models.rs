@@ -1,6 +1,23 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledMod {
+    pub project_id: String,
+    pub slug: String,
+    pub name: String,
+    pub version_id: String,
+    pub version_number: String,
+    pub filename: String,
+    pub size: u64,
+    pub enabled: bool,
+    pub source: String,
+    pub icon_url: Option<String>,
+    pub has_update: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Instance {
     pub id: String,
     pub name: String,
@@ -32,6 +49,7 @@ pub struct Instance {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub data_dir: String,
     pub java_path: String,
@@ -73,6 +91,7 @@ impl Default for Settings {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct HardwareInfo {
     pub cpu: String,
     pub threads: u32,
@@ -89,6 +108,7 @@ pub struct HardwareInfo {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Bootstrap {
     pub app_version: String,
     pub settings: Settings,
@@ -105,6 +125,7 @@ pub struct Bootstrap {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Account {
     pub id: String,
     pub name: String,
@@ -115,12 +136,14 @@ pub struct Account {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct LaunchState {
     pub instance_id: Option<String>,
     pub status: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct JavaInfo {
     pub path: String,
     pub version: String,
@@ -138,6 +161,7 @@ pub struct Pack {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateInfo {
     pub has_update: bool,
     pub current_version: String,

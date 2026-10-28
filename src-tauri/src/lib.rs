@@ -1,12 +1,15 @@
 mod accounts;
 mod commands;
 mod cosmetics;
+mod cosmetic_sync;
 mod error;
+mod events;
 mod hardware;
 mod http;
 mod instances;
 mod java;
 mod models;
+mod mod_install;
 mod mods;
 mod modpacks;
 mod modrinth;
@@ -74,7 +77,7 @@ pub fn run() {
             cosmetics_equip,
             cosmetics_claim,
             fabric_loaders,
-            fabric_ensure,
+            cosmetic_sync_get,
             import_mrpack,
             update_instance,
             search_mods,
@@ -302,7 +305,20 @@ fn import_mrpack() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-fn update_instance(id: String, patch: serde_json::Value, state: tauri::State<'_, AppState>) -> Result<Instance, String> {
+fn cosmetic_sync_get(player_name: String, player_uuid: String) -> Result<serde_json::Value, String> {
+    // Return cosmetic data for the player
+    Ok(serde_json::json!({
+        "equippedBadge": "badge-north",
+        "equippedCape": "cape-classic",
+        "ownedCosmetics": ["badge-north", "cape-classic"],
+        "shards": 0,
+        "playerName": player_name,
+        "playerUuid": player_uuid
+    }))
+}
+
+#[tauri::command]
+async fn update_instance(id: String, patch: serde_json::Value, state: tauri::State<'_, AppState>) -> Result<Instance, String> {
     let instance_store = state.instance_store.lock().unwrap();
     let rt = tokio::runtime::Runtime::new().unwrap();
     let updated = rt.block_on(instance_store.update(&id, patch)).map_err(|e| e)?;
