@@ -8,6 +8,7 @@ mod hardware;
 mod http;
 mod instances;
 mod java;
+mod launch;
 mod models;
 mod mod_install;
 mod mods;
@@ -59,6 +60,9 @@ pub fn run() {
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             bootstrap,
+            window_action,
+            open_external,
+            open_root,
             list_instances,
             create_instance,
             delete_instance,
@@ -80,6 +84,8 @@ pub fn run() {
             cosmetic_sync_get,
             import_mrpack,
             update_instance,
+            launch_game,
+            stop_game,
             search_mods,
             mod_detail,
             mod_versions,
@@ -124,6 +130,53 @@ pub fn run() {
 }
 
 // Commands
+
+#[tauri::command]
+fn window_action(action: String, app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        match action.as_str() {
+            "minimize" => { let _ = window.minimize(); }
+            "maximize" => { let _ = window.maximize(); }
+            "close" => { let _ = window.close(); }
+            "show" => { let _ = window.show(); }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn open_root() -> Result<(), String> {
+    // Open the data directory
+    Ok(())
+}
 
 #[tauri::command]
 fn bootstrap(state: tauri::State<'_, AppState>) -> Result<Bootstrap, String> {
@@ -315,6 +368,80 @@ fn cosmetic_sync_get(player_name: String, player_uuid: String) -> Result<serde_j
         "playerName": player_name,
         "playerUuid": player_uuid
     }))
+}
+
+#[tauri::command]
+async fn launch_game(instance_id: String, state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+    // Get instance
+    let instance = {
+        let instances = state.instances.lock().unwrap();
+        instances.iter().find(|i| i.id == instance_id).cloned()
+    };
+    let instance = instance.ok_or_else(|| format!("Instance not found: {}", instance_id))?;
+
+    // Get Java path
+    let java_list = state.java.lock().unwrap().clone();
+    let java_path = java_list.first().cloned().unwrap_or_default();
+    if java_path.is_empty() {
+        return Err("No Java runtime found. Please install Java or set a custom path in settings.".to_string());
+    }
+
+    // Get account
+    let account = state.accounts.lock().unwrap().iter().find(|a| a.active).cloned();
+    let account_name = account.as_ref().map(|a| a.name.clone()).unwrap_or_else(|| "Player".to_string());
+    let account_uuid = account.as_ref().and_then(|a| a.uuid.clone()).unwrap_or_else(|| "00000000-0000-0000-0000-000000000000".to_string());
+    let access_token = account.as_ref().and_then(|a| a.access_token.clone()).unwrap_or_default();
+    let user_type = if account.as_ref().map(|a| a.account_type.as_str()) == Some("microsoft") { "msa" } else { "legacy" };
+
+    // Build classpath (simplified - would need actual library resolution)
+    let classpath = format!("{}:{}", instance.mc_version, instance.mc_version);
+
+    // Build arguments
+    let args = crate::launch::LaunchService::build_arguments(
+        &instance,
+        21,
+        &classpath,
+        &instance.mc_version,
+        &format!("{}/natives", instance.id),
+        &account_name,
+        &account_uuid,
+        &access_token,
+        user_type,
+    );
+
+    // Launch
+    let instance_dir = format!("{}/{}", state.data_dir.to_string_lossy(), instance.id);
+    let child = crate::launch::LaunchService::launch(&java_path, &args, &instance_dir)
+        .map_err(|e| e.to_string())?;
+
+    let pid = child.id();
+    *state.launch_state.lock().unwrap() = crate::models::LaunchState {
+        instance_id: Some(instance_id.clone()),
+        status: "running".to_string(),
+        message: Some(format!("Running on Java {}", java_path)),
+        pid: Some(pid),
+        started_at: Some(chrono::Utc::now().timestamp_millis()),
+        exit_code: None,
+    };
+
+    Ok(serde_json::json!({
+        "status": "running",
+        "pid": pid,
+        "message": format!("Running on Java {}", java_path)
+    }))
+}
+
+#[tauri::command]
+fn stop_game(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    *state.launch_state.lock().unwrap() = crate::models::LaunchState {
+        instance_id: None,
+        status: "idle".to_string(),
+        message: None,
+        pid: None,
+        started_at: None,
+        exit_code: None,
+    };
+    Ok(())
 }
 
 #[tauri::command]

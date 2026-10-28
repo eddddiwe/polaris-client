@@ -133,6 +133,11 @@ pub struct Account {
     pub uuid: Option<String>,
     pub skin_url: Option<String>,
     pub active: bool,
+    pub access_token: Option<String>,
+    pub refresh_token: Option<String>,
+    pub expires_at: Option<i64>,
+    pub client_id: Option<String>,
+    pub xuid: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -140,6 +145,10 @@ pub struct Account {
 pub struct LaunchState {
     pub instance_id: Option<String>,
     pub status: String,
+    pub message: Option<String>,
+    pub pid: Option<u32>,
+    pub started_at: Option<i64>,
+    pub exit_code: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

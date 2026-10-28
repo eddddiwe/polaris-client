@@ -59,6 +59,10 @@ impl AppState {
             launch_state: Mutex::new(LaunchState {
                 instance_id: None,
                 status: "idle".to_string(),
+                message: None,
+                pid: None,
+                started_at: None,
+                exit_code: None,
             }),
             latest_version: Mutex::new(None),
             update_info: Mutex::new(UpdateInfo {

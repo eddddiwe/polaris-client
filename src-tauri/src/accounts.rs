@@ -49,6 +49,11 @@ impl AccountStore {
             uuid: None,
             skin_url: None,
             active: true,
+            access_token: None,
+            refresh_token: None,
+            expires_at: None,
+            client_id: None,
+            xuid: None,
         };
         let mut accounts = self.load().unwrap_or_default();
         // Deactivate all others
