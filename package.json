@@ -8,8 +8,10 @@
   "private": true,
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:tauri": "tauri dev",
     "dev:web": "vite --config vite.web.config.ts",
     "build": "electron-vite build",
+    "build:tauri": "tauri build",
     "build:web": "vite build --config vite.web.config.ts",
     "site": "vite --config vite.site.config.ts",
     "build:site": "vite build --config vite.site.config.ts",

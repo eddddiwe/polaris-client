@@ -10,8 +10,10 @@ coverage/
 .DS_Store
 Thumbs.db
 
-# Generated installer payload for the static site (built with npm run release:win)
-site/public/downloads/Polaris-Setup.exe
+# Rust/Tauri
+src-tauri/target/
+.cargo/
+polaris-config-*.jar
 site/public/downloads/latest.json
 site/public/downloads/Polaris-Setup.exe.sha256
 
