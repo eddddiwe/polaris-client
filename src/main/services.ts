@@ -142,28 +142,36 @@ export class AppServices extends EventEmitter {
 
   private async initialize(): Promise<void> {
     try {
-      for (const dir of [
-        this.paths.instances,
-        this.paths.versions,
-        this.paths.libraries,
-        this.paths.meta,
-        `${this.paths.assets}/indexes`,
-        `${this.paths.assets}/objects`,
-        this.paths.java,
-        this.paths.cache,
-        this.paths.logs,
-        this.paths.downloads
-      ]) {
-        await ensureDir(dir)
-      }
-      const settings = await this.settingsStore.load()
-      await this.accounts.load()
+      // Create directories in parallel
+      await Promise.all([
+        ...[
+          this.paths.instances,
+          this.paths.versions,
+          this.paths.libraries,
+          this.paths.meta,
+          `${this.paths.assets}/indexes`,
+          `${this.paths.assets}/objects`,
+          this.paths.java,
+          this.paths.cache,
+          this.paths.logs,
+          this.paths.downloads
+        ].map((dir) => ensureDir(dir))
+      ])
+      // Load settings and accounts in parallel
+      const [settings] = await Promise.all([
+        this.settingsStore.load(),
+        this.accounts.load()
+      ])
       this.logger.info('Polaris starting', { version: app.getVersion(), dataDir: this.paths.root })
 
-      this.java = await scanJava(settings.javaPath ? [settings.javaPath] : [])
+      // Scan Java and detect hardware in parallel with latest release
+      // Scan Java (needed for hardware detection) in parallel with latest release
+      const [java] = await Promise.all([
+        scanJava(settings.javaPath ? [settings.javaPath] : []),
+        this.mojang.latestRelease().then((v) => { this.latestVersion = v }).catch(() => undefined)
+      ])
+      this.java = java
       this.hardware = await detectHardware(this.java)
-      // Fetch latest version in background - don't block startup
-      void this.mojang.latestRelease().then((v) => { this.latestVersion = v }).catch(() => undefined)
       this.initialized = true
       this.logger.info('Hardware detected', {
         cpu: this.hardware.cpu,

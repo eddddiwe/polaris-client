@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { lazy, Suspense } from 'react'
 import type { Bootstrap, InstanceDetail, LaunchState, ProgressEvent, Settings } from '@shared/types'
 import type { PolarisAPI } from '@shared/api'
 import { AppContext, errorMessage, type Page, type Toast, type ToastKind, type ConfirmFn, type ConfirmOptions } from './context'
-import { createMockApi } from './mock'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
 import { Toasts, ProgressDock } from './components/Feedback'
-import { AccountModal, ConfirmModal, NewInstanceModal } from './components/Modals'
-import { lazy, Suspense } from 'react'
+import { Wallpaper } from './components/Wallpaper'
 import { HomePage } from './pages/Home'
 const InstancesPage = lazy(() => import('./pages/Instances').then(m => ({ default: m.InstancesPage })))
 const InstancePage = lazy(() => import('./pages/Instance').then(m => ({ default: m.InstancePage })))
@@ -15,11 +14,16 @@ const DiscoverPage = lazy(() => import('./pages/Discover').then(m => ({ default:
 const PerformancePage = lazy(() => import('./pages/Performance').then(m => ({ default: m.PerformancePage })))
 const StorePage = lazy(() => import('./pages/Store').then(m => ({ default: m.StorePage })))
 const SettingsPage = lazy(() => import('./pages/Settings').then(m => ({ default: m.SettingsPage })))
+import { AccountModal, ConfirmModal, NewInstanceModal } from './components/Modals'
 import { PolarisMark } from './components/Icons'
-import { Wallpaper } from './components/Wallpaper'
 
 function getApi(): PolarisAPI {
-  return window.polaris ?? createMockApi()
+  if (window.polaris) return window.polaris
+  // Lazy-load mock API for web preview mode (code-split, not in main bundle)
+  const mockModule = (window as any).__mockModule
+  if (mockModule) return mockModule.createMockApi()
+  // Synchronous fallback - should not reach here in production
+  throw new Error('Polaris API not available. Run in Electron or use npm run dev:web for preview.')
 }
 
 export default function App(): JSX.Element {
