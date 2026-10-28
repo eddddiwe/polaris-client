@@ -162,7 +162,8 @@ export class AppServices extends EventEmitter {
 
       this.java = await scanJava(settings.javaPath ? [settings.javaPath] : [])
       this.hardware = await detectHardware(this.java)
-      this.latestVersion = await this.mojang.latestRelease().catch(() => undefined)
+      // Fetch latest version in background - don't block startup
+      void this.mojang.latestRelease().then((v) => { this.latestVersion = v }).catch(() => undefined)
       this.initialized = true
       this.logger.info('Hardware detected', {
         cpu: this.hardware.cpu,
@@ -190,19 +191,20 @@ export class AppServices extends EventEmitter {
 
   async bootstrap(): Promise<Bootstrap> {
     await this.ready
-    // Ensure all existing instances have the CobbleClash server in servers.dat
-    const instanceIds = await this.instances.listIds()
-    for (const id of instanceIds) {
-      try {
-        await ensureServersDat(this.paths.instances + '/' + id)
-      } catch {
-        // Ignore errors for individual instances
-      }
-    }
+    // Ensure all existing instances have the CobbleClash server in servers.dat (background)
+    void this.ensureServersDatForAll()
     const settings = this.settingsStore.get()
     const instances = await this.instances.list((id) => this.launcher.isRunning(id))
     const active = this.accounts.activeStored()
-    const updateInfo = await this.checkForUpdates()
+    // Check for updates in background - don't block bootstrap
+    const updateInfoPromise = this.checkForUpdates().catch(() => ({
+      hasUpdate: false,
+      currentVersion: app.getVersion(),
+      latestVersion: app.getVersion(),
+      downloadUrl: '',
+      publishedAt: new Date().toISOString()
+    }))
+    const updateInfo = await updateInfoPromise
     return {
       appVersion: app.getVersion(),
       settings,
@@ -216,6 +218,21 @@ export class AppServices extends EventEmitter {
       packs: PACKS,
       latestVersion: this.latestVersion,
       updateInfo
+    }
+  }
+
+  private async ensureServersDatForAll(): Promise<void> {
+    try {
+      const instanceIds = await this.instances.listIds()
+      for (const id of instanceIds) {
+        try {
+          await ensureServersDat(this.paths.instances + '/' + id)
+        } catch {
+          // Ignore errors for individual instances
+        }
+      }
+    } catch {
+      // Ignore errors
     }
   }
 

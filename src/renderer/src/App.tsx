@@ -7,13 +7,14 @@ import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
 import { Toasts, ProgressDock } from './components/Feedback'
 import { AccountModal, ConfirmModal, NewInstanceModal } from './components/Modals'
+import { lazy, Suspense } from 'react'
 import { HomePage } from './pages/Home'
-import { InstancesPage } from './pages/Instances'
-import { InstancePage } from './pages/Instance'
-import { DiscoverPage } from './pages/Discover'
-import { PerformancePage } from './pages/Performance'
-import { StorePage } from './pages/Store'
-import { SettingsPage } from './pages/Settings'
+const InstancesPage = lazy(() => import('./pages/Instances').then(m => ({ default: m.InstancesPage })))
+const InstancePage = lazy(() => import('./pages/Instance').then(m => ({ default: m.InstancePage })))
+const DiscoverPage = lazy(() => import('./pages/Discover').then(m => ({ default: m.DiscoverPage })))
+const PerformancePage = lazy(() => import('./pages/Performance').then(m => ({ default: m.PerformancePage })))
+const StorePage = lazy(() => import('./pages/Store').then(m => ({ default: m.StorePage })))
+const SettingsPage = lazy(() => import('./pages/Settings').then(m => ({ default: m.SettingsPage })))
 import { PolarisMark } from './components/Icons'
 import { Wallpaper } from './components/Wallpaper'
 
@@ -314,12 +315,12 @@ export default function App(): JSX.Element {
           )}
           <div className="page" key={page}>
             {page === 'home' && <HomePage />}
-            {page === 'instances' && <InstancesPage />}
-            {page === 'instance' && <InstancePage />}
-            {page === 'discover' && <DiscoverPage />}
-            {page === 'performance' && <PerformancePage />}
-            {page === 'store' && <StorePage />}
-            {page === 'settings' && <SettingsPage />}
+            {page === 'instances' && <Suspense fallback={<div className="page-loading">Loading...</div>}><InstancesPage /></Suspense>}
+            {page === 'instance' && <Suspense fallback={<div className="page-loading">Loading...</div>}><InstancePage /></Suspense>}
+            {page === 'discover' && <Suspense fallback={<div className="page-loading">Loading...</div>}><DiscoverPage /></Suspense>}
+            {page === 'performance' && <Suspense fallback={<div className="page-loading">Loading...</div>}><PerformancePage /></Suspense>}
+            {page === 'store' && <Suspense fallback={<div className="page-loading">Loading...</div>}><StorePage /></Suspense>}
+            {page === 'settings' && <Suspense fallback={<div className="page-loading">Loading...</div>}><SettingsPage /></Suspense>}
           </div>
         </main>
         <ProgressDock progress={progress} />
