@@ -339,7 +339,7 @@ export default function App(): JSX.Element {
             }}
           />
         )}
-        {accountOpen && <AccountModal onClose={() => setAccountOpen(false)} updateSettings={updateSettings} />}
+        {accountOpen && <AccountModal onClose={() => setAccountOpen(false)} />}
         {confirmRequest && (
           <ConfirmModal
             title={confirmRequest.title}

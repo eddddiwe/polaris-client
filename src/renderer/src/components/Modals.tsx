@@ -292,33 +292,14 @@ export function NewInstanceModal({
 }
 
 export function AccountModal({
-  onClose,
-  updateSettings
+  onClose
 }: {
   onClose: () => void
-  updateSettings: (patch: Partial<import('@shared/types').Settings>) => Promise<unknown>
 }): JSX.Element {
   const { api, boot, settings, toast, refresh } = useApp()
-  const [tab, setTab] = useState<'offline' | 'microsoft'>('offline')
-  const [name, setName] = useState('')
   const [device, setDevice] = useState<DeviceCodeInfo | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-
-  const addOffline = async (): Promise<void> => {
-    setBusy(true)
-    setError('')
-    try {
-      await api.addOfflineAccount(name)
-      toast(`Playing as ${name.trim()}`, 'success')
-      await refresh()
-      onClose()
-    } catch (err) {
-      setError(errorMessage(err))
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const signIn = async (): Promise<void> => {
     setBusy(true)
@@ -334,14 +315,9 @@ export function AccountModal({
 
   return (
     <Modal title="Accounts" eyebrow="Identity" onClose={onClose} width={600}>
-      <div className="segmented wide">
-        <button className={tab === 'offline' ? 'active' : ''} onClick={() => setTab('offline')}>
-          Offline
-        </button>
-        <button className={tab === 'microsoft' ? 'active' : ''} onClick={() => setTab('microsoft')}>
-          Microsoft
-        </button>
-      </div>
+      <p className="modal-copy">
+        Sign in with your Microsoft account to play on online-mode servers and Realms.
+      </p>
 
       {boot.accounts.length > 0 && (
         <div className="account-list">
@@ -357,7 +333,7 @@ export function AccountModal({
                   {account.name}
                   {account.active && <CosmeticBadge id={settings.equippedBadge} size={14} />}
                 </strong>
-                <small>{account.type === 'microsoft' ? 'Microsoft account' : 'Offline account'}</small>
+                <small>Microsoft account</small>
               </span>
               {account.active && <Icon name="check" size={16} />}
             </button>
@@ -365,54 +341,28 @@ export function AccountModal({
         </div>
       )}
 
-      {tab === 'offline' ? (
-        <>
-          <p className="modal-copy">
-            Offline mode works on LAN and offline servers. It does not grant access to online-mode servers or Realms.
-          </p>
-          <div className="field">
-            <label htmlFor="offline-name">Username</label>
-            <input
-              id="offline-name"
-              value={name}
-              maxLength={16}
-              placeholder="3–16 characters"
-              onChange={(event) => setName(event.target.value)}
-              onKeyDown={(event) => event.key === 'Enter' && void addOffline()}
-            />
+      {device ? (
+        <div className="device-code">
+          <span className="eyebrow">Enter this code</span>
+          <strong>{device.userCode}</strong>
+          <button
+            className="link"
+            onClick={() => void api.openExternal(device.verificationUri)}
+          >
+            {device.verificationUri}
+          </button>
+          <div className="device-wait">
+            <span className="spinner spinner-sm" /> Waiting for Microsoft…
           </div>
-          <div className="modal-actions">
-            <button className="btn btn-primary" onClick={() => void addOffline()} disabled={busy || name.trim().length < 3}>
-              <Icon name="user" size={15} /> Use offline account
-            </button>
-          </div>
-        </>
+        </div>
       ) : (
-        <>
-          {device ? (
-            <div className="device-code">
-              <span className="eyebrow">Enter this code</span>
-              <strong>{device.userCode}</strong>
-              <button
-                className="link"
-                onClick={() => void api.openExternal(device.verificationUri)}
-              >
-                {device.verificationUri}
-              </button>
-              <div className="device-wait">
-                <span className="spinner spinner-sm" /> Waiting for Microsoft…
-              </div>
-            </div>
-          ) : (
-            <div className="modal-actions">
-              <button className="btn btn-primary" onClick={() => void signIn()} disabled={busy}>
-                {busy ? <span className="spinner spinner-sm" /> : <Icon name="user" size={15} />} Sign in with Microsoft
-              </button>
-            </div>
-          )}
-          {error && <p className="error-text">{error}</p>}
-        </>
+        <div className="modal-actions">
+          <button className="btn btn-primary" onClick={() => void signIn()} disabled={busy}>
+            {busy ? <span className="spinner spinner-sm" /> : <Icon name="user" size={15} />} Sign in with Microsoft
+          </button>
+        </div>
       )}
+      {error && <p className="error-text">{error}</p>}
 
       {error && <div className="inline-error">{error}</div>}
       <div className="fine-print">
