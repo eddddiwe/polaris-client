@@ -7,6 +7,7 @@ mod events;
 mod hardware;
 mod http;
 mod instances;
+mod installer;
 mod java;
 mod launch;
 mod models;
@@ -63,6 +64,7 @@ pub fn run() {
             window_action,
             open_external,
             open_root,
+            install_instance,
             list_instances,
             create_instance,
             delete_instance,
@@ -227,6 +229,43 @@ fn create_instance(name: String, mc_version: String, loader: String, state: taur
 }
 
 #[tauri::command]
+async fn install_instance(instance_id: String, state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let instance = {
+        let instances = state.instances.lock().unwrap();
+        instances.iter().find(|i| i.id == instance_id).cloned()
+    };
+    let instance = instance.ok_or_else(|| format!("Instance not found: {}", instance_id))?;
+
+    let installer = crate::installer::Installer::new(crate::installer::InstallerPaths {
+        versions: state.data_dir.join("versions"),
+        libraries: state.data_dir.join("libraries"),
+        assets: state.data_dir.join("assets"),
+        meta: state.data_dir.join("meta"),
+    });
+
+    let mirror_cache = state.settings.lock().unwrap().mirror_vanilla_cache;
+    let installed = installer.install(&instance.mc_version, &instance.loader, instance.loader_version.as_deref(), mirror_cache).await
+        .map_err(|e| e.to_string())?;
+
+    // Update instance with loader version if fabric
+    if instance.loader == "fabric" {
+        if let Some(lv) = &installed.version_id.strip_prefix("fabric-loader-").and_then(|s| s.split('-').next()) {
+            // Extract loader version from version_id
+        }
+    }
+
+    Ok(serde_json::json!({
+        "versionId": installed.version_id,
+        "baseVersionId": installed.base_version_id,
+        "jarPath": installed.jar_path,
+        "classpath": installed.classpath,
+        "assetIndexId": installed.asset_index_id,
+        "javaMajor": installed.java_major,
+        "status": "installed"
+    }))
+}
+
+#[tauri::command]
 fn delete_instance(id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
     let instance_store = state.instance_store.lock().unwrap();
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -336,19 +375,49 @@ fn cosmetics_claim(playtime_ms: i64, state: tauri::State<'_, AppState>) -> Resul
 
 #[tauri::command]
 fn fabric_loaders(mc_version: String) -> Result<Vec<serde_json::Value>, String> {
-    let _ = mc_version;
-    Ok(vec![
-        serde_json::json!({"version": "0.16.0", "stable": true}),
-        serde_json::json!({"version": "0.15.11", "stable": true}),
-    ])
+    let client = reqwest::Client::new();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let res = rt.block_on(client.get(format!("https://meta.fabricmc.net/v2/versions/loader/{}", mc_version)).send())
+        .map_err(|e| e.to_string())?;
+    let loaders: Vec<serde_json::Value> = rt.block_on(res.json()).map_err(|e| e.to_string())?;
+    Ok(loaders)
 }
 
 #[tauri::command]
 fn fabric_ensure(mc_version: String, preferred_loader: Option<String>) -> Result<serde_json::Value, String> {
-    let loader = preferred_loader.unwrap_or_else(|| "0.16.0".to_string());
+    let client = reqwest::Client::new();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    let loader = if let Some(lv) = preferred_loader {
+        lv
+    } else {
+        let res = rt.block_on(client.get(format!("https://meta.fabricmc.net/v2/versions/loader/{}", mc_version)).send())
+            .map_err(|e| e.to_string())?;
+        let loaders: Vec<serde_json::Value> = rt.block_on(res.json()).map_err(|e| e.to_string())?;
+        loaders.iter()
+            .find(|l| l.get("loader").and_then(|x| x.get("stable")).and_then(|s| s.as_bool()) == Some(true))
+            .or_else(|| loaders.first())
+            .and_then(|l| l.get("loader").and_then(|x| x.get("version")).and_then(|v| v.as_str()))
+            .unwrap_or("0.15.0")
+            .to_string()
+    };
+
+    let version_id = format!("fabric-loader-{}-{}", loader, mc_version);
+
+    let profile_url = format!("https://meta.fabricmc.net/v2/versions/loader/{}/{}/profile/json", mc_version, loader);
+    let res = rt.block_on(client.get(&profile_url).send()).map_err(|e| e.to_string())?;
+    let profile: serde_json::Value = rt.block_on(res.json()).map_err(|e| e.to_string())?;
+
+    let version_dir = std::path::PathBuf::from("versions").join(&version_id);
+    std::fs::create_dir_all(&version_dir).ok();
+    if let Ok(json) = serde_json::to_string_pretty(&profile) {
+        std::fs::write(version_dir.join(format!("{}.json", version_id)), json).ok();
+    }
+
     Ok(serde_json::json!({
-        "versionId": format!("fabric-loader-{}-{}", loader, mc_version),
-        "loaderVersion": loader
+        "versionId": version_id,
+        "loaderVersion": loader,
+        "profile": profile
     }))
 }
 
@@ -386,6 +455,10 @@ async fn launch_game(instance_id: String, state: tauri::State<'_, AppState>) -> 
         return Err("No Java runtime found. Please install Java or set a custom path in settings.".to_string());
     }
 
+    // Get settings
+    let settings = state.settings.lock().unwrap().clone();
+    let mirror_cache = settings.mirror_vanilla_cache;
+
     // Get account
     let account = state.accounts.lock().unwrap().iter().find(|a| a.active).cloned();
     let account_name = account.as_ref().map(|a| a.name.clone()).unwrap_or_else(|| "Player".to_string());
@@ -393,16 +466,33 @@ async fn launch_game(instance_id: String, state: tauri::State<'_, AppState>) -> 
     let access_token = account.as_ref().and_then(|a| a.access_token.clone()).unwrap_or_default();
     let user_type = if account.as_ref().map(|a| a.account_type.as_str()) == Some("microsoft") { "msa" } else { "legacy" };
 
-    // Build classpath (simplified - would need actual library resolution)
-    let classpath = format!("{}:{}", instance.mc_version, instance.mc_version);
+    // Install game
+    let installer = crate::installer::Installer::new(crate::installer::InstallerPaths {
+        versions: state.data_dir.join("versions"),
+        libraries: state.data_dir.join("libraries"),
+        assets: state.data_dir.join("assets"),
+        meta: state.data_dir.join("meta"),
+    });
+    let installed = installer.install(&instance.mc_version, &instance.loader, instance.loader_version.as_deref(), mirror_cache).await
+        .map_err(|e| e.to_string())?;
+
+    // Extract natives
+    let instance_dir = state.data_dir.join(&instance.id);
+    let natives_dir = instance_dir.join("natives");
+    std::fs::create_dir_all(&natives_dir).ok();
+    installer.extract_natives(&installed.natives, &natives_dir).await.map_err(|e| e.to_string())?;
+
+    // Build classpath string
+    let cp_sep = if cfg!(target_os = "windows") { ";" } else { ":" };
+    let classpath = installed.classpath.join(cp_sep);
 
     // Build arguments
     let args = crate::launch::LaunchService::build_arguments(
         &instance,
-        21,
+        installed.java_major,
         &classpath,
-        &instance.mc_version,
-        &format!("{}/natives", instance.id),
+        &installed.asset_index_id,
+        &natives_dir.to_string_lossy(),
         &account_name,
         &account_uuid,
         &access_token,
@@ -410,8 +500,7 @@ async fn launch_game(instance_id: String, state: tauri::State<'_, AppState>) -> 
     );
 
     // Launch
-    let instance_dir = format!("{}/{}", state.data_dir.to_string_lossy(), instance.id);
-    let child = crate::launch::LaunchService::launch(&java_path, &args, &instance_dir)
+    let child = crate::launch::LaunchService::launch(&java_path, &args, &instance_dir.to_string_lossy())
         .map_err(|e| e.to_string())?;
 
     let pid = child.id();

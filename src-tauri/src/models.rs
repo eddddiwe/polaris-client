@@ -66,6 +66,7 @@ pub struct Settings {
     pub equipped_badge: String,
     pub equipped_cape: String,
     pub ms_client_id_custom: bool,
+    pub mirror_vanilla_cache: bool,
 }
 
 impl Default for Settings {
@@ -86,6 +87,7 @@ impl Default for Settings {
             equipped_badge: "badge-north".to_string(),
             equipped_cape: "cape-classic".to_string(),
             ms_client_id_custom: false,
+            mirror_vanilla_cache: true,
         }
     }
 }
