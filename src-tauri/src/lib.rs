@@ -1,4 +1,5 @@
 mod accounts;
+mod auth;
 mod commands;
 mod cosmetics;
 mod cosmetic_sync;
@@ -73,6 +74,7 @@ pub fn run() {
             update_settings,
             list_accounts,
             add_offline_account,
+            accounts_microsoft,
             remove_account,
             set_active_account,
             check_for_updates,
@@ -299,8 +301,8 @@ fn update_settings(patch: Settings, state: tauri::State<'_, AppState>) -> Result
 
 #[tauri::command]
 fn list_accounts(state: tauri::State<'_, AppState>) -> Result<Vec<Account>, String> {
-    let accounts = state.accounts.lock().unwrap();
-    Ok(accounts.clone())
+    let account_store = state.account_store.lock().unwrap();
+    Ok(account_store.list())
 }
 
 #[tauri::command]
@@ -312,6 +314,16 @@ fn add_offline_account(name: String, state: tauri::State<'_, AppState>) -> Resul
         *state.active_account_id.lock().unwrap() = Some(last.id.clone());
     }
     Ok(())
+}
+
+#[tauri::command]
+async fn accounts_microsoft(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let client_id = state.settings.lock().unwrap().ms_client_id.clone();
+    let store = crate::accounts::AccountStore::new(state.data_dir.join("accounts.json"));
+    let auth = crate::auth::AuthService::new(store);
+    let emitter = crate::events::EventEmitter::new(app);
+    let info = auth.begin_device_login(client_id, emitter).await?;
+    Ok(serde_json::to_value(info).unwrap_or_default())
 }
 
 #[tauri::command]
@@ -468,8 +480,27 @@ async fn launch_start(instance_id: String, state: tauri::State<'_, AppState>) ->
     let settings = state.settings.lock().unwrap().clone();
     let mirror_cache = settings.mirror_vanilla_cache;
 
-    // Get account
-    let account = state.accounts.lock().unwrap().iter().find(|a| a.active).cloned();
+    // Get account (read from disk to get latest, including refreshed tokens)
+    let disk_accounts = {
+        let account_store = state.account_store.lock().unwrap();
+        account_store.list()
+    };
+    let mut account = disk_accounts.into_iter().find(|a| a.active);
+    // Refresh Microsoft token if needed
+    if let Some(acc) = &account {
+        if acc.account_type == "microsoft" {
+            let store = crate::accounts::AccountStore::new(state.data_dir.join("accounts.json"));
+            let auth = crate::auth::AuthService::new(store);
+            if let Ok(refreshed) = auth.refresh_if_needed(acc).await {
+                // Update in-memory
+                let mut accounts = state.accounts.lock().unwrap();
+                if let Some(idx) = accounts.iter().position(|a| a.id == refreshed.id) {
+                    accounts[idx] = refreshed.clone();
+                }
+                account = Some(refreshed);
+            }
+        }
+    }
     let account_name = account.as_ref().map(|a| a.name.clone()).unwrap_or_else(|| "Player".to_string());
     let account_uuid = account.as_ref().and_then(|a| a.uuid.clone()).unwrap_or_else(|| "00000000-0000-0000-0000-000000000000".to_string());
     let access_token = account.as_ref().and_then(|a| a.access_token.clone()).unwrap_or_default();

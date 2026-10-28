@@ -155,6 +155,15 @@ pub struct LaunchState {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
+pub struct DeviceCodeInfo {
+    pub user_code: String,
+    pub verification_uri: String,
+    pub expires_in: u32,
+    pub message: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct JavaInfo {
     pub path: String,
     pub version: String,

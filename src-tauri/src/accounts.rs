@@ -65,6 +65,41 @@ impl AccountStore {
         Ok(account)
     }
 
+    pub fn add(&self, account: Account, make_active: bool) -> Result<(), String> {
+        let mut accounts = self.load().unwrap_or_default();
+        if make_active {
+            for a in &mut accounts {
+                a.active = false;
+            }
+        }
+        // Remove existing account with same id
+        accounts.retain(|a| a.id != account.id);
+        let mut acc = account.clone();
+        if make_active { acc.active = true; }
+        accounts.push(acc);
+        self.save(&accounts)?;
+        Ok(())
+    }
+
+    pub fn update(&self, id: &str, patch: serde_json::Value) -> Result<Option<Account>, String> {
+        let mut accounts = self.load().unwrap_or_default();
+        let mut updated = None;
+        for a in &mut accounts {
+            if a.id == id {
+                if let Some(name) = patch.get("name").and_then(|v| v.as_str()) { a.name = name.to_string(); }
+                if let Some(uuid) = patch.get("uuid").and_then(|v| v.as_str()) { a.uuid = Some(uuid.to_string()); }
+                if let Some(skin) = patch.get("skinUrl").and_then(|v| v.as_str()) { a.skin_url = Some(skin.to_string()); }
+                if let Some(token) = patch.get("accessToken").and_then(|v| v.as_str()) { a.access_token = Some(token.to_string()); }
+                if let Some(rt) = patch.get("refreshToken").and_then(|v| v.as_str()) { a.refresh_token = Some(rt.to_string()); }
+                if let Some(exp) = patch.get("expiresAt").and_then(|v| v.as_i64()) { a.expires_at = Some(exp); }
+                if let Some(xuid) = patch.get("xuid").and_then(|v| v.as_str()) { a.xuid = Some(xuid.to_string()); }
+                updated = Some(a.clone());
+            }
+        }
+        self.save(&accounts)?;
+        Ok(updated)
+    }
+
     pub fn active(&self) -> Option<Account> {
         self.load().ok().and_then(|accounts| accounts.into_iter().find(|a| a.active))
     }
