@@ -1,6 +1,6 @@
 {
   "name": "polaris-client",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Polaris Client - a performance-first Minecraft launcher and client platform",
   "main": "./out/main/index.js",
   "author": "Polaris Client Contributors <polaris@example.com>",

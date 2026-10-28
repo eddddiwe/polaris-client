@@ -1,6 +1,6 @@
 [package]
 name = "polaris-client"
-version = "0.3.3"
+version = "0.3.4"
 description = "Polaris Client - a performance-first Minecraft launcher"
 authors = ["Polaris Client Contributors"]
 license = "GPL-3.0-only"
