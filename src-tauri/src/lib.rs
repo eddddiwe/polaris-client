@@ -642,10 +642,25 @@ fn launch_stop(state: tauri::State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn instance_get(id: String, state: tauri::State<'_, AppState>) -> Result<Instance, String> {
+async fn instance_get(id: String, state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
     let instance_store = state.instance_store.lock().unwrap();
     let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(instance_store.get(&id)).map_err(|e| e)
+    let instance = rt.block_on(instance_store.get(&id)).map_err(|e| e)?;
+    drop(instance_store);
+
+    // Check installed status: version json exists
+    let version_path = state.data_dir.join("versions").join(&instance.mc_version).join(format!("{}.json", instance.mc_version));
+    let installed = version_path.exists();
+
+    // Load mods
+    let mods_service = crate::mods::ModsService::new(state.data_dir.join("instances"));
+    let mods = mods_service.list(&id);
+
+    Ok(serde_json::json!({
+        "instance": instance,
+        "mods": mods,
+        "installed": installed
+    }))
 }
 
 #[tauri::command]
