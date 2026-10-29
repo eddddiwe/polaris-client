@@ -129,18 +129,7 @@ export function SettingsPage(): JSX.Element {
             key={id}
             className={`settings-nav-item ${activeSection === id ? 'active' : ''}`}
             aria-current={activeSection === id ? 'true' : undefined}
-            onClick={() => {
-              const target = document.getElementById(`settings-${id}`)
-              const scroller = document.querySelector<HTMLElement>('.main')
-              if (!target || !scroller) return
-              const scrollerTop = scroller.getBoundingClientRect().top
-              const paddingTop = parseFloat(getComputedStyle(scroller).paddingTop) || 0
-              const navHeight = document.querySelector<HTMLElement>('.settings-nav')?.offsetHeight ?? 0
-              const anchor = scrollerTop + paddingTop + navHeight + 18
-              const top = target.getBoundingClientRect().top + scroller.scrollTop - anchor
-              setActiveSection(id)
-              scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-            }}
+            onClick={() => setActiveSection(id)}
           >
             <Icon name={icon} size={14} />
             {label}
@@ -149,6 +138,7 @@ export function SettingsPage(): JSX.Element {
       </nav>
 
       <div className="settings-grid">
+        {activeSection === 'accounts' && (
         <section className="panel" id="settings-accounts">
           <div className="panel-head">
             <div>
@@ -198,7 +188,9 @@ export function SettingsPage(): JSX.Element {
             your own below.
           </div>
         </section>
+        )}
 
+        {activeSection === 'java' && (
         <section className="panel" id="settings-java">
           <div className="panel-head">
             <div>
@@ -256,7 +248,9 @@ export function SettingsPage(): JSX.Element {
             instance.
           </div>
         </section>
+        )}
 
+        {activeSection === 'data' && (
         <section className="panel" id="settings-data">
           <div className="panel-head">
             <div>
@@ -294,7 +288,9 @@ export function SettingsPage(): JSX.Element {
             />
           </div>
         </section>
+        )}
 
+        {activeSection === 'behavior' && (
         <section className="panel" id="settings-behavior">
           <div className="panel-head">
             <div>
@@ -323,7 +319,9 @@ export function SettingsPage(): JSX.Element {
             />
           </div>
         </section>
+        )}
 
+        {activeSection === 'updates' && (
         <section className="panel" id="settings-updates">
           <div className="panel-head">
             <div>
@@ -375,7 +373,9 @@ export function SettingsPage(): JSX.Element {
             )}
           </div>
         </section>
+        )}
 
+        {activeSection === 'appearance' && (
         <section className="panel appearance-panel" id="settings-appearance">
           <div className="panel-head">
             <div>
@@ -473,9 +473,11 @@ export function SettingsPage(): JSX.Element {
             />
           </div>
         </section>
+        )}
 
       </div>
 
+      {activeSection === 'about' && (
       <section className="about-card" id="settings-about">
         <div className="about-brand">
           <PolarisMark size={38} />
@@ -505,6 +507,7 @@ export function SettingsPage(): JSX.Element {
           </button>
         </div>
       </section>
+      )}
     </div>
   )
 }
