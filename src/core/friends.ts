@@ -2,6 +2,8 @@ import { readJson, writeJson } from './fsutil'
 import { join } from 'node:path'
 import type { Friend } from '../shared/types'
 
+const WORKER_BASE = 'https://polaris-api.joykelows17.workers.dev'
+
 interface FriendFile {
   friends: Friend[]
 }
@@ -24,24 +26,75 @@ export class FriendStore {
     return [...this.data.friends].sort((a, b) => a.name.localeCompare(b.name))
   }
 
-  async add(code: string, name: string): Promise<Friend> {
+  async syncFromServer(myCode: string): Promise<void> {
+    try {
+      const res = await fetch(`${WORKER_BASE}/v1/friends/list?code=${encodeURIComponent(myCode)}`, { signal: AbortSignal.timeout(8000) })
+      if (!res.ok) return
+      const data = await res.json()
+      if (Array.isArray(data.friends)) {
+        this.data.friends = data.friends.map((f: any) => ({
+          code: String(f.code).toUpperCase(),
+          name: String(f.name || f.code),
+          addedAt: f.addedAt ?? Date.now()
+        }))
+        await this.save()
+      }
+    } catch {
+      // offline: keep local cache
+    }
+  }
+
+  async registerCode(code: string, name: string): Promise<void> {
+    try {
+      await fetch(`${WORKER_BASE}/v1/friends/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, name }),
+        signal: AbortSignal.timeout(8000)
+      })
+    } catch {
+      // best-effort
+    }
+  }
+
+  async add(myCode: string, code: string, name: string): Promise<Friend> {
     const cleanCode = code.trim().toUpperCase()
     const cleanName = name.trim() || cleanCode
     const existing = this.data.friends.find((f) => f.code === cleanCode)
-    if (existing) {
+    if (!existing) {
+      this.data.friends.push({ code: cleanCode, name: cleanName, addedAt: Date.now() })
+    } else {
       existing.name = cleanName
-      await this.save()
-      return existing
     }
-    const friend: Friend = { code: cleanCode, name: cleanName, addedAt: Date.now() }
-    this.data.friends.push(friend)
     await this.save()
-    return friend
+    // sync to backend (best-effort)
+    try {
+      await fetch(`${WORKER_BASE}/v1/friends/add`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ myCode, friendCode: cleanCode }),
+        signal: AbortSignal.timeout(8000)
+      })
+    } catch {
+      // offline: local only
+    }
+    return this.data.friends.find((f) => f.code === cleanCode)!
   }
 
-  async remove(code: string): Promise<void> {
-    this.data.friends = this.data.friends.filter((f) => f.code !== code.trim().toUpperCase())
+  async remove(myCode: string, code: string): Promise<void> {
+    const cleanCode = code.trim().toUpperCase()
+    this.data.friends = this.data.friends.filter((f) => f.code !== cleanCode)
     await this.save()
+    try {
+      await fetch(`${WORKER_BASE}/v1/friends/remove`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ myCode, friendCode: cleanCode }),
+        signal: AbortSignal.timeout(8000)
+      })
+    } catch {
+      // offline: local only
+    }
   }
 
   has(code: string): boolean {

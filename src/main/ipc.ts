@@ -23,13 +23,22 @@ export function registerIpc(services: AppServices): void {
   handle(IPC.bootstrap, async () => services.bootstrap())
   handle(IPC.settingsSnapshot, async () => services.settingsStore.get())
 
-  handle(IPC.friendsList, async () => services.friends.list())
+  handle(IPC.friendsList, async () => {
+    const myCode = services.accounts.activeStored()?.friendCode
+    if (myCode) await services.friends.syncFromServer(myCode)
+    return services.friends.list()
+  })
   handle(IPC.friendsAdd, async (code: string, name: string) => {
-    await services.friends.add(code, name)
+    const myCode = services.accounts.activeStored()?.friendCode
+    if (!myCode) throw new Error('Sign in to add friends.')
+    await services.friends.add(myCode, code, name)
+    if (myCode) await services.friends.syncFromServer(myCode)
     return services.friends.list()
   })
   handle(IPC.friendsRemove, async (code: string) => {
-    await services.friends.remove(code)
+    const myCode = services.accounts.activeStored()?.friendCode
+    if (myCode) await services.friends.remove(myCode, code)
+    else await services.friends.remove('', code)
     return services.friends.list()
   })
 
