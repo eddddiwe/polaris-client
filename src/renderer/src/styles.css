@@ -327,21 +327,17 @@ p {
 }
 
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 4px;
+  height: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border: 3px solid transparent;
-  background-clip: padding-box;
-  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.2);
+  border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.18);
-  border: 3px solid transparent;
-  background-clip: padding-box;
+  background: rgba(139, 92, 246, 0.4);
 }
 
 ::-webkit-scrollbar-track {
@@ -3947,12 +3943,12 @@ body[data-reduce-motion='true'] *::after {
 }
 
 .category-chips::-webkit-scrollbar {
-  height: 5px;
+  height: 3px;
 }
 
 .category-chips::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.2);
+  border-radius: 2px;
 }
 
 .chip {
@@ -6218,27 +6214,23 @@ nav, .sidebar, .topbar {
   position: relative;
 }
 
-/* Better scrollbars */
+/* Hide scrollbars */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 4px;
+  height: 4px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.02);
-  border-radius: 4px;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(139, 92, 246, 0.3), rgba(34, 211, 238, 0.2));
-  border-radius: 4px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
+  background: rgba(139, 92, 246, 0.2);
+  border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(139, 92, 246, 0.5), rgba(34, 211, 238, 0.3));
-  background-clip: padding-box;
+  background: rgba(139, 92, 246, 0.4);
 }
 
 /* Status indicators */
