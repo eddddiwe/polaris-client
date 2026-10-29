@@ -48,9 +48,11 @@ body::before {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(1000px 560px at 8% -12%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 62%),
-    radial-gradient(900px 500px at 92% -4%, rgba(34, 211, 238, 0.11), transparent 60%),
-    radial-gradient(700px 520px at 55% 112%, rgba(244, 114, 182, 0.06), transparent 62%);
+    radial-gradient(1200px 600px at 12% -8%, color-mix(in srgb, var(--accent) 26%, transparent), transparent 58%),
+    radial-gradient(900px 500px at 88% -2%, rgba(34, 211, 238, 0.16), transparent 55%),
+    radial-gradient(800px 600px at 50% 108%, rgba(244, 114, 182, 0.08), transparent 60%),
+    radial-gradient(600px 400px at 75% 30%, rgba(139, 92, 246, 0.05), transparent 70%),
+    radial-gradient(1000px 300px at 30% 95%, rgba(52, 211, 153, 0.04), transparent 65%);
 }
 
 body::after {
@@ -59,19 +61,59 @@ body::after {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  opacity: 0.5;
+  opacity: 0.7;
   background-image:
-    radial-gradient(1px 1px at 22% 31%, rgba(255, 255, 255, 0.4), transparent 100%),
-    radial-gradient(1px 1px at 68% 12%, rgba(255, 255, 255, 0.28), transparent 100%),
-    radial-gradient(1px 1px at 82% 64%, rgba(255, 255, 255, 0.32), transparent 100%),
-    radial-gradient(1px 1px at 36% 82%, rgba(255, 255, 255, 0.22), transparent 100%),
-    radial-gradient(1px 1px at 52% 46%, rgba(255, 255, 255, 0.2), transparent 100%);
+    /* Polaris star (bright North Star) */
+    radial-gradient(3px 3px at 50% 8%, rgba(255, 255, 255, 0.95), transparent 100%),
+    radial-gradient(8px 8px at 50% 8%, rgba(139, 92, 246, 0.4), transparent 100%),
+    radial-gradient(16px 16px at 50% 8%, rgba(139, 92, 246, 0.15), transparent 100%),
+    /* Stars */
+    radial-gradient(1px 1px at 15% 25%, rgba(255, 255, 255, 0.5), transparent 100%),
+    radial-gradient(1px 1px at 35% 18%, rgba(255, 255, 255, 0.35), transparent 100%),
+    radial-gradient(1px 1px at 62% 35%, rgba(255, 255, 255, 0.4), transparent 100%),
+    radial-gradient(1px 1px at 78% 22%, rgba(255, 255, 255, 0.3), transparent 100%),
+    radial-gradient(1px 1px at 90% 45%, rgba(255, 255, 255, 0.25), transparent 100%),
+    radial-gradient(1px 1px at 25% 65%, rgba(255, 255, 255, 0.2), transparent 100%),
+    radial-gradient(1px 1px at 48% 72%, rgba(255, 255, 255, 0.18), transparent 100%),
+    radial-gradient(1px 1px at 72% 80%, rgba(255, 255, 255, 0.22), transparent 100%),
+    radial-gradient(2px 2px at 40% 15%, rgba(34, 211, 238, 0.5), transparent 100%),
+    radial-gradient(2px 2px at 80% 50%, rgba(244, 114, 182, 0.4), transparent 100%);
   background-size:
-    420px 420px,
-    560px 560px,
-    700px 700px,
-    640px 640px,
-    820px 820px;
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    380px 380px,
+    520px 520px,
+    680px 680px,
+    440px 440px,
+    760px 760px,
+    600px 600px,
+    820px 820px,
+    500px 500px,
+    900px 900px,
+    100% 100%,
+    100% 100%;
+  background-repeat: no-repeat;
+}
+
+/* Polaris star twinkle */
+@keyframes polaris-twinkle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.85); }
+}
+
+body::after {
+  animation: polaris-twinkle 4s ease-in-out infinite;
+}
+
+/* Aurora borealis at bottom */
+body::before {
+  animation: aurora-shift 12s ease-in-out infinite alternate;
+}
+
+@keyframes aurora-shift {
+  0% { filter: hue-rotate(0deg) brightness(1); }
+  100% { filter: hue-rotate(30deg) brightness(1.1); }
 }
 
 button,
