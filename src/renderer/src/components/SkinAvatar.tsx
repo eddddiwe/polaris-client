@@ -15,12 +15,15 @@ function loadHead(src: string): Promise<string> {
     img.crossOrigin = 'anonymous'
     img.onload = () => {
       try {
+        // Supersample the head crop so upscaling to avatar size stays crisp.
+        const scale = 4
         const canvas = document.createElement('canvas')
-        canvas.width = HEAD_W
-        canvas.height = HEAD_H
+        canvas.width = HEAD_W * scale
+        canvas.height = HEAD_H * scale
         const ctx = canvas.getContext('2d')
         if (!ctx) return resolve('')
-        ctx.drawImage(img, HEAD_X, HEAD_Y, HEAD_W, HEAD_H, 0, 0, HEAD_W, HEAD_H)
+        ctx.imageSmoothingEnabled = true
+        ctx.drawImage(img, HEAD_X, HEAD_Y, HEAD_W, HEAD_H, 0, 0, HEAD_W * scale, HEAD_H * scale)
         resolve(canvas.toDataURL('image/png'))
       } catch {
         resolve('')
