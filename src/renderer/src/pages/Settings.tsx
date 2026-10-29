@@ -10,6 +10,14 @@ import { ACCENTS, WALLPAPERS } from '@shared/appearance'
 const rangeFill = (value: number, min: number, max: number): CSSProperties =>
   ({ '--fill': `${Math.round(((value - min) / Math.max(1, max - min)) * 100)}%` }) as CSSProperties
 
+const SPACE_THEMES: { id: string; name: string; preview: string }[] = [
+  { id: 'default', name: 'Default (Mixed)', preview: 'radial-gradient(ellipse 120% 80% at 30% 30%, rgba(139,92,246,0.25), transparent 55%), radial-gradient(ellipse 100% 70% at 70% 70%, rgba(34,211,238,0.18), transparent 50%), #05060d' },
+  { id: 'constellations', name: 'Star Constellations', preview: 'radial-gradient(2px 2px at 25% 20%, rgba(255,255,255,0.9), transparent), radial-gradient(2px 2px at 70% 35%, rgba(255,255,255,0.8), transparent), radial-gradient(1.5px 1.5px at 30% 28%, rgba(255,255,255,0.6), transparent), radial-gradient(ellipse 100% 50% at 50% 0%, rgba(139,92,246,0.2), transparent 60%), #05060d' },
+  { id: 'nebula', name: 'Atmospheric Nebula', preview: 'radial-gradient(ellipse 150% 80% at 30% 20%, rgba(139,92,246,0.45), transparent 60%), radial-gradient(ellipse 100% 60% at 70% 10%, rgba(34,211,238,0.3), transparent 50%), radial-gradient(ellipse 80% 70% at 50% 80%, rgba(244,114,182,0.25), transparent 55%), #05060d' },
+  { id: 'scifi', name: 'High-Tech Sci-Fi', preview: 'linear-gradient(rgba(139,92,246,0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(139,92,246,0.12) 1px, transparent 1px), radial-gradient(ellipse 100% 50% at 50% 0%, rgba(34,211,238,0.25), transparent 50%), #05060d' },
+  { id: 'myth', name: 'Cosmic Myth', preview: 'radial-gradient(circle at 50% 50%, rgba(251,191,36,0.12), transparent 40%), radial-gradient(ellipse 120% 80% at 30% 30%, rgba(168,85,247,0.25), transparent 50%), radial-gradient(ellipse 100% 70% at 70% 70%, rgba(244,114,182,0.18), transparent 50%), #05060d' },
+]
+
 export function SettingsPage(): JSX.Element {
   const { boot, api, refresh, toast, openAccount, confirm } = useApp()
 
@@ -389,14 +397,21 @@ export function SettingsPage(): JSX.Element {
                 <strong>Cosmic Theme</strong>
                 <p>Choose your space aesthetic</p>
               </div>
-              <select value={spaceTheme} onChange={(e) => setSpaceTheme(e.target.value)} style={{ minWidth: 180 }}>
-                <option value="default">Default (Mixed)</option>
-                <option value="constellations">Star Constellations</option>
-                <option value="nebula">Atmospheric Nebula</option>
-                <option value="scifi">High-Tech Sci-Fi</option>
-                <option value="myth">Cosmic Myth & Ancient Space</option>
-              </select>
             </div>
+          </div>
+          <div className="space-theme-grid">
+            {SPACE_THEMES.map((theme) => (
+              <button
+                key={theme.id}
+                className={`space-theme-card ${spaceTheme === theme.id ? 'active' : ''}`}
+                style={{ background: theme.preview, backgroundSize: theme.id === 'scifi' ? '24px 24px, 24px 24px, 100% 100%, 100% 100%' : undefined }}
+                onClick={() => setSpaceTheme(theme.id)}
+                aria-pressed={spaceTheme === theme.id}
+              >
+                <span className="space-theme-name">{theme.name}</span>
+                {spaceTheme === theme.id && <span className="space-theme-check"><Icon name="check" size={12} /></span>}
+              </button>
+            ))}
           </div>
 
           <div className="field">
