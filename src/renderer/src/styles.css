@@ -7788,6 +7788,8 @@ input[type='range']:focus-visible::-webkit-slider-thumb {
 /* ---------- friends ---------- */
 .friend-code-card {
   max-width: 520px;
+  margin: 0 auto;
+  text-align: center;
 }
 
 .friend-code-row {
@@ -7795,6 +7797,7 @@ input[type='range']:focus-visible::-webkit-slider-thumb {
   align-items: center;
   gap: 12px;
   margin: 10px 0 6px;
+  justify-content: center;
 }
 
 .friend-code {
