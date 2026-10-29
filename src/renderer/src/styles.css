@@ -78,7 +78,14 @@ body::after {
     radial-gradient(3px 3px at 50% 8%, rgba(255, 255, 255, 0.95), transparent 100%),
     radial-gradient(8px 8px at 50% 8%, rgba(139, 92, 246, 0.4), transparent 100%),
     radial-gradient(16px 16px at 50% 8%, rgba(139, 92, 246, 0.15), transparent 100%),
-    /* Stars */
+    /* Nearby bright stars (Little Dipper / Ursa Minor) */
+    radial-gradient(2px 2px at 46% 12%, rgba(255, 255, 255, 0.7), transparent 100%),
+    radial-gradient(2px 2px at 54% 10%, rgba(255, 255, 255, 0.6), transparent 100%),
+    radial-gradient(1.5px 1.5px at 42% 15%, rgba(255, 255, 255, 0.5), transparent 100%),
+    radial-gradient(1.5px 1.5px at 58% 14%, rgba(255, 255, 255, 0.55), transparent 100%),
+    radial-gradient(1px 1px at 38% 18%, rgba(255, 255, 255, 0.4), transparent 100%),
+    radial-gradient(1px 1px at 62% 17%, rgba(255, 255, 255, 0.45), transparent 100%),
+    /* Distant stars */
     radial-gradient(1px 1px at 15% 25%, rgba(255, 255, 255, 0.5), transparent 100%),
     radial-gradient(1px 1px at 35% 18%, rgba(255, 255, 255, 0.35), transparent 100%),
     radial-gradient(1px 1px at 62% 35%, rgba(255, 255, 255, 0.4), transparent 100%),
@@ -87,9 +94,17 @@ body::after {
     radial-gradient(1px 1px at 25% 65%, rgba(255, 255, 255, 0.2), transparent 100%),
     radial-gradient(1px 1px at 48% 72%, rgba(255, 255, 255, 0.18), transparent 100%),
     radial-gradient(1px 1px at 72% 80%, rgba(255, 255, 255, 0.22), transparent 100%),
-    radial-gradient(2px 2px at 40% 15%, rgba(34, 211, 238, 0.5), transparent 100%),
-    radial-gradient(2px 2px at 80% 50%, rgba(244, 114, 182, 0.4), transparent 100%);
+    /* Colored stars */
+    radial-gradient(2px 2px at 40% 15%, rgba(34, 211, 238, 0.6), transparent 100%),
+    radial-gradient(2px 2px at 80% 50%, rgba(244, 114, 182, 0.5), transparent 100%),
+    radial-gradient(1.5px 1.5px at 20% 40%, rgba(251, 191, 36, 0.4), transparent 100%);
   background-size:
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    100% 100%,
     100% 100%,
     100% 100%,
     100% 100%,
@@ -102,6 +117,7 @@ body::after {
     820px 820px,
     500px 500px,
     900px 900px,
+    100% 100%,
     100% 100%,
     100% 100%;
   background-repeat: no-repeat;
