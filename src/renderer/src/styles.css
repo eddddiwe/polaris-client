@@ -7230,31 +7230,12 @@ textarea:focus {
   opacity: 0.75;
 }
 .settings-grid {
-  grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 .settings-grid .panel {
   scroll-margin-top: 76px;
-}
-#settings-accounts {
-  grid-column: 1;
-  grid-row: 1 / span 2;
-}
-#settings-java {
-  grid-column: 2;
-  grid-row: 1;
-}
-#settings-behavior {
-  grid-column: 2;
-  grid-row: 2;
-}
-#settings-data {
-  grid-column: 1;
-  grid-row: 3;
-}
-#settings-updates {
-  grid-column: 2;
-  grid-row: 3;
+  grid-column: 1 / -1;
 }
 #settings-updates,
 #settings-about {
@@ -7262,7 +7243,6 @@ textarea:focus {
 }
 .appearance-panel {
   grid-column: 1 / -1;
-  grid-row: 4;
 }
 .appearance-panel .swatches {
   gap: 9px;
