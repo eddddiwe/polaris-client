@@ -449,8 +449,70 @@ fn fabric_ensure(mc_version: String, preferred_loader: Option<String>) -> Result
 }
 
 #[tauri::command]
-fn import_mrpack() -> Result<serde_json::Value, String> {
-    Ok(serde_json::json!({"name": "Imported Modpack", "mcVersion": "1.21.1"}))
+async fn import_mrpack(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+    use tauri_plugin_dialog::DialogExt;
+    // File dialog
+    let file = app.dialog().file().add_filter("Modpack", &["mrpack"]).blocking_pick_file();
+    let path = match file {
+        Some(p) => p.to_string(),
+        None => return Err("No file selected".to_string()),
+    };
+
+    // Read zip and parse index
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(&path).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    let mut index_content = String::new();
+    {
+        let mut entry = zip.by_name("modrinth.index.json").map_err(|e| format!("Missing modrinth.index.json: {}", e))?;
+        std::io::Read::read_to_string(&mut entry, &mut index_content).map_err(|e| e.to_string())?;
+    }
+
+    let plan = crate::modpacks::ModpackService::parse_index(&index_content, None)
+        .map_err(|e| e.to_string())?;
+
+    // Create instance
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let (config, instance_id_for_update) = {
+        let instance_store = state.instance_store.lock().unwrap();
+        let config = rt.block_on(instance_store.create(
+            plan.name.clone(),
+            plan.mc_version.clone(),
+            plan.loader.clone(),
+        )).map_err(|e| e)?;
+        // Set loader version if fabric
+        if plan.loader == "fabric" {
+            if let Some(lv) = &plan.loader_version {
+                let _ = rt.block_on(instance_store.update(&config.id, serde_json::json!({"loaderVersion": lv})));
+            }
+        }
+        (config.clone(), config.id.clone())
+    };
+    // Update in-memory instances
+    {
+        let mut instances = state.instances.lock().unwrap();
+        let store = state.instance_store.lock().unwrap();
+        let updated = rt.block_on(store.get(&config.id)).unwrap_or(config.clone());
+        drop(store);
+        instances.push(updated.clone());
+    }
+
+    let instance_id = config.id.clone();
+    // Populate (download mods + extract overrides)
+    let modpack_service = crate::modpacks::ModpackService::new(state.data_dir.join("instances"));
+    let result = modpack_service.populate(&instance_id, &path, &plan, true).await
+        .map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "name": plan.name,
+        "mcVersion": plan.mc_version,
+        "loader": plan.loader,
+        "loaderVersion": plan.loader_version,
+        "instanceId": instance_id,
+        "filesInstalled": result.files_installed,
+        "filesSkipped": result.files_skipped,
+        "overridesExtracted": result.overrides_extracted,
+        "status": "imported"
+    }))
 }
 
 #[tauri::command]
