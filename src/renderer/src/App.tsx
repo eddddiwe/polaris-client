@@ -27,7 +27,17 @@ function getApi(): PolarisAPI {
 }
 
 export default function App(): JSX.Element {
-  const api = useMemo(getApi, [])
+  let api: PolarisAPI
+  try {
+    api = getApi()
+  } catch (e) {
+    return (
+      <div style={{ padding: 40, color: '#fb7185', background: '#07080d', minHeight: '100vh', fontFamily: 'monospace' }}>
+        <h1>Polaris failed to start</h1>
+        <pre style={{ whiteSpace: 'pre-wrap' }}>{String(e)}</pre>
+      </div>
+    )
+  }
   const [boot, setBoot] = useState<Bootstrap | null>(null)
   const [fatal, setFatal] = useState<string | null>(null)
   const [page, setPage] = useState<Page>('home')
