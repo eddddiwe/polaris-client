@@ -353,8 +353,8 @@ p {
   z-index: 1;
   height: 100%;
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  grid-template-rows: 48px minmax(0, 1fr);
+  grid-template-columns: 270px minmax(0, 1fr);
+  grid-template-rows: 52px minmax(0, 1fr);
 }
 
 /* ---------- title bar ---------- */
@@ -490,17 +490,18 @@ p {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 12px;
   width: 100%;
-  height: 41px;
-  padding: 0 12px;
-  border-radius: 11px;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 500;
   text-align: left;
-  transition: background 0.16s, color 0.16s;
+  transition: all 0.2s cubic-bezier(0.2, 0.7, 0.3, 1);
   overflow: hidden;
+  margin-bottom: 2px;
 }
 
 .nav-item::before {
@@ -545,9 +546,15 @@ p {
 }
 
 .nav-item.active {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  background: linear-gradient(90deg, rgba(139, 92, 246, 0.2), rgba(139, 92, 246, 0.05));
   color: var(--text);
   font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.2);
+}
+
+.nav-item.active svg {
+  opacity: 1;
+  color: var(--accent);
 }
 
 .nav-item.active::before {
