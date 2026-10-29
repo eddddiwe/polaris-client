@@ -8,7 +8,7 @@ import { ACCENTS, WALLPAPERS } from '@shared/appearance'
 
 export function SettingsPage(): JSX.Element {
   const { boot, api, refresh, toast, openAccount, confirm } = useApp()
-  const [clientId, setClientId] = useState(boot.settings.msClientId)
+
   const [choosingJava, setChoosingJava] = useState(false)
   const [downloadingJava, setDownloadingJava] = useState(false)
   const [javaVersion, setJavaVersion] = useState(21)
@@ -408,62 +408,7 @@ export function SettingsPage(): JSX.Element {
           </div>
         </section>
 
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <span className="eyebrow">Microsoft</span>
-              <h2>OAuth client</h2>
-            </div>
-          </div>
-          <p className="modal-copy">
-            Device-code sign-in needs a free Azure app registration that supports personal Microsoft accounts and public
-            client flows. No redirect URI or client secret is required. Polaris deliberately does not borrow another
-            launcher's client ID.
-          </p>
-          <p className="fine-print">
-            Choose “Personal Microsoft accounts only” as the supported account type, then set “Allow public client flows”
-            to Yes under Authentication.
-          </p>
-          <div className="field">
-            <label htmlFor="ms-client">Application (client) ID</label>
-            <div className="row-input">
-              <input
-                id="ms-client"
-                value={clientId}
-                placeholder="00000000-0000-0000-0000-000000000000"
-                onChange={(event) => setClientId(event.target.value)}
-              />
-              <button
-                className="btn btn-soft"
-                onClick={() => {
-                  void setSetting({ msClientId: clientId.trim() })
-                  toast('Client ID saved', 'success')
-                }}
-                disabled={clientId.trim() === boot.settings.msClientId}
-              >
-                Save
-              </button>
-            </div>
-          </div>
-          <div className="panel-actions">
-            <button
-              className="link"
-              onClick={() =>
-                void api.openExternal(
-                  'https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/RegisteredApps'
-                )
-              }
-            >
-              <Icon name="external" size={13} /> Open Azure app registrations
-            </button>
-            <button
-              className="link"
-              onClick={() => void api.openExternal('https://learn.microsoft.com/entra/identity-platform/quickstart-register-app')}
-            >
-              <Icon name="external" size={13} /> Registration guide
-            </button>
-          </div>
-        </section>
+
       </div>
 
       <section className="panel">
