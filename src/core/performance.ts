@@ -137,12 +137,24 @@ export function classify(cpu: string, gpu: { name: string }, threads: number, ra
   return 'entry'
 }
 
-export function recommendMemory(ramGb: number, tier: HardwareInfo['tier']): number {
-  if (ramGb <= 8) return 3072
-  if (ramGb <= 12) return 4096
-  if (ramGb <= 16) return 4096
-  if (ramGb <= 24) return 6144
-  return 8192
+export function recommendMemory(ramGb: number, tier: HardwareInfo['tier'], modCount = 0): number {
+  // Base memory from RAM
+  let base = 3072
+  if (ramGb <= 8) base = 3072
+  else if (ramGb <= 12) base = 4096
+  else if (ramGb <= 16) base = 4096
+  else if (ramGb <= 24) base = 6144
+  else base = 8192
+
+  // Add memory for mods (each mod ~50MB, heavy mods ~200MB)
+  const modMemory = Math.min(modCount * 50, 4096)
+  base = Math.min(base + modMemory, Math.round(ramGb * 1024 * 0.75))
+
+  // Tier adjustments
+  if (tier === 'entry') base = Math.min(base, 4096)
+  if (tier === 'enthusiast') base = Math.min(base + 1024, Math.round(ramGb * 1024 * 0.8))
+
+  return Math.max(1024, Math.round(base / 512) * 512) // round to 512MB
 }
 
 export function buildJvmFlags(
@@ -194,7 +206,19 @@ export function buildJvmFlags(
     '-XX:+PerfDisableSharedMem',
     '-XX:MaxTenuringThreshold=1',
     '-Dfile.encoding=UTF-8',
-    '-Djava.awt.headless=false'
+    '-Djava.awt.headless=false',
+    // Additional optimizations for Java 21+
+    ...(javaMajor && javaMajor >= 21 ? [
+      '-XX:+UseStringDeduplication',
+      '-XX:+UseCompactObjectHeaders',
+      '-XX:+OptimizeStringConcat',
+      '-Djdk.nio.maxCachedBufferSize=262144'
+    ] : []),
+    // Large heap optimizations
+    ...(heap >= 4096 ? [
+      '-XX:G1ConcRefinementThreads=4',
+      '-XX:G1ConcMarkStepDurationMillis=5'
+    ] : [])
   ]
   if (preset === 'low-latency') {
     flags.push('-XX:+UseStringDeduplication')

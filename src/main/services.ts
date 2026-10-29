@@ -266,8 +266,11 @@ export class AppServices extends EventEmitter {
   }
 
   async createInstance(input: CreateInstanceInput): Promise<InstanceSummary> {
+    const isModded = input.loader === 'fabric'
+    const baseMemory = this.hardware.recommendedMemoryMb
+    const memory = isModded ? Math.min(32768, Math.max(baseMemory, 6144)) : baseMemory
     const config = await this.instances.create(input, this.settingsStore.get(), {
-      memoryMb: this.hardware.recommendedMemoryMb
+      memoryMb: memory
     })
     return await this.summarize(config)
   }
