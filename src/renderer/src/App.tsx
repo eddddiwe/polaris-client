@@ -314,7 +314,9 @@ export default function App(): JSX.Element {
       }}
     >
       <div className="app" style={style} data-wallpaper={boot.settings.wallpaper}>
+        <div className="star-field" aria-hidden="true" />
         <div className="polaris-star" aria-hidden="true" />
+        <div className="shooting-star-2" aria-hidden="true" />
         <Wallpaper />
         <TitleBar />
         <Sidebar />
