@@ -114,7 +114,7 @@ export function StorePage(): JSX.Element {
       <section className="store-profile panel">
         <div className="store-profile-main">
           <span className="store-avatar">
-            <SkinAvatar skinUrl={active?.skinUrl} name={active?.name ?? '?'} size={54} radius={14} />
+            <SkinAvatar skinUrl={active?.skinUrl} name={active?.name ?? '?'} uuid={active?.uuid} size={54} radius={14} />
             <span className="store-avatar-badge">
               <CosmeticBadge id={snapshot.equippedBadge} size={20} />
             </span>

@@ -334,7 +334,7 @@ export function AccountModal({
               onClick={() => void api.setActiveAccount(account.id).then(() => refresh())}
             >
               <span className="account-avatar">
-                <SkinAvatar skinUrl={account.skinUrl} name={account.name} className="avatar avatar-md" />
+                <SkinAvatar skinUrl={account.skinUrl} name={account.name} uuid={account.uuid} className="avatar avatar-md" />
                 <span className={`account-type-badge ${account.type === 'microsoft' ? 'ms' : 'off'}`}>
                   {account.type === 'microsoft' ? 'MS' : 'OFF'}
                 </span>

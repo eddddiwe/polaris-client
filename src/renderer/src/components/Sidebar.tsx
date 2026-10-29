@@ -61,7 +61,7 @@ export function Sidebar(): JSX.Element {
       <div className="sidebar-spacer" />
 
       <button className="account-chip" onClick={openAccount}>
-        <SkinAvatar skinUrl={active?.skinUrl} name={active?.name ?? '?'} className="avatar" />
+        <SkinAvatar skinUrl={active?.skinUrl} name={active?.name ?? '?'} uuid={active?.uuid} className="avatar" />
         <span className="account-copy">
           <strong className="name-with-badge">
             {active ? active.name : 'Add account'}

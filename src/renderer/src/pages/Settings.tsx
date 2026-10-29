@@ -164,7 +164,7 @@ export function SettingsPage(): JSX.Element {
             {boot.accounts.map((account) => (
               <div key={account.id} className={`setting-row account-card ${account.active ? 'active' : ''}`}>
                 <div className="account-avatar">
-                  <SkinAvatar skinUrl={account.skinUrl} name={account.name} className="avatar avatar-md" />
+                  <SkinAvatar skinUrl={account.skinUrl} name={account.name} uuid={account.uuid} className="avatar avatar-md" />
                   <span className={`account-type-badge ${account.type === 'microsoft' ? 'ms' : 'off'}`}>{account.type === 'microsoft' ? 'MS' : 'OFF'}</span>
                 </div>
                 <div className="account-info">
