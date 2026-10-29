@@ -1123,7 +1123,7 @@ function PerformanceTab(): JSX.Element {
 }
 
 function LogsTab(): JSX.Element {
-  const { detail, api, toast, launchState } = useApp()
+  const { detail, api, toast, launchState, refresh } = useApp()
   const [lines, setLines] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [command, setCommand] = useState('')
@@ -1153,6 +1153,24 @@ function LogsTab(): JSX.Element {
 
   if (!detail) return <Spinner />
   const isServer = detail.instance.kind === 'server'
+
+  const [crashes, setCrashes] = useState<{ name: string; path: string; size: number; modified: number }[]>([])
+  const [safeMode, setSafeMode] = useState(false)
+
+  useEffect(() => {
+    if (!detail) return
+    void api.listCrashReports(detail.instance.id).then(setCrashes).catch(() => {})
+  }, [api, detail])
+
+  const disableMods = async (): Promise<void> => {
+    try {
+      const result = await api.disableAllMods(detail.instance.id)
+      toast(`Disabled ${result.disabled} mods. Try launching again.`, 'success')
+      await refresh()
+    } catch (error) {
+      toast(errorMessage(error), 'error')
+    }
+  }
 
   const send = async (): Promise<void> => {
     const value = command.trim()
@@ -1188,6 +1206,25 @@ function LogsTab(): JSX.Element {
         <Spinner label="Reading log" />
       ) : (
         <pre className="log-view">{lines.join('\n') || 'No log yet. Launch the instance to generate one.'}</pre>
+      )}
+      {crashes.length > 0 && (
+        <div className="crash-reports">
+          <h3>Crash reports ({crashes.length})</h3>
+          <div className="crash-list">
+            {crashes.slice(0, 5).map((crash) => (
+              <div key={crash.name} className="crash-item">
+                <span className="crash-name">{crash.name}</span>
+                <span className="crash-size">{Math.round(crash.size / 1024)}KB</span>
+                <button className="btn btn-ghost btn-sm" onClick={() => void api.openExternal(`file://${crash.path}`)}>
+                  <Icon name="folder" size={12} /> Open
+                </button>
+              </div>
+            ))}
+          </div>
+          <button className="btn btn-soft btn-sm" onClick={() => void disableMods()}>
+            <Icon name="shield" size={14} /> Disable all mods (safe mode)
+          </button>
+        </div>
       )}
       {isServer && (
         <form

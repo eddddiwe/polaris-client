@@ -5,6 +5,8 @@ export const IPC = {
   openRoot: 'app:openRoot',
   openInstanceFolder: 'app:openInstanceFolder',
   openLogs: 'app:openLogs',
+  listCrashReports: 'crash:list',
+  disableAllMods: 'mods:disableAll',
   versionsList: 'versions:list',
   instanceGet: 'instances:get',
   instanceCreate: 'instances:create',

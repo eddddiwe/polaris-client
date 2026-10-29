@@ -17,6 +17,8 @@ export function createTauriApi(): PolarisAPI {
     openRootFolder: () => invoke('open_root'),
     openInstanceFolder: (id) => invoke('open_instance_folder', { id }),
     openLogsFolder: (id) => invoke('open_logs', { id }),
+    listCrashReports: (id) => invoke('crash_list', { id }),
+    disableAllMods: (id) => invoke('mods_disableAll', { id }),
     versions: (includeSnapshots) => invoke('versions_list', { includeSnapshots }),
     fabricLoaders: (mcVersion) => invoke('fabric_loaders', { mcVersion }),
     fabricEnsure: (mcVersion, preferredLoader) => invoke('fabric_ensure', { mcVersion, preferredLoader }),

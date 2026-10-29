@@ -1,5 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
+import { readdir, rename } from 'node:fs/promises'
 import { IPC } from '../shared/ipc'
 
 import { ensureDir } from '../core/fsutil'
@@ -55,6 +56,39 @@ export function registerIpc(services: AppServices): void {
   handle(IPC.openLogs, async (id: string) => {
     await services.instances.get(id)
     await shell.openPath(join(services.paths.instances, id, 'logs'))
+  })
+
+  handle(IPC.listCrashReports, async (id: string) => {
+    const crashDir = join(services.paths.instances, id, 'crash-reports')
+    try {
+      const files = await readdir(crashDir)
+      const reports = []
+      for (const file of files) {
+        if (!file.endsWith('.txt')) continue
+        const fullPath = join(crashDir, file)
+        const stat = await (await import('node:fs/promises')).stat(fullPath)
+        reports.push({ name: file, path: fullPath, size: stat.size, modified: stat.mtimeMs })
+      }
+      return reports.sort((a, b) => b.modified - a.modified)
+    } catch {
+      return []
+    }
+  })
+
+  handle(IPC.disableAllMods, async (id: string) => {
+    const instance = await services.instances.get(id)
+    const modsDir = join(services.paths.instances, id, 'mods')
+    try {
+      const files = await readdir(modsDir)
+      for (const file of files) {
+        if (file.endsWith('.jar') && !file.endsWith('.disabled')) {
+          await rename(join(modsDir, file), join(modsDir, `${file}.disabled`))
+        }
+      }
+      return { disabled: files.filter(f => f.endsWith('.jar') && !f.endsWith('.disabled')).length }
+    } catch {
+      return { disabled: 0 }
+    }
   })
 
   handle(IPC.versionsList, async (includeSnapshots: boolean) => services.listVersions(Boolean(includeSnapshots)))

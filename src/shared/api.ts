@@ -46,6 +46,8 @@ export interface PolarisAPI {
   openRootFolder(): Promise<void>
   openInstanceFolder(id: string): Promise<void>
   openLogsFolder(id: string): Promise<void>
+  listCrashReports(id: string): Promise<{ name: string; path: string; size: number; modified: number }[]>
+  disableAllMods(id: string): Promise<{ disabled: number }>
 
   versions(includeSnapshots: boolean): Promise<VersionSummary[]>
   fabricLoaders(mcVersion: string): Promise<{ version: string; stable: boolean }[]>
