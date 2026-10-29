@@ -89,6 +89,8 @@ pub fn run() {
             cosmetic_sync_get,
             import_mrpack,
             update_instance,
+            gameui_get,
+            gameui_apply,
             perf_scan,
             perf_plan,
             perf_apply,
@@ -987,6 +989,138 @@ async fn perf_apply(instance_id: String, profile: String, memory_mb: Option<u32>
         "memoryMb": memory,
         "jvmPreset": jvm_preset,
         "profile": profile
+    }))
+}
+
+#[tauri::command]
+async fn gameui_get(instance_id: String, state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let instance_store = state.instance_store.lock().unwrap();
+    let instance_dir = instance_store.dir(&instance_id);
+    drop(instance_store);
+
+    let options_file = instance_dir.join("options.txt");
+
+    // Defaults
+    let mut values = serde_json::json!({
+        "guiScale": 0,
+        "fov": 70.0,
+        "gamma": 0.5,
+        "chatOpacity": 1.0,
+        "chatScale": 1.0,
+        "screenEffectScale": 1.0,
+        "attackIndicator": 1
+    });
+
+    let mut source = "defaults".to_string();
+
+    if options_file.exists() {
+        if let Ok(content) = std::fs::read_to_string(&options_file) {
+            let mut parsed: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+            for line in content.lines() {
+                if let Some(idx) = line.find(':') {
+                    parsed.insert(line[..idx].to_string(), line[idx+1..].to_string());
+                }
+            }
+            let read_num = |key: &str, default: f64| -> f64 {
+                parsed.get(key).and_then(|v| v.parse().ok()).unwrap_or(default)
+            };
+            values = serde_json::json!({
+                "guiScale": read_num("guiScale", 0.0).round() as i64,
+                "fov": read_num("fov", 70.0).round() as i64,
+                "gamma": (read_num("gamma", 0.5) * 100.0).round() / 100.0,
+                "chatOpacity": (read_num("chatOpacity", 1.0) * 100.0).round() / 100.0,
+                "chatScale": (read_num("chatScale", 1.0) * 100.0).round() / 100.0,
+                "screenEffectScale": (read_num("screenEffectScale", 1.0) * 100.0).round() / 100.0,
+                "attackIndicator": read_num("attackIndicator", 1.0).round() as i64,
+            });
+            source = "options.txt".to_string();
+        }
+    }
+
+    Ok(serde_json::json!({
+        "values": values,
+        "source": source
+    }))
+}
+
+#[tauri::command]
+async fn gameui_apply(instance_id: String, values: serde_json::Value, state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let instance_store = state.instance_store.lock().unwrap();
+    let instance_dir = instance_store.dir(&instance_id);
+    drop(instance_store);
+
+    // Check if running
+    let launch_state = state.launch_state.lock().unwrap();
+    if launch_state.status == "running" && launch_state.instance_id.as_deref() == Some(&instance_id) {
+        return Err("Close Minecraft before changing interface options.".to_string());
+    }
+    drop(launch_state);
+
+    let options_file = instance_dir.join("options.txt");
+
+    // Normalize values
+    let gui_scale = values.get("guiScale").and_then(|v| v.as_f64()).unwrap_or(0.0).round().clamp(0.0, 4.0) as i64;
+    let fov = values.get("fov").and_then(|v| v.as_f64()).unwrap_or(70.0).round().clamp(30.0, 110.0);
+    let gamma = values.get("gamma").and_then(|v| v.as_f64()).unwrap_or(0.5).clamp(0.0, 1.0);
+    let chat_opacity = values.get("chatOpacity").and_then(|v| v.as_f64()).unwrap_or(1.0).clamp(0.0, 1.0);
+    let chat_scale = values.get("chatScale").and_then(|v| v.as_f64()).unwrap_or(1.0).clamp(0.0, 1.0);
+    let screen_effect = values.get("screenEffectScale").and_then(|v| v.as_f64()).unwrap_or(1.0).clamp(0.0, 1.0);
+    let attack_indicator = values.get("attackIndicator").and_then(|v| v.as_f64()).unwrap_or(1.0).round().clamp(0.0, 2.0) as i64;
+
+    // Read existing
+    let mut existing: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    if options_file.exists() {
+        if let Ok(content) = std::fs::read_to_string(&options_file) {
+            for line in content.lines() {
+                if let Some(idx) = line.find(':') {
+                    existing.insert(line[..idx].to_string(), line[idx+1..].to_string());
+                }
+            }
+        }
+    }
+
+    // Apply
+    let new_values = [
+        ("guiScale", gui_scale.to_string()),
+        ("fov", format!("{:.1}", fov)),
+        ("gamma", format!("{:.2}", gamma)),
+        ("chatOpacity", format!("{:.2}", chat_opacity)),
+        ("chatScale", format!("{:.2}", chat_scale)),
+        ("screenEffectScale", format!("{:.2}", screen_effect)),
+        ("attackIndicator", attack_indicator.to_string()),
+    ];
+
+    let mut changed = 0i64;
+    for (key, val) in &new_values {
+        if existing.get(*key) != Some(val) {
+            existing.insert(key.to_string(), val.clone());
+            changed += 1;
+        }
+    }
+
+    if changed > 0 {
+        // Backup
+        let backup = instance_dir.join(format!("options.txt.polaris-{}.bak", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()));
+        if options_file.exists() {
+            std::fs::copy(&options_file, &backup).ok();
+        }
+        let body: String = existing.iter().map(|(k, v)| format!("{}:{}", k, v)).collect::<Vec<_>>().join("\n");
+        std::fs::write(&options_file, format!("{}\n", body)).ok();
+    }
+
+    let result_values = serde_json::json!({
+        "guiScale": gui_scale,
+        "fov": fov,
+        "gamma": (gamma * 100.0).round() / 100.0,
+        "chatOpacity": (chat_opacity * 100.0).round() / 100.0,
+        "chatScale": (chat_scale * 100.0).round() / 100.0,
+        "screenEffectScale": (screen_effect * 100.0).round() / 100.0,
+        "attackIndicator": attack_indicator,
+    });
+
+    Ok(serde_json::json!({
+        "values": result_values,
+        "changed": changed,
     }))
 }
 
