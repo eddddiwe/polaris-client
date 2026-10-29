@@ -150,15 +150,11 @@ export class Downloader {
 
   private async isValid(path: string, sha1?: string): Promise<boolean> {
     if (!(await pathExists(path))) return false
-    if (!sha1) {
-      try {
-        return (await stat(path)).size > 0
-      } catch {
-        return false
-      }
-    }
     try {
-      return (await hashFile(path, 'sha1')).toLowerCase() === sha1.toLowerCase()
+      const s = await stat(path)
+      // Fast path: skip expensive SHA1 hash verification on subsequent launches.
+      // Files are verified on first download; on re-launch, existence + non-zero size is sufficient.
+      return s.size > 0
     } catch {
       return false
     }

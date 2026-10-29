@@ -207,6 +207,9 @@ export function buildJvmFlags(
     '-XX:MaxTenuringThreshold=1',
     '-Dfile.encoding=UTF-8',
     '-Djava.awt.headless=false',
+    // Faster JVM startup
+    '-XX:+TieredCompilation',
+    '-XX:TieredStopAtLevel=4',
     // Additional optimizations for Java 21+
     ...(javaMajor && javaMajor >= 21 ? [
       '-XX:+UseStringDeduplication',
