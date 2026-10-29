@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type CSSProperties } from 'react'
 import type { Settings } from '@shared/types'
 import { errorMessage, useApp } from '../context'
-import { Icon, PolarisMark } from '../components/Icons'
+import { Icon, PolarisMark, type IconName } from '../components/Icons'
 import { CosmeticBadge } from '../components/Cosmetics'
 import { Switch } from '../components/Feedback'
 import { ACCENTS, WALLPAPERS } from '@shared/appearance'
+
+const rangeFill = (value: number, min: number, max: number): CSSProperties =>
+  ({ '--fill': `${Math.round(((value - min) / Math.max(1, max - min)) * 100)}%` }) as CSSProperties
 
 export function SettingsPage(): JSX.Element {
   const { boot, api, refresh, toast, openAccount, confirm } = useApp()
@@ -16,6 +19,7 @@ export function SettingsPage(): JSX.Element {
   const [wallpaperUrl, setWallpaperUrl] = useState(boot.settings.wallpaperUrl)
   const [wallDim, setWallDim] = useState(boot.settings.wallpaperDim)
   const [wallBlur, setWallBlur] = useState(boot.settings.wallpaperBlur)
+  const [activeSection, setActiveSection] = useState('accounts')
 
   // Apply space theme to body
   useEffect(() => {
@@ -108,8 +112,43 @@ export function SettingsPage(): JSX.Element {
         </button>
       </div>
 
+      <nav className="settings-nav" aria-label="Settings sections">
+        {(
+          [
+            ['accounts', 'Accounts', 'user'],
+            ['java', 'Java', 'coffee'],
+            ['data', 'Game data', 'folder'],
+            ['behavior', 'Behavior', 'sliders'],
+            ['appearance', 'Appearance', 'sparkles'],
+            ['updates', 'Updates', 'download'],
+            ['about', 'About', 'star']
+          ] as [string, string, IconName][]
+        ).map(([id, label, icon]) => (
+          <button
+            key={id}
+            className={`settings-nav-item ${activeSection === id ? 'active' : ''}`}
+            aria-current={activeSection === id ? 'true' : undefined}
+            onClick={() => {
+              const target = document.getElementById(`settings-${id}`)
+              const scroller = document.querySelector<HTMLElement>('.main')
+              if (!target || !scroller) return
+              const scrollerTop = scroller.getBoundingClientRect().top
+              const paddingTop = parseFloat(getComputedStyle(scroller).paddingTop) || 0
+              const navHeight = document.querySelector<HTMLElement>('.settings-nav')?.offsetHeight ?? 0
+              const anchor = scrollerTop + paddingTop + navHeight + 18
+              const top = target.getBoundingClientRect().top + scroller.scrollTop - anchor
+              setActiveSection(id)
+              scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+            }}
+          >
+            <Icon name={icon} size={14} />
+            {label}
+          </button>
+        ))}
+      </nav>
+
       <div className="settings-grid">
-        <section className="panel">
+        <section className="panel" id="settings-accounts">
           <div className="panel-head">
             <div>
               <span className="eyebrow">Identity</span>
@@ -159,7 +198,7 @@ export function SettingsPage(): JSX.Element {
           </div>
         </section>
 
-        <section className="panel">
+        <section className="panel" id="settings-java">
           <div className="panel-head">
             <div>
               <span className="eyebrow">Runtime</span>
@@ -217,7 +256,7 @@ export function SettingsPage(): JSX.Element {
           </div>
         </section>
 
-        <section className="panel">
+        <section className="panel" id="settings-data">
           <div className="panel-head">
             <div>
               <span className="eyebrow">Storage</span>
@@ -255,7 +294,7 @@ export function SettingsPage(): JSX.Element {
           </div>
         </section>
 
-        <section className="panel">
+        <section className="panel" id="settings-behavior">
           <div className="panel-head">
             <div>
               <span className="eyebrow">Behavior</span>
@@ -284,7 +323,59 @@ export function SettingsPage(): JSX.Element {
           </div>
         </section>
 
-        <section className="panel appearance-panel">
+        <section className="panel" id="settings-updates">
+          <div className="panel-head">
+            <div>
+              <span className="eyebrow">Updates</span>
+              <h2>Client Updates</h2>
+            </div>
+          </div>
+          <div className="settings-rows">
+            <div className="setting-row">
+              <div>
+                <strong>Current version</strong>
+                <span className="mono-path">{boot.appVersion}</span>
+              </div>
+              <button
+                className="btn btn-soft btn-sm"
+                onClick={async () => {
+                  try {
+                    const info = await api.checkForUpdates()
+                    if (info.hasUpdate) {
+                      toast(`Update available: v${info.latestVersion}`, 'info')
+                    } else {
+                      toast('You are on the latest version', 'success')
+                    }
+                  } catch (error) {
+                    toast(errorMessage(error), 'error')
+                  }
+                }}
+              >
+                <Icon name="refresh" size={14} /> Check for updates
+              </button>
+            </div>
+            {boot.updateInfo?.hasUpdate && (
+              <div className="update-banner">
+                <div className="update-info">
+                  <strong>Update available: v{boot.updateInfo.latestVersion}</strong>
+                  <span>Current: v{boot.updateInfo.currentVersion}</span>
+                  {boot.updateInfo.releaseNotes && <p className="release-notes">{boot.updateInfo.releaseNotes}</p>}
+                </div>
+                <button
+                  className="btn btn-primary"
+                  onClick={async () => {
+                    await api.installUpdate()
+                    toast('Downloading and installing update...', 'info')
+                  }}
+                >
+                  <Icon name="download" size={14} /> Download Update
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="panel appearance-panel" id="settings-appearance">
           <div className="panel-head">
             <div>
               <span className="eyebrow">Appearance</span>
@@ -336,6 +427,7 @@ export function SettingsPage(): JSX.Element {
                 max={90}
                 step={5}
                 value={wallDim}
+                style={rangeFill(wallDim, 0, 90)}
                 onChange={(event) => setWallDim(Number(event.target.value))}
               />
             </div>
@@ -350,6 +442,7 @@ export function SettingsPage(): JSX.Element {
                 max={30}
                 step={1}
                 value={wallBlur}
+                style={rangeFill(wallBlur, 0, 30)}
                 onChange={(event) => setWallBlur(Number(event.target.value))}
               />
             </div>
@@ -382,59 +475,7 @@ export function SettingsPage(): JSX.Element {
 
       </div>
 
-      <section className="panel">
-        <div className="panel-head">
-          <div>
-            <span className="eyebrow">Updates</span>
-            <h2>Client Updates</h2>
-          </div>
-        </div>
-        <div className="settings-rows">
-          <div className="setting-row">
-            <div>
-              <strong>Current version</strong>
-              <span className="mono-path">{boot.appVersion}</span>
-            </div>
-            <button
-              className="btn btn-soft btn-sm"
-              onClick={async () => {
-                try {
-                  const info = await api.checkForUpdates()
-                  if (info.hasUpdate) {
-                    toast(`Update available: v${info.latestVersion}`, 'info')
-                  } else {
-                    toast('You are on the latest version', 'success')
-                  }
-                } catch (error) {
-                  toast(errorMessage(error), 'error')
-                }
-              }}
-            >
-              <Icon name="refresh" size={14} /> Check for updates
-            </button>
-          </div>
-          {boot.updateInfo?.hasUpdate && (
-            <div className="update-banner">
-              <div className="update-info">
-                <strong>Update available: v{boot.updateInfo.latestVersion}</strong>
-                <span>Current: v{boot.updateInfo.currentVersion}</span>
-                {boot.updateInfo.releaseNotes && <p className="release-notes">{boot.updateInfo.releaseNotes}</p>}
-              </div>
-              <button
-                className="btn btn-primary"
-                onClick={async () => {
-                  await api.installUpdate()
-                  toast('Downloading and installing update...', 'info')
-                }}
-              >
-                <Icon name="download" size={14} /> Download Update
-              </button>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="about-card">
+      <section className="about-card" id="settings-about">
         <div className="about-brand">
           <PolarisMark size={38} />
           <div>

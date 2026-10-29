@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import type { DeviceCodeInfo, InstanceKind, LoaderType, PerfProfileId, VersionSummary } from '@shared/types'
 import { errorMessage, useApp, type ConfirmOptions } from '../context'
 import { Icon } from './Icons'
 import { CosmeticBadge } from './Cosmetics'
 import { Modal, Spinner } from './Feedback'
+
+const rangeFill = (value: number, min: number, max: number): CSSProperties =>
+  ({ '--fill': `${Math.round(((value - min) / Math.max(1, max - min)) * 100)}%` }) as CSSProperties
 
 export function ConfirmModal({
   title,
@@ -48,6 +51,7 @@ export function NewInstanceModal({
   const [eula, setEula] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const memoryMax = Math.min(16384, Math.max(4096, Math.round(hardware.ramGb * 1024 * 0.5)))
 
   useEffect(() => {
     api
@@ -205,9 +209,10 @@ export function NewInstanceModal({
         <input
           type="range"
           min={2048}
-          max={Math.min(16384, Math.max(4096, Math.round(hardware.ramGb * 1024 * 0.5)))}
+          max={memoryMax}
           step={512}
           value={memory}
+          style={rangeFill(memory, 2048, memoryMax)}
           onChange={(event) => setMemory(Number(event.target.value))}
         />
         <span className="hint">
@@ -327,15 +332,27 @@ export function AccountModal({
               className={`account-row ${account.active ? 'active' : ''}`}
               onClick={() => void api.setActiveAccount(account.id).then(() => refresh())}
             >
-              <span className="avatar avatar-sm">{account.name.slice(0, 1).toUpperCase()}</span>
-              <span>
+              <span className="account-avatar">
+                <span className="avatar avatar-md">{account.name.slice(0, 1).toUpperCase()}</span>
+                <span className={`account-type-badge ${account.type === 'microsoft' ? 'ms' : 'off'}`}>
+                  {account.type === 'microsoft' ? 'MS' : 'OFF'}
+                </span>
+              </span>
+              <span className="account-row-copy">
                 <strong className="name-with-badge">
                   {account.name}
                   {account.active && <CosmeticBadge id={settings.equippedBadge} size={14} />}
                 </strong>
-                <small>Microsoft account</small>
+                <small>{account.type === 'microsoft' ? 'Microsoft account' : 'Offline account'}</small>
+                {account.uuid && <span className="account-uuid">{account.uuid}</span>}
               </span>
-              {account.active && <Icon name="check" size={16} />}
+              {account.active ? (
+                <span className="badge badge-violet account-active-badge">
+                  <Icon name="check" size={12} /> Active
+                </span>
+              ) : (
+                <span className="account-use">Use</span>
+              )}
             </button>
           ))}
         </div>

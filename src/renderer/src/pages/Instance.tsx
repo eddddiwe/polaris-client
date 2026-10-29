@@ -758,6 +758,47 @@ const JVM_PRESETS: { id: JvmPresetId; name: string; sub: string }[] = [
   { id: 'custom', name: 'Custom', sub: 'Your own flags' }
 ]
 
+const LOG_LEVELS: Record<string, string> = {
+  INFO: '#4ade80',
+  WARN: '#fbbf24',
+  ERROR: '#f87171',
+  FATAL: '#fb7185',
+  DEBUG: '#8ea4ff',
+  TRACE: '#7d88a5'
+}
+const LOG_MESSAGE_COLOR = '#c9d1e8'
+const LOG_MUTED_COLOR = '#5f6a86'
+const LOG_TIME_COLOR = '#8a93b3'
+
+function logSegments(line: string): { text: string; color: string }[] {
+  const level = line.match(/\/(INFO|WARN|ERROR|DEBUG|FATAL|TRACE):/)
+  const time = line.match(/\d{1,2}:\d{2}(?::\d{2})?/)
+  const timeText = time ? time[0] : ''
+  const timeStart = time ? line.indexOf(timeText) : -1
+  const timeEnd = timeStart + timeText.length
+  const levelStart = level ? line.indexOf(level[0], timeEnd) : -1
+  const levelText = level ? level[0] : ''
+  const levelEnd = levelStart + levelText.length
+  const levelColor = level ? LOG_LEVELS[level[1].toUpperCase()] ?? LOG_MUTED_COLOR : LOG_MUTED_COLOR
+  const segments: { text: string; color: string }[] = []
+  const add = (from: number, to: number, color: string): void => {
+    const text = line.slice(from, to)
+    if (text) segments.push({ text, color })
+  }
+  if (!level) {
+    add(0, timeEnd, LOG_MUTED_COLOR)
+    add(timeStart, timeEnd, LOG_TIME_COLOR)
+    add(timeEnd, line.length, LOG_MESSAGE_COLOR)
+    return segments
+  }
+  add(0, timeStart, LOG_MUTED_COLOR)
+  add(timeStart, timeEnd, LOG_TIME_COLOR)
+  if (levelStart > timeEnd) add(timeEnd, levelStart, LOG_MUTED_COLOR)
+  add(levelStart, levelEnd, levelColor)
+  add(levelEnd, line.length, LOG_MESSAGE_COLOR)
+  return segments
+}
+
 function PerformanceTab(): JSX.Element {
   const { detail, api, reloadDetail, refresh, toast, gameRunning, hardware } = useApp()
   const [profile, setProfile] = useState<PerfProfileId>(detail?.instance.perfProfile ?? 'balanced')
@@ -1205,7 +1246,22 @@ function LogsTab(): JSX.Element {
       {loading ? (
         <Spinner label="Reading log" />
       ) : (
-        <pre className="log-view">{lines.join('\n') || 'No log yet. Launch the instance to generate one.'}</pre>
+        <pre className="log-view">
+          {lines.length === 0 ? (
+            'No log yet. Launch the instance to generate one.'
+          ) : (
+            lines.map((line, index) => (
+              <span key={index} className="log-line">
+                {logSegments(line).map((segment, segmentIndex) => (
+                  <span key={segmentIndex} style={{ color: segment.color }}>
+                    {segment.text}
+                  </span>
+                ))}
+                {index < lines.length - 1 ? '\n' : ''}
+              </span>
+            ))
+          )}
+        </pre>
       )}
       {crashes.length > 0 && (
         <div className="crash-reports">

@@ -77,17 +77,25 @@ export function InstancesPage(): JSX.Element {
           <p className="page-sub">Isolated game directories, per-instance Java, mods and performance policy.</p>
         </div>
         <div className="page-actions">
-          <div className="search-field compact">
-            <Icon name="search" size={15} />
-            <input placeholder="Filter instances" value={query} onChange={(event) => setQuery(event.target.value)} />
-          </div>
           <button className="btn btn-primary" onClick={openNewInstance}>
             <Icon name="plus" size={15} /> New instance
           </button>
-          <button className="btn btn-secondary" onClick={importModpack} disabled={importing}>
+        </div>
+      </div>
+
+      <div className="page-toolbar">
+        <div className="search-field compact">
+          <Icon name="search" size={15} />
+          <input placeholder="Filter instances" value={query} onChange={(event) => setQuery(event.target.value)} />
+        </div>
+        <div className="page-toolbar-meta">
+          <span>{filtered.length} of {instances.length} instances</span>
+        </div>
+        <div className="page-toolbar-actions">
+          <button className="btn btn-ghost" onClick={importModpack} disabled={importing}>
             <Icon name="folder" size={15} /> Import .mrpack
           </button>
-          <button className="btn btn-primary" onClick={checkUpdates}>
+          <button className="btn btn-ghost" onClick={checkUpdates}>
             <Icon name="refresh" size={15} /> Check for updates
           </button>
         </div>
@@ -134,12 +142,10 @@ export function InstancesPage(): JSX.Element {
             <article
               key={instance.id}
               className={`instance-card ${instance.running ? 'running' : ''}`}
+              style={{ '--card-accent': instance.accent } as CSSProperties}
               onClick={() => navigate('instance', instance.id)}
             >
-              <div
-                className="instance-banner"
-                style={{ '--card-accent': instance.accent } as CSSProperties}
-              >
+              <div className="instance-banner">
                 <span className="instance-glow" />
                 <span className="instance-glyph">{instance.icon || instance.name.slice(0, 1).toUpperCase()}</span>
                 <div className="instance-badges">
