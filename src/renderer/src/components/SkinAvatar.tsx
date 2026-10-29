@@ -84,7 +84,7 @@ export function SkinAvatar({
   radius?: number
   className?: string
 }): JSX.Element {
-  const [mcHeadsFailed, setMcHeadsFailed] = useState(false)
+  const [renderFailed, setRenderFailed] = useState(false)
   const [localHead, setLocalHead] = useState<string | null>(null)
   const initial = (name.trim()[0] ?? '?').toUpperCase()
 
@@ -103,20 +103,21 @@ export function SkinAvatar({
   }, [skinUrl])
 
   const cls = className ?? 'avatar'
-  const mcHeadsUrl =
-    uuid && skinUrl ? `https://mc-heads.net/head/${uuid}/${Math.max(64, size ?? 64)}` : null
+  const minotarUrl =
+    uuid && skinUrl ? `https://minotar.net/helm/${uuid}/${Math.max(64, (size ?? 64) * 2)}` : null
 
-  // Prefer the high-quality rendered head (mc-heads) when available; fall back to the
-  // local skin crop (with helmet layer) and finally to the gradient initial.
-  if (mcHeadsUrl && !mcHeadsFailed) {
+  // Prefer a rendered head (minotar) that actually shows the account's skin; fall back to the
+  // local skin crop (with helmet layer) and finally to the gradient initial. mc-heads returns a
+  // default Steve head for unknown UUIDs, so it is not used here.
+  if (minotarUrl && !renderFailed) {
     return (
       <span className={cls} style={className ? undefined : { width: size, height: size, borderRadius: radius }}>
         <img
           className="avatar-img"
-          src={mcHeadsUrl}
+          src={minotarUrl}
           alt=""
           draggable={false}
-          onError={() => setMcHeadsFailed(true)}
+          onError={() => setRenderFailed(true)}
         />
       </span>
     )
