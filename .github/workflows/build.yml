@@ -163,12 +163,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           files: |
-            release-assets/windows/*.exe
-            release-assets/windows/*.msi
-            release-assets/macos/*.dmg
-            release-assets/macos/*.app
-            release-assets/linux/*.AppImage
-            release-assets/linux/*.deb
-            release-assets/linux/*.rpm
+            release-assets/windows/**/*.exe
+            release-assets/windows/**/*.msi
+            release-assets/macos/**/*.dmg
+            release-assets/linux/**/*.AppImage
+            release-assets/linux/**/*.deb
+            release-assets/linux/**/*.rpm
           fail_on_unmatched_files: true
           generate_release_notes: true
