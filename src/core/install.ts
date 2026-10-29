@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { rm } from 'node:fs/promises'
+import { rm, writeFile, readFile } from 'node:fs/promises'
 import AdmZip from 'adm-zip'
 import type { DownloadItem, Downloader } from './http'
 import { ProgressHub } from './events'
@@ -48,6 +48,35 @@ export class Installer {
     private readonly progress: ProgressHub,
     private readonly logger: Logger
   ) {}
+
+  /** Try to load a cached InstalledGame from disk. Returns null if cache is missing or stale. */
+  async tryLoadCache(instance: InstanceConfig, instanceDir: string): Promise<InstalledGame | null> {
+    const cachePath = join(instanceDir, '.install-cache.json')
+    if (!(await pathExists(cachePath))) return null
+    try {
+      const cached = JSON.parse(await readFile(cachePath, 'utf8')) as InstalledGame
+      // Verify the client jar still exists
+      if (!(await pathExists(cached.jarPath))) return null
+      // Verify at least one library exists
+      if (cached.classpath.length === 0) return null
+      // Verify mc version matches
+      if (cached.baseVersionId !== instance.mcVersion) return null
+      // Verify loader matches
+      if (instance.loader === 'fabric' && !cached.versionId.includes('fabric')) return null
+      return cached
+    } catch {
+      return null
+    }
+  }
+
+  /** Save the InstalledGame result to disk for fast re-launch. */
+  async saveCache(instance: InstanceConfig, instanceDir: string, installed: InstalledGame): Promise<void> {
+    try {
+      await writeFile(join(instanceDir, '.install-cache.json'), JSON.stringify(installed))
+    } catch {
+      // Cache write is best-effort
+    }
+  }
 
   async install(instance: InstanceConfig, opts: { mirrorCache: boolean }): Promise<InstalledGame> {
     assertSafeSegment(instance.mcVersion, 'Minecraft version')

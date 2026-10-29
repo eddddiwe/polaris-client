@@ -23,7 +23,7 @@ import {
 } from './version'
 import { createRuleContext, defaultFeatures, rulesAllow } from './rules'
 import { compactUuid } from './accounts'
-import { ensureDir, isSafeSegment } from './fsutil'
+import { ensureDir, isSafeSegment, pathExists } from './fsutil'
 import type { Logger } from './logger'
 
 export interface LaunchHooks {
@@ -86,13 +86,27 @@ export class LaunchService {
     try {
       this.finishing = false
       this.serverMode = false
-      const installed = await this.installer.install(instance, { mirrorCache: settings.mirrorVanillaCache })
-      const java = selectJava(javaList, installed.javaMajor, instance.javaPath || settings.javaPath)
 
       const instanceDir = join(this.paths.instances, instance.id)
       const nativesDir = join(instanceDir, 'natives')
       await ensureDir(nativesDir)
-      await this.installer.extractNatives(installed.natives, nativesDir)
+
+      // Try to load cached install result (skip full install if cached + files present)
+      let installed = await this.installer.tryLoadCache(instance, instanceDir)
+      if (!installed) {
+        installed = await this.installer.install(instance, { mirrorCache: settings.mirrorVanillaCache })
+        await this.installer.saveCache(instance, instanceDir, installed)
+      }
+
+      const java = selectJava(javaList, installed.javaMajor, instance.javaPath || settings.javaPath)
+
+      // Only extract natives if the dir is empty (skip on re-launch)
+      const nativesExist = await pathExists(join(nativesDir, 'liblwjgl.so')).catch(() => false) ||
+        await pathExists(join(nativesDir, 'lwjgl.dll')).catch(() => false) ||
+        await pathExists(join(nativesDir, 'liblwjgl.dylib')).catch(() => false)
+      if (!nativesExist) {
+        await this.installer.extractNatives(installed.natives, nativesDir)
+      }
 
       const account = await this.auth.refreshIfNeeded(stored)
       const args = this.buildArguments(instance, settings, installed.version, installed.classpath, installed.assetIndexId, nativesDir, account, java)
