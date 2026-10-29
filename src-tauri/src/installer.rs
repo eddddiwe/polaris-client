@@ -425,32 +425,29 @@ impl Installer {
             version.assets.clone().unwrap_or_else(|| mc_version.to_string())
         };
 
-        // 5. Download libraries
+        // Download libraries
         let mut classpath = Vec::new();
         let mut natives = Vec::new();
         let mut seen = std::collections::HashSet::new();
+        let mut download_items: Vec<crate::http::DownloadItem> = Vec::new();
+        let mut extract_map: std::collections::HashMap<String, Option<Vec<String>>> = std::collections::HashMap::new();
 
         if let Some(libraries) = &version.libraries {
-            let downloader = crate::http::Downloader::new();
             for lib in libraries {
                 if !rules_allow(&lib.rules) { continue; }
 
-                // Resolve artifacts
-                let mut artifacts: Vec<(String, String, Option<String>, bool, Option<Vec<String>>)> = Vec::new(); // (relative_path, url, sha1, extract, exclude)
+                let mut artifacts: Vec<(String, String, Option<String>, bool, Option<Vec<String>>)> = Vec::new();
 
-                // Main artifact
                 if let Some(downloads) = &lib.downloads {
                     if let Some(artifact) = &downloads.artifact {
                         artifacts.push((artifact.path.clone(), artifact.url.clone(), artifact.sha1.clone(), false, lib.extract.as_ref().and_then(|e| e.exclude.clone())));
                     }
                 } else if let Some(url_base) = &lib.url {
-                    // Legacy format: construct URL from maven coords
                     let rel_path = maven_path(&lib.name);
                     let url = format!("{}/{}", url_base.trim_end_matches('/'), rel_path);
                     artifacts.push((rel_path, url, None, false, lib.extract.as_ref().and_then(|e| e.exclude.clone())));
                 }
 
-                // Native artifact
                 if let Some(natives_map) = &lib.natives {
                     let os = os_name();
                     if let Some(native_key) = natives_map.get(os) {
@@ -462,7 +459,6 @@ impl Installer {
                                 }
                             }
                         } else if let Some(url_base) = &lib.url {
-                            // Legacy native
                             let (group, artifact, ver, _, ext) = parse_maven(&lib.name);
                             let file = format!("{}-{}-{}.{}", artifact, ver, classifier, ext);
                             let rel_path = format!("{}/{}/{}/{}", group.replace('.', "/"), artifact, ver, file);
@@ -474,8 +470,8 @@ impl Installer {
 
                 for (rel_path, url, sha1, extract, exclude) in artifacts {
                     let dest = self.paths.libraries.join(&rel_path);
-                    if !seen.contains(&dest.to_string_lossy().to_string()) {
-                        seen.insert(dest.to_string_lossy().to_string());
+                    let key = dest.to_string_lossy().to_string();
+                    if seen.insert(key.clone()) {
                         if !dest.exists() {
                             fs::create_dir_all(dest.parent().unwrap()).ok();
                             let mirror = if mirror_cache {
@@ -483,28 +479,34 @@ impl Installer {
                             } else {
                                 None
                             };
-                            let item = crate::http::DownloadItem {
+                            download_items.push(crate::http::DownloadItem {
                                 url: url.clone(),
                                 dest: dest.clone(),
                                 sha1: sha1.clone(),
                                 size: None,
                                 label: rel_path.clone(),
                                 mirror,
-                            };
-                            let _ = downloader.download_item(&item).await;
+                            });
                         }
 
                         if extract {
-                            natives.push(NativeEntry {
-                                path: dest.to_string_lossy().to_string(),
-                                exclude,
-                            });
+                            extract_map.insert(dest.to_string_lossy().to_string(), exclude);
                         } else {
                             classpath.push(dest.to_string_lossy().to_string());
                         }
                     }
                 }
             }
+        }
+
+        let downloader = crate::http::Downloader::new();
+        let _ = downloader.download_all(download_items).await;
+
+        for (path, exclude) in &extract_map {
+            natives.push(NativeEntry {
+                path: path.clone(),
+                exclude: exclude.clone(),
+            });
         }
 
         // Add client jar to classpath
