@@ -10,6 +10,13 @@ import { ACCENTS, WALLPAPERS } from '@shared/appearance'
 const rangeFill = (value: number, min: number, max: number): CSSProperties =>
   ({ '--fill': `${Math.round(((value - min) / Math.max(1, max - min)) * 100)}%` }) as CSSProperties
 
+const SPACE_THEME_TO_WALLPAPER: Record<string, string> = {
+  default: 'nebula',
+  constellations: 'starfield',
+  nebula: 'nebula',
+  scifi: 'grid',
+  myth: 'aurora',
+}
 const SPACE_THEMES: { id: string; name: string; preview: string }[] = [
   { id: 'default', name: 'Default (Mixed)', preview: 'radial-gradient(ellipse 120% 80% at 30% 30%, rgba(139,92,246,0.25), transparent 55%), radial-gradient(ellipse 100% 70% at 70% 70%, rgba(34,211,238,0.18), transparent 50%), #05060d' },
   { id: 'constellations', name: 'Star Constellations', preview: 'radial-gradient(2px 2px at 25% 20%, rgba(255,255,255,0.9), transparent), radial-gradient(2px 2px at 70% 35%, rgba(255,255,255,0.8), transparent), radial-gradient(1.5px 1.5px at 30% 28%, rgba(255,255,255,0.6), transparent), radial-gradient(ellipse 100% 50% at 50% 0%, rgba(139,92,246,0.2), transparent 60%), #05060d' },
@@ -405,7 +412,10 @@ export function SettingsPage(): JSX.Element {
                 key={theme.id}
                 className={`space-theme-card ${spaceTheme === theme.id ? 'active' : ''}`}
                 style={{ background: theme.preview, backgroundSize: theme.id === 'scifi' ? '24px 24px, 24px 24px, 100% 100%, 100% 100%' : undefined }}
-                onClick={() => setSpaceTheme(theme.id)}
+                onClick={() => {
+                  setSpaceTheme(theme.id)
+                  void setSetting({ wallpaper: (SPACE_THEME_TO_WALLPAPER[theme.id] ?? 'nebula') as any })
+                }}
                 aria-pressed={spaceTheme === theme.id}
               >
                 <span className="space-theme-name">{theme.name}</span>
