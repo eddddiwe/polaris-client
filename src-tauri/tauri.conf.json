@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../out/renderer",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npm run build:web"
   },
   "app": {
     "windows": [
@@ -28,7 +28,15 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi", "dmg", "app", "deb", "rpm", "appimage"],
+    "targets": [
+      "nsis",
+      "msi",
+      "dmg",
+      "app",
+      "deb",
+      "rpm",
+      "appimage"
+    ],
     "icon": [
       "icons/icon.ico",
       "icons/icon.png"

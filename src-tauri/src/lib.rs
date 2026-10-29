@@ -733,6 +733,7 @@ async fn launch_start(instance_id: String, app: tauri::AppHandle, state: tauri::
     std::thread::spawn(move || {
         use tauri::Emitter;
         // Wait for child to exit
+        use tauri::Manager;
         let mut child_opt = {
             let mut g = child_arc.lock().unwrap();
             g.take()
