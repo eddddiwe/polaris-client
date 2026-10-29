@@ -525,16 +525,32 @@ async fn import_mrpack(app: tauri::AppHandle, state: tauri::State<'_, AppState>)
 }
 
 #[tauri::command]
-fn cosmetic_sync_get(player_name: String, player_uuid: String) -> Result<serde_json::Value, String> {
-    // Return cosmetic data for the player
-    Ok(serde_json::json!({
-        "equippedBadge": "badge-north",
-        "equippedCape": "cape-classic",
-        "ownedCosmetics": ["badge-north", "cape-classic"],
-        "shards": 0,
+fn cosmetic_sync_get(player_name: String, player_uuid: String, state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let settings = state.settings.lock().unwrap();
+    let equipped_badge = settings.equipped_badge.clone();
+    let equipped_cape = settings.equipped_cape.clone();
+    let owned = settings.owned_cosmetics.clone();
+    let shards = settings.shards;
+    drop(settings);
+
+    // Write sync file for companion mod to read
+    let sync_dir = state.data_dir.join("cosmetic_sync");
+    std::fs::create_dir_all(&sync_dir).ok();
+    let sync_file = sync_dir.join(format!("{}.json", player_uuid));
+    let sync_data = serde_json::json!({
+        "equippedBadge": equipped_badge,
+        "equippedCape": equipped_cape,
+        "ownedCosmetics": owned,
+        "shards": shards,
         "playerName": player_name,
-        "playerUuid": player_uuid
-    }))
+        "playerUuid": player_uuid,
+        "updatedAt": chrono::Utc::now().timestamp_millis()
+    });
+    if let Ok(json) = serde_json::to_string_pretty(&sync_data) {
+        std::fs::write(&sync_file, json).ok();
+    }
+
+    Ok(sync_data)
 }
 
 #[tauri::command]
