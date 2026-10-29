@@ -284,130 +284,25 @@ export function SettingsPage(): JSX.Element {
           <div className="panel-head">
             <div>
               <span className="eyebrow">Appearance</span>
-              <h2>Accent, wallpaper & motion</h2>
-            </div>
-            <span className="panel-hint">Animated scenes pause while a game runs</span>
-          </div>
-
-          <div className="field">
-            <label>Accent color</label>
-            <div className="swatches">
-              {ACCENTS.map((color) => (
-                <button
-                  key={color}
-                  className={`swatch ${boot.settings.accent === color ? 'active' : ''}`}
-                  style={{ background: color }}
-                  aria-label={`Use ${color}`}
-                  onClick={() => void setSetting({ accent: color })}
-                >
-                  {boot.settings.accent === color && <Icon name="check" size={14} />}
-                </button>
-              ))}
+              <h2>Space Theme</h2>
             </div>
           </div>
-
-          <div className="field">
-            <label>Wallpaper</label>
-            <div className="wallpaper-grid">
-              {WALLPAPERS.map((option) => (
-                <button
-                  key={option.id}
-                  className={`wallpaper-choice ${boot.settings.wallpaper === option.id ? 'active' : ''}`}
-                  onClick={() => void setSetting({ wallpaper: option.id })}
-                >
-                  <span className={`wallpaper-thumb wp-${option.id}`}>
-                    {option.id === 'custom' && <Icon name="image" size={18} />}
-                    {option.id === 'none' && <Icon name="x" size={16} />}
-                  </span>
-                  <strong>{option.name}</strong>
-                  <small>{option.blurb}</small>
-                  {boot.settings.wallpaper === option.id && (
-                    <span className="wallpaper-check">
-                      <Icon name="check" size={12} />
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {boot.settings.wallpaper === 'custom' && (
-            <div className="field">
-              <label htmlFor="wallpaper-url">Direct media URL</label>
-              <div className="row-input">
-                <input
-                  id="wallpaper-url"
-                  value={wallpaperUrl}
-                  placeholder="https://example.com/aurora-loop.mp4"
-                  onChange={(event) => setWallpaperUrl(event.target.value)}
-                />
-                <button className="btn btn-soft" onClick={() => void saveWallpaper()} disabled={wallpaperUrl === boot.settings.wallpaperUrl}>
-                  Apply
-                </button>
-              </div>
-              <span className="hint">
-                Paste a direct HTTPS link to a GIF, WebP, PNG, MP4 or WebM file. The file is streamed, never uploaded.
-              </span>
-            </div>
-          )}
-
-          <div className="wallpaper-tuning">
-            <div className="field">
-              <label className="label-row">
-                <span>Dim</span>
-                <b>{wallDim}%</b>
-              </label>
-              <input
-                type="range"
-                min={0}
-                max={90}
-                step={5}
-                value={wallDim}
-                onChange={(event) => setWallDim(Number(event.target.value))}
-              />
-            </div>
-            <div className="field">
-              <label className="label-row">
-                <span>Blur</span>
-                <b>{wallBlur}px</b>
-              </label>
-              <input
-                type="range"
-                min={0}
-                max={30}
-                step={1}
-                value={wallBlur}
-                onChange={(event) => setWallBlur(Number(event.target.value))}
-              />
-            </div>
-          </div>
-
-          <div className="panel-actions">
-            <button
-              className="btn btn-soft btn-sm"
-              onClick={() => void saveWallpaper()}
-              disabled={wallDim === boot.settings.wallpaperDim && wallBlur === boot.settings.wallpaperBlur}
-            >
-              <Icon name="check" size={14} /> Save wallpaper tuning
-            </button>
-          </div>
-
           <div className="settings-rows">
-            <ToggleRow
-              title="Animated wallpaper"
-              body="Let built-in scenes and video wallpapers move. GIFs always animate."
-              checked={boot.settings.wallpaperMotion}
-              onChange={(value) => void setSetting({ wallpaperMotion: value })}
-            />
-            <ToggleRow
-              title="Reduce motion"
-              body="Disable ambient rotation, page transitions, hover movement and wallpaper animation."
-              checked={boot.settings.reduceMotion}
-              onChange={(value) => void setSetting({ reduceMotion: value })}
-            />
+            <div className="setting-row">
+              <div>
+                <strong>Cosmic Theme</strong>
+                <p>Choose your space aesthetic</p>
+              </div>
+              <select value={spaceTheme} onChange={(e) => setSpaceTheme(e.target.value)} style={{ minWidth: 180 }}>
+                <option value="default">Default (Mixed)</option>
+                <option value="constellations">Star Constellations</option>
+                <option value="nebula">Atmospheric Nebula</option>
+                <option value="scifi">High-Tech Sci-Fi</option>
+                <option value="myth">Cosmic Myth & Ancient Space</option>
+              </select>
+            </div>
           </div>
         </section>
-
 
       </div>
 
