@@ -164,6 +164,33 @@ impl ModpackService {
         Some(target)
     }
 
+    pub async fn plan_from_modrinth(&self, project_ref: &str, downloader: &crate::http::Downloader, modrinth: &crate::modrinth::ModrinthClient) -> Result<(String, String, MrpackPlan), String> {
+        let project = modrinth.project(project_ref).await.map_err(|e| e)?;
+        if project.project_type != "modpack" {
+            return Err(format!("{} is not a modpack", project.title));
+        }
+        let versions = modrinth.versions(&project.id, "", "").await.map_err(|e| e)?;
+        let version = crate::modrinth::ModrinthClient::pick_version(&versions, "", "");
+        let version = version.ok_or_else(|| format!("{} has no downloadable releases", project.title))?;
+        let file = crate::modrinth::ModrinthClient::primary_file(&version)
+            .ok_or_else(|| format!("{} has no .mrpack file", project.title))?;
+        if !file.filename.ends_with(".mrpack") {
+            return Err(format!("{} has no .mrpack file", project.title));
+        }
+        let archive_path = self.instances_dir.parent().unwrap_or(&self.instances_dir).join("downloads").join(&file.filename);
+        std::fs::create_dir_all(archive_path.parent().unwrap()).ok();
+        downloader.download(&file.url, &archive_path).await.map_err(|e| e)?;
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(&archive_path).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+        let mut index_content = String::new();
+        {
+            let mut entry = zip.by_name("modrinth.index.json").map_err(|e| format!("Missing modrinth.index.json: {}", e))?;
+            std::io::Read::read_to_string(&mut entry, &mut index_content).map_err(|e| e.to_string())?;
+        }
+        let plan = Self::parse_index(&index_content, version.game_versions.first().map(|s| s.as_str()))?;
+        Ok((project.title, archive_path.to_string_lossy().to_string(), plan))
+    }
+
     pub async fn populate(&self, instance_id: &str, archive_path: &str, plan: &MrpackPlan, include_optional: bool) -> Result<ModpackPopulateResult, String> {
         let instance_dir = self.instances_dir.join(instance_id);
         std::fs::create_dir_all(&instance_dir).ok();
