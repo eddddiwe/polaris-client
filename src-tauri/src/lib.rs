@@ -367,8 +367,15 @@ async fn check_for_updates() -> Result<UpdateInfo, String> {
 }
 
 #[tauri::command]
-async fn install_update(download_url: String) -> Result<(), String> {
-    updates::install_update(&download_url).await
+async fn install_update(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    // Check for updates first to get download URL
+    let current = state.settings.lock().unwrap().clone();
+    let _ = current;
+    let info = updates::check_for_updates(env!("CARGO_PKG_VERSION")).await;
+    if !info.has_update || info.download_url.is_empty() {
+        return Err("No update available".to_string());
+    }
+    updates::install_update(&info.download_url).await
 }
 
 #[tauri::command]
