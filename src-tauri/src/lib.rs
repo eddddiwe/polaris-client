@@ -73,12 +73,12 @@ pub fn run() {
             create_instance,
             delete_instance,
             get_settings,
-            update_settings,
+            settings_update,
             list_accounts,
-            add_offline_account,
+            accounts_offline,
             accounts_microsoft,
-            remove_account,
-            set_active_account,
+            accounts_remove,
+            accounts_active,
             check_for_updates,
             install_update,
             scan_java_cmd,
@@ -88,6 +88,7 @@ pub fn run() {
             cosmetics_equip,
             cosmetics_claim,
             fabric_loaders,
+            fabric_ensure,
             cosmetic_sync_get,
             import_mrpack,
             update_instance,
@@ -309,7 +310,7 @@ fn get_settings(state: tauri::State<'_, AppState>) -> Result<Settings, String> {
 }
 
 #[tauri::command]
-fn update_settings(patch: Settings, state: tauri::State<'_, AppState>) -> Result<Settings, String> {
+fn settings_update(patch: Settings, state: tauri::State<'_, AppState>) -> Result<Settings, String> {
     let settings_store = state.settings_store.lock().unwrap();
     let updated = settings_store.update(&patch).map_err(|e| e)?;
     *state.settings.lock().unwrap() = updated.clone();
@@ -323,7 +324,7 @@ fn list_accounts(state: tauri::State<'_, AppState>) -> Result<Vec<Account>, Stri
 }
 
 #[tauri::command]
-fn add_offline_account(name: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+fn accounts_offline(name: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
     let account_store = state.account_store.lock().unwrap();
     let account = account_store.add_offline(&name).map_err(|e| e)?;
     state.accounts.lock().unwrap().push(account);
@@ -344,7 +345,7 @@ async fn accounts_microsoft(app: tauri::AppHandle, state: tauri::State<'_, AppSt
 }
 
 #[tauri::command]
-fn remove_account(id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+fn accounts_remove(id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
     let account_store = state.account_store.lock().unwrap();
     account_store.remove(&id).map_err(|e| e)?;
     state.accounts.lock().unwrap().retain(|a| a.id != id);
@@ -352,7 +353,7 @@ fn remove_account(id: String, state: tauri::State<'_, AppState>) -> Result<(), S
 }
 
 #[tauri::command]
-fn set_active_account(id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+fn accounts_active(id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
     let account_store = state.account_store.lock().unwrap();
     account_store.set_active(&id).map_err(|e| e)?;
     for a in state.accounts.lock().unwrap().iter_mut() {
