@@ -45,6 +45,7 @@ export const IPC = {
   settingsUpdate: 'settings:update',
   settingsChooseJava: 'settings:chooseJava',
   settingsRescanJava: 'settings:rescanJava',
+  settingsDownloadJava: 'settings:downloadJava',
   settingsSnapshot: 'settings:snapshot',
   serverCommand: 'server:command',
   checkForUpdates: 'app:checkForUpdates',

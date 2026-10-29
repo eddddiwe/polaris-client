@@ -59,6 +59,7 @@ export function createTauriApi(): PolarisAPI {
     updateSettings: (patch) => invoke('settings_update', { patch }),
     chooseJava: () => invoke('settings_choose_java'),
     rescanJava: () => invoke('settings_rescan_java'),
+    downloadJava: (major) => invoke('settings_download_java', { major }),
     settingsSnapshot: () => invoke('settings_snapshot'),
     checkForUpdates: () => invoke('check_for_updates'),
     installUpdate: () => invoke('install_update'),

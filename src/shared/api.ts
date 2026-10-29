@@ -113,6 +113,7 @@ export interface PolarisAPI {
   updateSettings(patch: Partial<Settings>): Promise<Settings>
   chooseJava(): Promise<{ path: string; java: JavaInfo[] }>
   rescanJava(): Promise<JavaInfo[]>
+  downloadJava(major: number): Promise<JavaInfo[]>
   settingsSnapshot(): Promise<Settings>
   checkForUpdates(): Promise<UpdateInfo>
   installUpdate(): Promise<void>

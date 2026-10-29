@@ -10,6 +10,7 @@ export function SettingsPage(): JSX.Element {
   const { boot, api, refresh, toast, openAccount, confirm } = useApp()
   const [clientId, setClientId] = useState(boot.settings.msClientId)
   const [choosingJava, setChoosingJava] = useState(false)
+  const [downloadingJava, setDownloadingJava] = useState(false)
   const [wallpaperUrl, setWallpaperUrl] = useState(boot.settings.wallpaperUrl)
   const [wallDim, setWallDim] = useState(boot.settings.wallpaperDim)
   const [wallBlur, setWallBlur] = useState(boot.settings.wallpaperBlur)
@@ -45,6 +46,19 @@ export function SettingsPage(): JSX.Element {
       toast(list.length ? `${list.length} Java runtime${list.length === 1 ? '' : 's'} found` : 'No Java runtime found', list.length ? 'success' : 'error')
     } catch (error) {
       toast(errorMessage(error), 'error')
+    }
+  }
+
+  const downloadJava = async (): Promise<void> => {
+    setDownloadingJava(true)
+    try {
+      const list = await api.downloadJava(21)
+      await refresh()
+      toast(list.length ? `Java 21 downloaded and installed` : 'Java download failed', list.length ? 'success' : 'error')
+    } catch (error) {
+      toast(errorMessage(error), 'error')
+    } finally {
+      setDownloadingJava(false)
     }
   }
 
@@ -143,6 +157,9 @@ export function SettingsPage(): JSX.Element {
               <button className="btn btn-ghost btn-sm" onClick={() => void rescan()}>
                 <Icon name="refresh" size={14} /> Rescan
               </button>
+              <button className="btn btn-soft btn-sm" onClick={() => void downloadJava()} disabled={downloadingJava}>
+                {downloadingJava ? <span className="spinner spinner-sm" /> : <Icon name="download" size={14} />} Download Java 21
+              </button>
               <button className="btn btn-soft btn-sm" onClick={() => void chooseJava()} disabled={choosingJava}>
                 {choosingJava ? <span className="spinner spinner-sm" /> : <Icon name="folder" size={14} />} Choose
               </button>
@@ -151,7 +168,7 @@ export function SettingsPage(): JSX.Element {
           <div className="settings-rows">
             {boot.java.length === 0 && (
               <p className="empty-line">
-                No Java runtime found. Install Eclipse Temurin 21 or newer, then rescan.
+                No Java runtime found. Click "Download Java 21" to install Eclipse Temurin automatically, or install manually and rescan.
               </p>
             )}
             {boot.java.map((entry) => {

@@ -590,6 +590,16 @@ export class AppServices extends EventEmitter {
     return this.java
   }
 
+  async downloadJava(major: number, onProgress?: (progress: any) => void): Promise<JavaInfo[]> {
+    const { downloadJava } = await import('../core/java')
+    const dest = join(this.paths.java, `temurin-${major}`)
+    const javaPath = await downloadJava(major, dest, onProgress)
+    await this.settingsStore.update({ javaPath })
+    this.java = await scanJava([javaPath])
+    this.hardware = { ...this.hardware, java: this.java }
+    return this.java
+  }
+
   async activeAccountForLaunch(): Promise<StoredAccount | undefined> {
     return this.accounts.activeStored()
   }

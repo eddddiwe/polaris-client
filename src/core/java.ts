@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { ensureDir } from './fsutil'
 import { access, readdir } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { homedir } from 'node:os'
@@ -259,4 +260,89 @@ export function selectJava(java: JavaInfo[], requiredMajor: number, override?: s
 export async function javaVersionOf(path: string): Promise<JavaInfo | null> {
   const home = javaHomeFromExecutable(path)
   return inspectJava(home, 'custom')
+}
+
+export interface JavaDownloadProgress {
+  stage: string
+  percent: number
+  message: string
+}
+
+/**
+ * Download and install Eclipse Temurin Java runtime.
+ * @param major Major Java version (e.g., 21)
+ * @param destination Directory to extract Java to
+ * @param onProgress Progress callback
+ */
+export async function downloadJava(
+  major: number,
+  destination: string,
+  onProgress?: (progress: JavaDownloadProgress) => void
+): Promise<string> {
+  const os = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux'
+  const arch = process.arch === 'arm64' ? 'aarch64' : 'x64'
+  const url = `https://api.adoptium.net/v3/binary/latest/${major}/ga/${os}/${arch}/jdk/hotspot/normal/eclipse`
+
+  onProgress?.({ stage: 'downloading', percent: 0, message: 'Fetching Java runtime...' })
+
+  // Download the zip
+  const response = await fetch(url, { redirect: 'follow' })
+  if (!response.ok) throw new Error(`Failed to download Java: ${response.status}`)
+
+  const totalSize = Number(response.headers.get('content-length') ?? 0)
+  const chunks: Uint8Array[] = []
+  const reader = response.body?.getReader()
+  let downloaded = 0
+
+  if (reader) {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value) {
+        chunks.push(value)
+        downloaded += value.length
+        if (totalSize > 0) {
+          onProgress?.({ stage: 'downloading', percent: Math.round((downloaded / totalSize) * 80), message: `Downloading... ${Math.round(downloaded / 1024 / 1024)}MB / ${Math.round(totalSize / 1024 / 1024)}MB` })
+        }
+      }
+    }
+  }
+
+  const buffer = Buffer.concat(chunks.map(c => Buffer.from(c)))
+  onProgress?.({ stage: 'extracting', percent: 85, message: 'Extracting Java runtime...' })
+
+  // Save zip to temp
+  const tempZip = join(destination, `java-${major}.zip`)
+  await ensureDir(destination)
+  const { writeFile } = await import('node:fs/promises')
+  await writeFile(tempZip, buffer)
+
+  // Extract
+  const AdmZip = (await import('adm-zip')).default
+  const zip = new AdmZip(tempZip)
+  const entries = zip.getEntries()
+  let extracted = 0
+  const total = entries.length
+
+  for (const entry of entries) {
+    if (entry.isDirectory) continue
+    const targetPath = join(destination, entry.entryName)
+    await ensureDir(join(targetPath, '..'))
+    zip.extractEntryTo(entry, destination, true, true)
+    extracted++
+    onProgress?.({ stage: 'extracting', percent: 85 + Math.round((extracted / total) * 15), message: `Extracting... ${extracted}/${total}` })
+  }
+
+  // Clean up zip
+  const { rm } = await import('node:fs/promises')
+  await rm(tempZip, { force: true })
+
+  // Find the Java home (the extracted folder)
+  const { readdir } = await import('node:fs/promises')
+  const entries2 = await readdir(destination)
+  const javaHome = entries2.find(e => /jdk|jre|java/i.test(e))
+  const javaPath = javaHome ? join(destination, javaHome) : destination
+
+  onProgress?.({ stage: 'done', percent: 100, message: 'Java runtime installed' })
+  return javaPath
 }

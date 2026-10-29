@@ -60,6 +60,7 @@ const api: PolarisAPI & { platform: NodeJS.Platform } = {
   updateSettings: (patch) => ipcRenderer.invoke(IPC.settingsUpdate, patch),
   chooseJava: () => ipcRenderer.invoke(IPC.settingsChooseJava),
   rescanJava: () => ipcRenderer.invoke(IPC.settingsRescanJava),
+  downloadJava: (major: number) => ipcRenderer.invoke(IPC.settingsDownloadJava, major),
   settingsSnapshot: () => ipcRenderer.invoke(IPC.settingsSnapshot),
   checkForUpdates: () => ipcRenderer.invoke(IPC.checkForUpdates),
   installUpdate: () => ipcRenderer.invoke(IPC.installUpdate),

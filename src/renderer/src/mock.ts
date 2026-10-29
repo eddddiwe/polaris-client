@@ -992,6 +992,7 @@ export function createMockApi(): Window['polaris'] {
     },
     chooseJava: async () => ({ path: java[0].path, java }),
     rescanJava: async () => java,
+    downloadJava: async () => java,
     settingsSnapshot: async () => settings,
     checkForUpdates: async () => ({ hasUpdate: false, currentVersion: '0.3.0', latestVersion: '0.3.0', downloadUrl: '', publishedAt: new Date().toISOString() }),
     installUpdate: async () => {},

@@ -1,6 +1,8 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { IPC } from '../shared/ipc'
+import { downloadJavaRuntime } from '../core/java-download'
+import { ensureDir } from '../core/fsutil'
 import type { AppServices } from './services'
 import type { GameUiOptions, JvmPresetId, PerfProfileId } from '../shared/types'
 
@@ -160,4 +162,14 @@ export function registerIpc(services: AppServices): void {
   })
 
   handle(IPC.settingsRescanJava, async () => services.rescanJava())
+  handle(IPC.settingsDownloadJava, async (major: number) => services.downloadJava(major))
+  handle(IPC.settingsDownloadJava, async (major: number) => {
+    const javaDir = join(services.paths.root, 'java')
+    await ensureDir(javaDir)
+    const javaHome = await downloadJavaRuntime(major, javaDir, (downloaded, total) => {
+      services.progress.emit({ taskId: 'java-download', label: `Downloading Java ${major}`, detail: `${Math.round(downloaded / 1024 / 1024)}MB / ${Math.round(total / 1024 / 1024)}MB`, current: downloaded, total, done: false })
+    })
+    const java = await services.setJavaPath(join(javaHome, 'bin', process.platform === 'win32' ? 'javaw.exe' : 'java'))
+    return { path: javaHome, java }
+  })
 }
