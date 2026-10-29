@@ -6005,3 +6005,88 @@ nav, .sidebar, .topbar {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.18);
 }
+/* === Theme: Star Constellations === */
+body[data-theme="constellations"]::before {
+  background:
+    radial-gradient(ellipse 100% 50% at 50% 0%, rgba(139, 92, 246, 0.15) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 20% 80%, rgba(34, 211, 238, 0.08) 0%, transparent 50%);
+}
+
+body[data-theme="constellations"] .star-field {
+  background-image:
+    radial-gradient(2px 2px at 25% 20%, rgba(255,255,255,0.9), transparent),
+    radial-gradient(1.5px 1.5px at 28% 22%, rgba(255,255,255,0.7), transparent),
+    radial-gradient(2px 2px at 32% 25%, rgba(255,255,255,0.8), transparent),
+    radial-gradient(1.5px 1.5px at 30% 28%, rgba(255,255,255,0.6), transparent),
+    radial-gradient(2px 2px at 26% 30%, rgba(255,255,255,0.7), transparent),
+    radial-gradient(1.5px 1.5px at 22% 28%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(2px 2px at 70% 35%, rgba(255,255,255,0.8), transparent),
+    radial-gradient(2px 2px at 72% 40%, rgba(255,255,255,0.7), transparent),
+    radial-gradient(1.5px 1.5px at 68% 42%, rgba(255,255,255,0.6), transparent),
+    radial-gradient(2px 2px at 74% 38%, rgba(34,211,238,0.7), transparent),
+    radial-gradient(1.5px 1.5px at 15% 15%, rgba(255,255,255,0.6), transparent),
+    radial-gradient(2px 2px at 18% 12%, rgba(255,255,255,0.7), transparent),
+    radial-gradient(1.5px 1.5px at 21% 16%, rgba(255,255,255,0.5), transparent);
+  background-size: 100% 100%;
+}
+
+/* === Theme: Atmospheric Nebula === */
+body[data-theme="nebula"]::before {
+  background:
+    radial-gradient(ellipse 150% 80% at 30% 20%, rgba(139, 92, 246, 0.3) 0%, transparent 60%),
+    radial-gradient(ellipse 100% 60% at 70% 10%, rgba(34, 211, 238, 0.2) 0%, transparent 50%),
+    radial-gradient(ellipse 80% 70% at 50% 80%, rgba(244, 114, 182, 0.15) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 50% at 10% 60%, rgba(168, 85, 247, 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse 70% 40% at 90% 70%, rgba(59, 130, 246, 0.1) 0%, transparent 45%);
+  animation: nebula-pulse 15s ease-in-out infinite alternate;
+}
+
+@keyframes nebula-pulse {
+  0% { opacity: 0.7; filter: hue-rotate(0deg) brightness(1); }
+  50% { opacity: 0.9; filter: hue-rotate(15deg) brightness(1.1); }
+  100% { opacity: 0.75; filter: hue-rotate(-10deg) brightness(0.95); }
+}
+
+/* === Theme: High Tech Sci-Fi === */
+body[data-theme="scifi"]::before {
+  background:
+    linear-gradient(rgba(139, 92, 246, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(139, 92, 246, 0.03) 1px, transparent 1px),
+    radial-gradient(ellipse 100% 50% at 50% 0%, rgba(34, 211, 238, 0.15) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 40% at 20% 90%, rgba(139, 92, 246, 0.1) 0%, transparent 45%);
+  background-size: 60px 60px, 60px 60px, 100% 100%, 100% 100%;
+  animation: scifi-scan 8s linear infinite;
+}
+
+@keyframes scifi-scan {
+  0% { background-position: 0 0, 0 0, 0 0, 0 0; }
+  100% { background-position: 60px 60px, 60px 60px, 0 0, 0 0; }
+}
+
+body[data-theme="scifi"] .star-field {
+  opacity: 0.3;
+}
+
+/* === Theme: Cosmic Myth & Ancient Space === */
+body[data-theme="myth"]::before {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(251, 191, 36, 0.05) 0%, transparent 40%),
+    radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.08) 20%, transparent 60%),
+    radial-gradient(ellipse 120% 80% at 30% 30%, rgba(168, 85, 247, 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse 100% 70% at 70% 70%, rgba(244, 114, 182, 0.1) 0%, transparent 50%),
+    radial-gradient(ellipse 80% 60% at 50% 50%, rgba(59, 130, 246, 0.08) 0%, transparent 45%);
+  animation: myth-rotate 60s linear infinite;
+}
+
+@keyframes myth-rotate {
+  0% { transform: rotate(0deg) scale(1); }
+  100% { transform: rotate(360deg) scale(1.1); }
+}
+
+body[data-theme="myth"] .polaris-star::after {
+  background:
+    linear-gradient(90deg, transparent 49%, rgba(251, 191, 36, 0.4) 50%, transparent 51%),
+    linear-gradient(0deg, transparent 49%, rgba(251, 191, 36, 0.4) 50%, transparent 51%),
+    linear-gradient(45deg, transparent 49%, rgba(139, 92, 246, 0.3) 50%, transparent 51%),
+    linear-gradient(-45deg, transparent 49%, rgba(139, 92, 246, 0.3) 50%, transparent 51%);
+}

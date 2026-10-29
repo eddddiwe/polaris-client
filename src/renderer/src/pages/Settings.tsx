@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { Settings } from '@shared/types'
 import { errorMessage, useApp } from '../context'
 import { Icon, PolarisMark } from '../components/Icons'
@@ -12,9 +12,16 @@ export function SettingsPage(): JSX.Element {
   const [choosingJava, setChoosingJava] = useState(false)
   const [downloadingJava, setDownloadingJava] = useState(false)
   const [javaVersion, setJavaVersion] = useState(21)
+  const [spaceTheme, setSpaceTheme] = useState(localStorage.getItem('polaris-space-theme') || 'default')
   const [wallpaperUrl, setWallpaperUrl] = useState(boot.settings.wallpaperUrl)
   const [wallDim, setWallDim] = useState(boot.settings.wallpaperDim)
   const [wallBlur, setWallBlur] = useState(boot.settings.wallpaperBlur)
+
+  // Apply space theme to body
+  useEffect(() => {
+    document.body.setAttribute('data-theme', spaceTheme)
+    localStorage.setItem('polaris-space-theme', spaceTheme)
+  }, [spaceTheme])
 
   const setSetting = async (patch: Partial<Settings>): Promise<void> => {
     try {
@@ -145,6 +152,30 @@ export function SettingsPage(): JSX.Element {
           <div className="fine-print">
             Microsoft tokens are stored locally in <code>accounts.json</code>. Polaris does not ship an OAuth client ID; add
             your own below.
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <span className="eyebrow">Appearance</span>
+              <h2>Space Theme</h2>
+            </div>
+          </div>
+          <div className="settings-rows">
+            <div className="setting-row">
+              <div>
+                <strong>Cosmic Theme</strong>
+                <p>Choose your space aesthetic</p>
+              </div>
+              <select value={spaceTheme} onChange={(e) => setSpaceTheme(e.target.value)} style={{ minWidth: 180 }}>
+                <option value="default">Default (Mixed)</option>
+                <option value="constellations">Star Constellations</option>
+                <option value="nebula">Atmospheric Nebula</option>
+                <option value="scifi">High-Tech Sci-Fi</option>
+                <option value="myth">Cosmic Myth & Ancient Space</option>
+              </select>
+            </div>
           </div>
         </section>
 

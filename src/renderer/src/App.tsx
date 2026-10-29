@@ -27,6 +27,12 @@ function getApi(): PolarisAPI {
 }
 
 export default function App(): JSX.Element {
+  // Apply saved space theme
+  if (typeof document !== 'undefined') {
+    const savedTheme = localStorage.getItem('polaris-space-theme') || 'default'
+    document.body.setAttribute('data-theme', savedTheme)
+  }
+
   let api: PolarisAPI
   try {
     api = getApi()
