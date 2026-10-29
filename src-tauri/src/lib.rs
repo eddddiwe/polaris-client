@@ -609,7 +609,68 @@ async fn launch_start(instance_id: String, app: tauri::AppHandle, state: tauri::
     let access_token = account.as_ref().and_then(|a| a.access_token.clone()).unwrap_or_default();
     let user_type = if account.as_ref().map(|a| a.account_type.as_str()) == Some("microsoft") { "msa" } else { "legacy" };
 
-    // Install game
+    let instance_dir = state.data_dir.join(&instance.id);
+    std::fs::create_dir_all(&instance_dir).ok();
+
+    // Server mode
+    if instance.kind == "server" {
+        std::fs::write(instance_dir.join("eula.txt"), "# Accepted through Polaris\neula=true\n").ok();
+
+        let jar_path = if instance.loader == "fabric" {
+            let lv = instance.loader_version.clone().unwrap_or_else(|| "0.16.0".to_string());
+            let url = format!("https://meta.fabricmc.net/v2/versions/loader/{}/{}/1.0.1/server/jar", instance.mc_version, lv);
+            let dest = state.data_dir.join("versions").join("fabric-server").join(format!("fabric-server-{}-{}.jar", instance.mc_version, lv));
+            std::fs::create_dir_all(dest.parent().unwrap()).ok();
+            if !dest.exists() {
+                let dl = crate::http::Downloader::new();
+                let _ = dl.download(&url, &dest).await;
+            }
+            dest
+        } else {
+            let installer2 = crate::installer::Installer::new(crate::installer::InstallerPaths { versions: state.data_dir.join("versions"), libraries: state.data_dir.join("libraries"), assets: state.data_dir.join("assets"), meta: state.data_dir.join("meta") });
+            let base = installer2.fetch_version_json(&instance.mc_version).await.map_err(|e| e.to_string())?;
+            let server_dl = base.downloads.as_ref().and_then(|d| d.server.clone())
+                .ok_or("No server download available")?;
+            let dest = state.data_dir.join("versions").join(&instance.mc_version).join(format!("{}-server.jar", instance.mc_version));
+            std::fs::create_dir_all(dest.parent().unwrap()).ok();
+            if !dest.exists() {
+                let dl = crate::http::Downloader::new();
+                dl.download(&server_dl.url, &dest).await.map_err(|e| e.to_string())?;
+            }
+            dest
+        };
+
+        let mut args = crate::launch::LaunchService::build_jvm_flags(instance.memory_mb, &instance.jvm_preset, &instance.custom_jvm_args, 21);
+        args.push("-jar".to_string());
+        args.push(jar_path.to_string_lossy().to_string());
+        args.push("nogui".to_string());
+
+        let mut child = crate::launch::LaunchService::launch(&java_path, &args, &instance_dir.to_string_lossy())
+            .map_err(|e| e.to_string())?;
+        let pid = child.id();
+        let stdin = child.stdin.take();
+        *state.child_stdin.lock().unwrap() = stdin;
+        let child_arc = state.child_process.clone();
+        *child_arc.lock().unwrap() = Some(child);
+
+        *state.launch_state.lock().unwrap() = crate::models::LaunchState {
+            instance_id: Some(instance_id.clone()),
+            status: "running".to_string(),
+            message: Some(format!("Server running on Java {}", java_path)),
+            pid: Some(pid),
+            started_at: Some(chrono::Utc::now().timestamp_millis()),
+            exit_code: None,
+        };
+
+        return Ok(serde_json::json!({
+            "status": "running",
+            "pid": pid,
+            "message": format!("Server running on Java {}", java_path)
+        }));
+    }
+
+    // Client mode
+    let instance_dir = state.data_dir.join(&instance.id);
     let installer = crate::installer::Installer::new(crate::installer::InstallerPaths {
         versions: state.data_dir.join("versions"),
         libraries: state.data_dir.join("libraries"),
@@ -620,11 +681,13 @@ async fn launch_start(instance_id: String, app: tauri::AppHandle, state: tauri::
         .map_err(|e| e.to_string())?;
 
     // Extract natives
-    let instance_dir = state.data_dir.join(&instance.id);
-    let data_dir = state.data_dir.to_string_lossy().to_string();
     let natives_dir = instance_dir.join("natives");
     std::fs::create_dir_all(&natives_dir).ok();
     installer.extract_natives(&installed.natives, &natives_dir).await.map_err(|e| e.to_string())?;
+
+    // Build classpath string
+    let cp_sep = if cfg!(target_os = "windows") { ";" } else { ":" };
+    let classpath = installed.classpath.join(cp_sep);
 
     // Build classpath string
     let cp_sep = if cfg!(target_os = "windows") { ";" } else { ":" };
@@ -719,6 +782,7 @@ async fn launch_start(instance_id: String, app: tauri::AppHandle, state: tauri::
     // Spawn threads to capture stdout/stderr and emit game-log events
     let iid = instance_id.clone();
     let app_clone = app.clone();
+    let data_dir = state.data_dir.to_string_lossy().to_string();
     let log_path = format!("{}/{}/logs/latest.log", data_dir, instance_id);
     // Ensure log dir
     let log_dir = format!("{}/{}/logs", data_dir, instance_id);

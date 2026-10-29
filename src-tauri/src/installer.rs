@@ -244,7 +244,7 @@ impl Installer {
         Self { paths }
     }
 
-    async fn fetch_version_json(&self, mc_version: &str) -> Result<VersionJson, String> {
+    pub async fn fetch_version_json(&self, mc_version: &str) -> Result<VersionJson, String> {
         // Check local cache first
         let local_path = self.paths.versions.join(mc_version).join(format!("{}.json", mc_version));
         if local_path.exists() {
