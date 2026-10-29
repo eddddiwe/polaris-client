@@ -9,6 +9,13 @@ const isMac = process.platform === 'darwin'
 let mainWindow: BrowserWindow | null = null
 let quitting = false
 
+// Performance: disable unnecessary Chromium features
+app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService')
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache')
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512')
+// Enable V8 code cache for faster startup
+app.commandLine.appendSwitch('enable-features', 'V8CodeCache')
+
 // When the launcher is started detached or its console pipe closes, Node's
 // stdout/stderr emit EPIPE. Without listeners those become uncaught
 // exceptions, and logging the exception writes to the broken pipe again.
