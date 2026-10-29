@@ -3,7 +3,6 @@ import { lazy, Suspense } from 'react'
 import type { Bootstrap, InstanceDetail, LaunchState, ProgressEvent, Settings } from '@shared/types'
 import type { PolarisAPI } from '@shared/api'
 import { AppContext, errorMessage, type Page, type Toast, type ToastKind, type ConfirmFn, type ConfirmOptions } from './context'
-import { createTauriApi } from './tauri-api'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
 import { Toasts, ProgressDock } from './components/Feedback'
@@ -20,11 +19,11 @@ import { PolarisMark } from './components/Icons'
 
 function getApi(): PolarisAPI {
   if (window.polaris) return window.polaris
-  // Check if running in Tauri
-  if ((window as any).__TAURI__) {
-    return createTauriApi()
-  }
-  throw new Error('Polaris API not available. Run in Electron or Tauri.')
+  // Lazy-load mock API for web preview mode (code-split, not in main bundle)
+  const mockModule = (window as any).__mockModule
+  if (mockModule) return mockModule.createMockApi()
+  // Synchronous fallback - should not reach here in production
+  throw new Error('Polaris API not available. Run in Electron or use npm run dev:web for preview.')
 }
 
 export default function App(): JSX.Element {

@@ -17,7 +17,7 @@ export default defineConfig({
     strictPort: true
   },
   build: {
-    outDir: resolve(__dirname, 'out/renderer'),
+    outDir: resolve(__dirname, 'out/web-preview'),
     emptyOutDir: true
   }
 })
