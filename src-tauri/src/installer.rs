@@ -341,7 +341,20 @@ impl Installer {
                 let dest = self.paths.versions.join(&version_id).join(format!("{}.jar", version_id));
                 let downloader = crate::http::Downloader::new();
                 fs::create_dir_all(self.paths.versions.join(&version_id)).ok();
-                downloader.download(&client_dl.url, &dest).await.map_err(|e| e.to_string())?;
+                let mirror = if mirror_cache {
+                    crate::vanilla::vanilla_minecraft_root().map(|r| r.join("versions").join(mc_version).join(format!("{}.jar", mc_version)))
+                } else {
+                    None
+                };
+                let item = crate::http::DownloadItem {
+                    url: client_dl.url.clone(),
+                    dest: dest.clone(),
+                    sha1: client_dl.sha1.clone(),
+                    size: client_dl.size,
+                    label: format!("Minecraft {} client", mc_version),
+                    mirror,
+                };
+                downloader.download_item(&item).await.map_err(|e| e.to_string())?;
             }
         } else if version_id == mc_version {
             // For vanilla, the client jar URL is in downloads.client
@@ -357,7 +370,20 @@ impl Installer {
             if !index_path.exists() {
                 fs::create_dir_all(self.paths.assets.join("indexes")).ok();
                 let downloader = crate::http::Downloader::new();
-                downloader.download(&asset_index.url, &index_path).await.map_err(|e| e.to_string())?;
+                let mirror = if mirror_cache {
+                    crate::vanilla::vanilla_minecraft_root().map(|r| r.join("assets").join("indexes").join(format!("{}.json", asset_index.id)))
+                } else {
+                    None
+                };
+                let item = crate::http::DownloadItem {
+                    url: asset_index.url.clone(),
+                    dest: index_path.clone(),
+                    sha1: asset_index.sha1.clone(),
+                    size: asset_index.size,
+                    label: format!("Asset index {}", asset_index.id),
+                    mirror,
+                };
+                downloader.download_item(&item).await.map_err(|e| e.to_string())?;
             }
 
             // Parse index and download objects
@@ -374,7 +400,20 @@ impl Installer {
                             if !obj_path.exists() {
                                 fs::create_dir_all(obj_path.parent().unwrap()).ok();
                                 let url = format!("https://resources.download.minecraft.net/{}/{}", prefix, hash);
-                                let _ = downloader.download(&url, &obj_path).await;
+                                let mirror = if mirror_cache {
+                                    crate::vanilla::vanilla_minecraft_root().map(|r| r.join("assets").join("objects").join(prefix).join(hash))
+                                } else {
+                                    None
+                                };
+                                let item = crate::http::DownloadItem {
+                                    url,
+                                    dest: obj_path.clone(),
+                                    sha1: Some(hash.to_string()),
+                                    size: obj.get("size").and_then(|s| s.as_u64()),
+                                    label: hash.to_string(),
+                                    mirror,
+                                };
+                                let _ = downloader.download_item(&item).await;
                             }
                         }
                     }
@@ -397,18 +436,18 @@ impl Installer {
                 if !rules_allow(&lib.rules) { continue; }
 
                 // Resolve artifacts
-                let mut artifacts: Vec<(String, String, bool, Option<Vec<String>>)> = Vec::new(); // (relative_path, url, extract, exclude)
+                let mut artifacts: Vec<(String, String, Option<String>, bool, Option<Vec<String>>)> = Vec::new(); // (relative_path, url, sha1, extract, exclude)
 
                 // Main artifact
                 if let Some(downloads) = &lib.downloads {
                     if let Some(artifact) = &downloads.artifact {
-                        artifacts.push((artifact.path.clone(), artifact.url.clone(), false, lib.extract.as_ref().and_then(|e| e.exclude.clone())));
+                        artifacts.push((artifact.path.clone(), artifact.url.clone(), artifact.sha1.clone(), false, lib.extract.as_ref().and_then(|e| e.exclude.clone())));
                     }
                 } else if let Some(url_base) = &lib.url {
                     // Legacy format: construct URL from maven coords
                     let rel_path = maven_path(&lib.name);
                     let url = format!("{}/{}", url_base.trim_end_matches('/'), rel_path);
-                    artifacts.push((rel_path, url, false, lib.extract.as_ref().and_then(|e| e.exclude.clone())));
+                    artifacts.push((rel_path, url, None, false, lib.extract.as_ref().and_then(|e| e.exclude.clone())));
                 }
 
                 // Native artifact
@@ -419,7 +458,7 @@ impl Installer {
                         if let Some(downloads) = &lib.downloads {
                             if let Some(classifiers) = &downloads.classifiers {
                                 if let Some(native_artifact) = classifiers.get(&classifier) {
-                                    artifacts.push((native_artifact.path.clone(), native_artifact.url.clone(), true, lib.extract.as_ref().and_then(|e| e.exclude.clone())));
+                                    artifacts.push((native_artifact.path.clone(), native_artifact.url.clone(), native_artifact.sha1.clone(), true, lib.extract.as_ref().and_then(|e| e.exclude.clone())));
                                 }
                             }
                         } else if let Some(url_base) = &lib.url {
@@ -428,18 +467,31 @@ impl Installer {
                             let file = format!("{}-{}-{}.{}", artifact, ver, classifier, ext);
                             let rel_path = format!("{}/{}/{}/{}", group.replace('.', "/"), artifact, ver, file);
                             let url = format!("{}/{}", url_base.trim_end_matches('/'), rel_path);
-                            artifacts.push((rel_path, url, true, lib.extract.as_ref().and_then(|e| e.exclude.clone())));
+                            artifacts.push((rel_path, url, None, true, lib.extract.as_ref().and_then(|e| e.exclude.clone())));
                         }
                     }
                 }
 
-                for (rel_path, url, extract, exclude) in artifacts {
+                for (rel_path, url, sha1, extract, exclude) in artifacts {
                     let dest = self.paths.libraries.join(&rel_path);
                     if !seen.contains(&dest.to_string_lossy().to_string()) {
                         seen.insert(dest.to_string_lossy().to_string());
                         if !dest.exists() {
                             fs::create_dir_all(dest.parent().unwrap()).ok();
-                            let _ = downloader.download(&url, &dest).await;
+                            let mirror = if mirror_cache {
+                                crate::vanilla::vanilla_minecraft_root().map(|r| r.join("libraries").join(&rel_path))
+                            } else {
+                                None
+                            };
+                            let item = crate::http::DownloadItem {
+                                url: url.clone(),
+                                dest: dest.clone(),
+                                sha1: sha1.clone(),
+                                size: None,
+                                label: rel_path.clone(),
+                                mirror,
+                            };
+                            let _ = downloader.download_item(&item).await;
                         }
 
                         if extract {

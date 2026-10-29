@@ -21,6 +21,7 @@ mod paths;
 mod settings;
 mod state;
 mod updates;
+mod vanilla;
 
 use crate::accounts::AccountStore;
 use crate::commands::*;
