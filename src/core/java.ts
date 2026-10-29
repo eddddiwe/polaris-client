@@ -274,6 +274,21 @@ export interface JavaDownloadProgress {
  * @param destination Directory to extract Java to
  * @param onProgress Progress callback
  */
+/** Determine the required Java major version for a given Minecraft version. */
+export function requiredJavaMajor(mcVersion: string): number {
+  const parts = mcVersion.split('.').map(Number)
+  const minor = parts[1] ?? 0
+  const patch = parts[2] ?? 0
+  // Minecraft 1.20.5+ requires Java 21
+  if (minor > 20 || (minor === 20 && patch >= 5)) return 21
+  // Minecraft 1.18+ requires Java 17
+  if (minor >= 18) return 17
+  // Minecraft 1.17 requires Java 16
+  if (minor === 17) return 16
+  // Older versions need Java 8
+  return 8
+}
+
 export async function downloadJava(
   major: number,
   destination: string,

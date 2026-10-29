@@ -11,6 +11,7 @@ export function SettingsPage(): JSX.Element {
   const [clientId, setClientId] = useState(boot.settings.msClientId)
   const [choosingJava, setChoosingJava] = useState(false)
   const [downloadingJava, setDownloadingJava] = useState(false)
+  const [javaVersion, setJavaVersion] = useState(21)
   const [wallpaperUrl, setWallpaperUrl] = useState(boot.settings.wallpaperUrl)
   const [wallDim, setWallDim] = useState(boot.settings.wallpaperDim)
   const [wallBlur, setWallBlur] = useState(boot.settings.wallpaperBlur)
@@ -52,9 +53,9 @@ export function SettingsPage(): JSX.Element {
   const downloadJava = async (): Promise<void> => {
     setDownloadingJava(true)
     try {
-      const list = await api.downloadJava(21)
+      const list = await api.downloadJava(javaVersion)
       await refresh()
-      toast(list.length ? `Java 21 downloaded and installed` : 'Java download failed', list.length ? 'success' : 'error')
+      toast(list.length ? `Java ${javaVersion} downloaded and installed` : 'Java download failed', list.length ? 'success' : 'error')
     } catch (error) {
       toast(errorMessage(error), 'error')
     } finally {
@@ -157,8 +158,14 @@ export function SettingsPage(): JSX.Element {
               <button className="btn btn-ghost btn-sm" onClick={() => void rescan()}>
                 <Icon name="refresh" size={14} /> Rescan
               </button>
+              <select className="java-version-select" value={javaVersion} onChange={(e) => setJavaVersion(Number(e.target.value))} disabled={downloadingJava}>
+                <option value={8}>Java 8</option>
+                <option value={16}>Java 16</option>
+                <option value={17}>Java 17</option>
+                <option value={21}>Java 21</option>
+              </select>
               <button className="btn btn-soft btn-sm" onClick={() => void downloadJava()} disabled={downloadingJava}>
-                {downloadingJava ? <span className="spinner spinner-sm" /> : <Icon name="download" size={14} />} Download Java 21
+                {downloadingJava ? <span className="spinner spinner-sm" /> : <Icon name="download" size={14} />} Download
               </button>
               <button className="btn btn-soft btn-sm" onClick={() => void chooseJava()} disabled={choosingJava}>
                 {choosingJava ? <span className="spinner spinner-sm" /> : <Icon name="folder" size={14} />} Choose
@@ -168,7 +175,7 @@ export function SettingsPage(): JSX.Element {
           <div className="settings-rows">
             {boot.java.length === 0 && (
               <p className="empty-line">
-                No Java runtime found. Click "Download Java 21" to install Eclipse Temurin automatically, or install manually and rescan.
+                No Java runtime found. Select a version and click "Download" to install Eclipse Temurin automatically, or install manually and rescan.
               </p>
             )}
             {boot.java.map((entry) => {
