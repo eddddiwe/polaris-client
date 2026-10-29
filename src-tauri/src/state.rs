@@ -21,6 +21,7 @@ pub struct AppState {
     pub hardware: Mutex<HardwareInfo>,
     pub java: Mutex<Vec<String>>,
     pub launch_state: Mutex<LaunchState>,
+    pub child_process: Mutex<Option<std::process::Child>>,
     pub latest_version: Mutex<Option<String>>,
     pub update_info: Mutex<UpdateInfo>,
     pub cosmetics: Mutex<CosmeticsService>,
@@ -64,6 +65,7 @@ impl AppState {
                 started_at: None,
                 exit_code: None,
             }),
+            child_process: Mutex::new(None),
             latest_version: Mutex::new(None),
             update_info: Mutex::new(UpdateInfo {
                 has_update: false,

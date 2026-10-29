@@ -91,6 +91,7 @@ pub fn run() {
             update_instance,
             gameui_get,
             gameui_apply,
+            server_command,
             perf_scan,
             perf_plan,
             perf_apply,
@@ -613,10 +614,11 @@ async fn launch_start(instance_id: String, state: tauri::State<'_, AppState>) ->
     );
 
     // Launch
-    let child = crate::launch::LaunchService::launch(&java_path, &args, &instance_dir.to_string_lossy())
+    let mut child = crate::launch::LaunchService::launch(&java_path, &args, &instance_dir.to_string_lossy())
         .map_err(|e| e.to_string())?;
 
     let pid = child.id();
+    *state.child_process.lock().unwrap() = Some(child);
     *state.launch_state.lock().unwrap() = crate::models::LaunchState {
         instance_id: Some(instance_id.clone()),
         status: "running".to_string(),
@@ -635,6 +637,10 @@ async fn launch_start(instance_id: String, state: tauri::State<'_, AppState>) ->
 
 #[tauri::command]
 fn launch_stop(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    // Kill the process if running
+    if let Some(mut child) = state.child_process.lock().unwrap().take() {
+        let _ = child.kill();
+    }
     *state.launch_state.lock().unwrap() = crate::models::LaunchState {
         instance_id: None,
         status: "idle".to_string(),
@@ -1122,6 +1128,18 @@ async fn gameui_apply(instance_id: String, values: serde_json::Value, state: tau
         "values": result_values,
         "changed": changed,
     }))
+}
+
+#[tauri::command]
+async fn server_command(instance_id: String, command: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let mut guard = state.child_process.lock().unwrap();
+    let child = guard.as_mut().ok_or("No server is running.")?;
+    let stdin = child.stdin.as_mut().ok_or("Server console is not available.")?;
+    use std::io::Write;
+    stdin.write_all(format!("{}\n", command.trim_end_matches('\n')).as_bytes())
+        .map_err(|e| e.to_string())?;
+    stdin.flush().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]

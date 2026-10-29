@@ -163,6 +163,7 @@ impl LaunchService {
             .args(args)
             .current_dir(instance_dir)
             .env("POLARIS_CLIENT", "1")
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
