@@ -55,7 +55,7 @@
   "build": {
     "appId": "dev.polaris.client",
     "productName": "Polaris Client",
-    "copyright": "Copyright © 2026 Polaris Client Contributors",
+    "copyright": "Copyright \u00c2\u00a9 2026 Polaris Client Contributors",
     "artifactName": "Polaris-Client-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist",
@@ -111,4 +111,3 @@
     }
   }
 }
-
