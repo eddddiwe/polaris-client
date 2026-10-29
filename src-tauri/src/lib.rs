@@ -709,6 +709,12 @@ async fn settings_choose_java(app: tauri::AppHandle, state: tauri::State<'_, App
                 let mut s = state.settings.lock().unwrap();
                 s.java_path = path_str.clone();
             }
+            // Persist
+            {
+                let settings = state.settings.lock().unwrap().clone();
+                let store = state.settings_store.lock().unwrap();
+                let _ = store.update(&settings);
+            }
             Ok(serde_json::json!({"path": path_str, "java": java}))
         }
         None => Ok(serde_json::json!({"path": "", "java": state.java.lock().unwrap().clone()})),
