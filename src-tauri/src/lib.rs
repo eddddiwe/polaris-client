@@ -104,6 +104,12 @@ pub fn run() {
             mod_versions,
             install_mod,
             list_mods,
+            mods_remove,
+            mods_toggle,
+            mods_updates,
+            mods_update_all,
+            mods_install_version,
+            mods_categories,
         ])
         .setup(|_app| {
             let state = _app.state::<AppState>();
