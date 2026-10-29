@@ -628,7 +628,26 @@ export class AppServices extends EventEmitter {
   async checkForUpdates(): Promise<UpdateInfo> {
     const currentVersion = app.getVersion()
     const repo = 'eddddiwe/polaris-client'
-    const url = `https://api.github.com/repos/${repo}/releases/latest`
+    // Try API first, fall back to GitHub
+    let url = 'https://api.polaris-client.workers.dev/v1/version'
+    try {
+      const apiRes = await fetch(url, { signal: AbortSignal.timeout(5000) })
+      if (apiRes.ok) {
+        const apiData = await apiRes.json()
+        const hasUpdate = this.compareVersions(apiData.version, currentVersion) > 0
+        return {
+          hasUpdate,
+          currentVersion,
+          latestVersion: apiData.version,
+          releaseNotes: apiData.changelog,
+          downloadUrl: apiData.url,
+          publishedAt: apiData.publishedAt
+        }
+      }
+    } catch {
+      // Fall back to GitHub
+    }
+    url = `https://api.github.com/repos/${repo}/releases/latest`
     try {
       const res = await fetch(url, {
         headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'Polaris-Client' }

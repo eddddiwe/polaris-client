@@ -1,0 +1,7 @@
+name = "polaris-api"
+main = "worker.js"
+compatibility_date = "2024-12-01"
+
+[vars]
+CURRENT_VERSION = "0.3.4"
+REPO = "eddddiwe/polaris-client"

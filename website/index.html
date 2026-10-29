@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Polaris Client - Performance-First Minecraft Launcher</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #07080d;
+      color: #f3f5fb;
+      min-height: 100vh;
+    }
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px 20px;
+      background: radial-gradient(ellipse at top, rgba(139, 92, 246, 0.15) 0%, transparent 60%),
+                  radial-gradient(ellipse at bottom, rgba(34, 211, 238, 0.1) 0%, transparent 60%);
+    }
+    h1 {
+      font-size: 4rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #f3f5fb, #8b5cf6, #22d3ee);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 16px;
+    }
+    .tagline {
+      font-size: 1.25rem;
+      color: #9aa2ba;
+      max-width: 600px;
+      margin-bottom: 40px;
+    }
+    .download-btn {
+      display: inline-block;
+      padding: 16px 40px;
+      background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+      color: white;
+      text-decoration: none;
+      border-radius: 12px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      box-shadow: 0 8px 32px rgba(139, 92, 246, 0.4);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .download-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 40px rgba(139, 92, 246, 0.6);
+    }
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 24px;
+      max-width: 1000px;
+      margin: 60px auto;
+      padding: 0 20px;
+    }
+    .feature {
+      background: rgba(16, 18, 28, 0.6);
+      border: 1px solid rgba(139, 92, 246, 0.2);
+      border-radius: 16px;
+      padding: 24px;
+      backdrop-filter: blur(8px);
+    }
+    .feature h3 {
+      color: #8b5cf6;
+      margin-bottom: 8px;
+    }
+    .feature p {
+      color: #9aa2ba;
+      font-size: 0.9rem;
+    }
+    .footer {
+      text-align: center;
+      padding: 40px;
+      color: #6c748c;
+      font-size: 0.85rem;
+    }
+    .footer a { color: #8b5cf6; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <h1>Polaris</h1>
+    <p class="tagline">Performance-first Minecraft launcher. Hardware-aware profiles, Modrinth mods & modpacks, local server management, and local-first cosmetics.</p>
+    <a href="https://github.com/eddddiwe/polaris-client/releases/latest" class="download-btn">
+      Download for Windows
+    </a>
+    <p style="margin-top: 12px; color: #6c748c; font-size: 0.85rem;">Also available for macOS and Linux</p>
+  </div>
+  <div class="features">
+    <div class="feature">
+      <h3>⚡ Performance</h3>
+      <p>Hardware-aware JVM tuning, auto memory allocation, and optimized launch args for maximum FPS.</p>
+    </div>
+    <div class="feature">
+      <h3>🧩 Mods & Modpacks</h3>
+      <p>Browse Modrinth, install mods, import .mrpack files, and manage your instances.</p>
+    </div>
+    <div class="feature">
+      <h3>🎮 Servers</h3>
+      <p>Launch dedicated servers, manage server.properties, and send console commands.</p>
+    </div>
+    <div class="feature">
+      <h3>🎨 Cosmetics</h3>
+      <p>Badges, capes, and shards — all local-first, no backend required.</p>
+    </div>
+    <div class="feature">
+      <h3>🔄 Auto-Update</h3>
+      <p>Downloads and installs updates automatically. No manual downloads needed.</p>
+    </div>
+    <div class="feature">
+      <h3>🔐 Microsoft Login</h3>
+      <p>Secure device-code OAuth flow. Your tokens stay local.</p>
+    </div>
+  </div>
+  <div class="footer">
+    <p>Polaris Client is not affiliated with Mojang or Microsoft. Minecraft is a trademark of Mojang Synergies AB.</p>
+    <p><a href="https://github.com/eddddiwe/polaris-client">GitHub</a> · <a href="https://github.com/eddddiwe/polaris-client/releases">Releases</a> · <a href="https://github.com/eddddiwe/polaris-client/issues">Issues</a></p>
+  </div>
+</body>
+</html>
