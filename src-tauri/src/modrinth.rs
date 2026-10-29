@@ -144,4 +144,24 @@ impl ModrinthClient {
     pub fn primary_file(version: &ModrinthVersion) -> Option<&ModrinthFile> {
         version.files.iter().find(|f| f.primary).or_else(|| version.files.first())
     }
+    pub async fn updates_for_hashes(&self, hashes: &[String], loaders: &[String], game_versions: &[String]) -> Result<std::collections::HashMap<String, ModrinthVersion>, String> {
+        if hashes.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        let mut url = String::from("https://api.modrinth.com/v2/version_files/update?algorithm=sha1");
+        if !loaders.is_empty() {
+            let loaders_json = format!("[{}]", loaders.iter().map(|l| format!("\"{}\"", l)).collect::<Vec<_>>().join(","));
+            url = format!("{}&loaders={}", url, urlencoding::encode(&loaders_json));
+        }
+        if !game_versions.is_empty() {
+            let gv_json = format!("[{}]", game_versions.iter().map(|g| format!("\"{}\"", g)).collect::<Vec<_>>().join(","));
+            url = format!("{}&game_versions={}", url, urlencoding::encode(&gv_json));
+        }
+        let body = serde_json::json!({ "hashes": hashes });
+        let res = self.client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+        if !res.status().is_success() {
+            return Err(format!("Modrinth update API error: {}", res.status()));
+        }
+        res.json().await.map_err(|e| e.to_string())
+    }
 }

@@ -50,6 +50,7 @@ pub async fn install_mod(
         source: "manual".to_string(),
         icon_url: project.icon_url.clone(),
         has_update: None,
+        sha1: file.hashes.sha1.clone(),
     };
     
     // Remove existing entry if present

@@ -14,6 +14,7 @@ pub struct InstalledMod {
     pub source: String,
     pub icon_url: Option<String>,
     pub has_update: Option<bool>,
+  pub sha1: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
