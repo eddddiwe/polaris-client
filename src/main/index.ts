@@ -10,11 +10,15 @@ let mainWindow: BrowserWindow | null = null
 let quitting = false
 
 // Performance: disable unnecessary Chromium features
-app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService')
+app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService,TranslateUI,BlinkGenPropertyTrees')
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache')
-app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512')
+app.commandLine.appendSwitch('disable-dev-shm-usage')
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=384 --gc-interval=100')
 // Enable V8 code cache for faster startup
 app.commandLine.appendSwitch('enable-features', 'V8CodeCache')
+// Reduce memory: disable backgrounding of renderer
+app.commandLine.appendSwitch('disable-background-timer-throttling')
+app.commandLine.appendSwitch('disable-renderer-backgrounding')
 
 // When the launcher is started detached or its console pipe closes, Node's
 // stdout/stderr emit EPIPE. Without listeners those become uncaught
@@ -65,7 +69,10 @@ function createWindow(services: AppServices): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      spellcheck: false
+      spellcheck: false,
+      // Memory optimization
+      v8CacheOptions: 'code',
+      offscreen: false
     }
   })
 
