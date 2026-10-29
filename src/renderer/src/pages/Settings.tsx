@@ -3,6 +3,7 @@ import type { Settings } from '@shared/types'
 import { errorMessage, useApp } from '../context'
 import { Icon, PolarisMark, type IconName } from '../components/Icons'
 import { CosmeticBadge } from '../components/Cosmetics'
+import { SkinAvatar } from '../components/SkinAvatar'
 import { Switch } from '../components/Feedback'
 import { ACCENTS, WALLPAPERS } from '@shared/appearance'
 
@@ -163,7 +164,7 @@ export function SettingsPage(): JSX.Element {
             {boot.accounts.map((account) => (
               <div key={account.id} className={`setting-row account-card ${account.active ? 'active' : ''}`}>
                 <div className="account-avatar">
-                  <span className="avatar avatar-md">{account.name.slice(0, 1).toUpperCase()}</span>
+                  <SkinAvatar skinUrl={account.skinUrl} name={account.name} className="avatar avatar-md" />
                   <span className={`account-type-badge ${account.type === 'microsoft' ? 'ms' : 'off'}`}>{account.type === 'microsoft' ? 'MS' : 'OFF'}</span>
                 </div>
                 <div className="account-info">

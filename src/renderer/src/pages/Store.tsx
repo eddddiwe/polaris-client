@@ -3,6 +3,7 @@ import type { CosmeticItem, CosmeticSnapshot } from '@shared/types'
 import { errorMessage, formatPlaytime, useApp } from '../context'
 import { Icon } from '../components/Icons'
 import { CapeArt, CosmeticBadge } from '../components/Cosmetics'
+import { SkinAvatar } from '../components/SkinAvatar'
 import { Spinner } from '../components/Feedback'
 
 type Filter = 'all' | 'badge' | 'cape'
@@ -113,7 +114,7 @@ export function StorePage(): JSX.Element {
       <section className="store-profile panel">
         <div className="store-profile-main">
           <span className="store-avatar">
-            {active ? active.name.slice(0, 1).toUpperCase() : '?'}
+            <SkinAvatar skinUrl={active?.skinUrl} name={active?.name ?? '?'} size={54} radius={14} />
             <span className="store-avatar-badge">
               <CosmeticBadge id={snapshot.equippedBadge} size={20} />
             </span>

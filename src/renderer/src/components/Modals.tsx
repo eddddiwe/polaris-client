@@ -3,6 +3,7 @@ import type { DeviceCodeInfo, InstanceKind, LoaderType, PerfProfileId, VersionSu
 import { errorMessage, useApp, type ConfirmOptions } from '../context'
 import { Icon } from './Icons'
 import { CosmeticBadge } from './Cosmetics'
+import { SkinAvatar } from './SkinAvatar'
 import { Modal, Spinner } from './Feedback'
 
 const rangeFill = (value: number, min: number, max: number): CSSProperties =>
@@ -333,7 +334,7 @@ export function AccountModal({
               onClick={() => void api.setActiveAccount(account.id).then(() => refresh())}
             >
               <span className="account-avatar">
-                <span className="avatar avatar-md">{account.name.slice(0, 1).toUpperCase()}</span>
+                <SkinAvatar skinUrl={account.skinUrl} name={account.name} className="avatar avatar-md" />
                 <span className={`account-type-badge ${account.type === 'microsoft' ? 'ms' : 'off'}`}>
                   {account.type === 'microsoft' ? 'MS' : 'OFF'}
                 </span>

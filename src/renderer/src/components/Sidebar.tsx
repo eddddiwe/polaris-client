@@ -1,6 +1,7 @@
 import { useApp, type Page } from '../context'
 import { Icon, PolarisMark, type IconName } from './Icons'
 import { CosmeticBadge } from './Cosmetics'
+import { SkinAvatar } from './SkinAvatar'
 
 const NAV: { id: Page; label: string; icon: IconName }[] = [
   { id: 'home', label: 'Home', icon: 'home' },
@@ -60,7 +61,7 @@ export function Sidebar(): JSX.Element {
       <div className="sidebar-spacer" />
 
       <button className="account-chip" onClick={openAccount}>
-        <span className="avatar">{active ? active.name.slice(0, 1).toUpperCase() : '?'}</span>
+        <SkinAvatar skinUrl={active?.skinUrl} name={active?.name ?? '?'} className="avatar" />
         <span className="account-copy">
           <strong className="name-with-badge">
             {active ? active.name : 'Add account'}
