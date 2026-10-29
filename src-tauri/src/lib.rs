@@ -640,6 +640,9 @@ async fn launch_start(instance_id: String, app: tauri::AppHandle, state: tauri::
         &account_uuid,
         &access_token,
         user_type,
+        &settings,
+        &installed.version,
+        &state.data_dir.to_string_lossy(),
     );
 
     // Launch

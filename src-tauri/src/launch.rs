@@ -99,43 +99,143 @@ impl LaunchService {
         account_name: &str,
         account_uuid: &str,
         access_token: &str,
-        user_type: &str
+        user_type: &str,
+        settings: &crate::models::Settings,
+        version: &crate::installer::VersionJson,
+        data_dir: &str,
     ) -> Vec<String> {
+        let instance_dir = format!("{}/{}", data_dir, instance.id);
+        let assets_root = format!("{}/assets", data_dir);
+        let libraries_dir = format!("{}/libraries", data_dir);
+
+        let mut values = std::collections::HashMap::new();
+        values.insert("auth_player_name".to_string(), account_name.to_string());
+        values.insert("version_name".to_string(), version.id.clone());
+        values.insert("game_directory".to_string(), instance_dir.clone());
+        values.insert("assets_root".to_string(), assets_root.clone());
+        values.insert("assets_index_name".to_string(), asset_index_id.to_string());
+        values.insert("auth_uuid".to_string(), account_uuid.to_string());
+        values.insert("auth_access_token".to_string(), access_token.to_string());
+        values.insert("clientid".to_string(), String::new());
+        values.insert("auth_xuid".to_string(), String::new());
+        values.insert("user_type".to_string(), user_type.to_string());
+        values.insert("version_type".to_string(), version.version_type.clone().unwrap_or_else(|| "release".to_string()));
+        values.insert("natives_directory".to_string(), natives_dir.to_string());
+        values.insert("launcher_name".to_string(), "Polaris".to_string());
+        values.insert("launcher_version".to_string(), "0.3.4".to_string());
+        values.insert("classpath".to_string(), classpath.to_string());
+        let cp_sep = if cfg!(target_os = "windows") { ";" } else { ":" };
+        values.insert("classpath_separator".to_string(), cp_sep.to_string());
+        values.insert("library_directory".to_string(), libraries_dir.clone());
+        values.insert("resolution_width".to_string(), instance.width.to_string());
+        values.insert("resolution_height".to_string(), instance.height.to_string());
+
         let mut args = Vec::new();
 
-        // JVM flags
-        args.extend(Self::build_jvm_flags(instance.memory_mb, &instance.jvm_preset, &instance.custom_jvm_args, java_major));
+        let tuning = Self::build_jvm_flags(instance.memory_mb, &instance.jvm_preset, &instance.custom_jvm_args, java_major);
+        for f in &tuning {
+            args.push(substitute(f, &values));
+        }
 
-        // Natives
+        let extra_jvm = vec![
+            "-Dpolaris.client=true".to_string(),
+            "-Dminecraft.launcher.brand=Polaris".to_string(),
+            "-Dminecraft.launcher.version=0.3.4".to_string(),
+            format!("-XX:ErrorFile={}/logs/hs_err_%p.log", instance_dir),
+            "-Dlog4j2.formatMsgNoLookups=true".to_string(),
+            "-Dfile.encoding=UTF-8".to_string(),
+        ];
+        for f in &extra_jvm {
+            args.push(substitute(f, &values));
+        }
+
         args.push(format!("-Djava.library.path={}", natives_dir));
         args.push("-Dorg.lwjgl.system.allocator=system".to_string());
 
-        // Main class
+        if let Some(vargs) = &version.arguments {
+            if let Some(jvm) = &vargs.jvm {
+                for entry in jvm {
+                    if let Some(s) = entry.as_str() {
+                        args.push(substitute(s, &values));
+                    } else if let Some(obj) = entry.as_object() {
+                        if let Some(val) = obj.get("value") {
+                            if let Some(s) = val.as_str() {
+                                args.push(substitute(s, &values));
+                            } else if let Some(arr) = val.as_array() {
+                                for v in arr {
+                                    if let Some(s) = v.as_str() {
+                                        args.push(substitute(s, &values));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         args.push("-cp".to_string());
         args.push(classpath.to_string());
 
-        // Game arguments
-        args.push("net.minecraft.client.main.Main".to_string());
-        args.push("--username".to_string());
-        args.push(account_name.to_string());
-        args.push("--version".to_string());
-        args.push(instance.mc_version.clone());
-        args.push("--gameDir".to_string());
-        args.push(".".to_string());
-        args.push("--assetsDir".to_string());
-        args.push("assets".to_string());
-        args.push("--assetIndex".to_string());
-        args.push(asset_index_id.to_string());
-        args.push("--uuid".to_string());
-        args.push(account_uuid.to_string());
-        args.push("--accessToken".to_string());
-        args.push(access_token.to_string());
-        args.push("--userType".to_string());
-        args.push(user_type.to_string());
-        args.push("--versionType".to_string());
-        args.push("release".to_string());
+        let main_class = version.main_class.clone().unwrap_or_else(|| "net.minecraft.client.main.Main".to_string());
+        args.push(main_class);
 
-        // Resolution
+        // Game args
+        let mut game_args: Vec<String> = Vec::new();
+        if let Some(vargs) = &version.arguments {
+            if let Some(game) = &vargs.game {
+                for entry in game {
+                    if let Some(s) = entry.as_str() {
+                        game_args.push(substitute(s, &values));
+                    } else if let Some(obj) = entry.as_object() {
+                        if let Some(val) = obj.get("value") {
+                            if let Some(s) = val.as_str() {
+                                game_args.push(substitute(s, &values));
+                            } else if let Some(arr) = val.as_array() {
+                                for v in arr {
+                                    if let Some(s) = v.as_str() {
+                                        game_args.push(substitute(s, &values));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if game_args.is_empty() {
+            if let Some(mc_args) = &version.minecraft_arguments {
+                game_args = mc_args.split_whitespace().map(|s| substitute(s, &values)).collect();
+            }
+        }
+
+        if game_args.is_empty() {
+            // Default game args
+            game_args.push("--username".to_string());
+            game_args.push(account_name.to_string());
+            game_args.push("--version".to_string());
+            game_args.push(version.id.clone());
+            game_args.push("--gameDir".to_string());
+            game_args.push(".".to_string());
+            game_args.push("--assetsDir".to_string());
+            game_args.push("assets".to_string());
+            game_args.push("--assetIndex".to_string());
+            game_args.push(asset_index_id.to_string());
+            game_args.push("--uuid".to_string());
+            game_args.push(account_uuid.to_string());
+            game_args.push("--accessToken".to_string());
+            game_args.push(access_token.to_string());
+            game_args.push("--userType".to_string());
+            game_args.push(user_type.to_string());
+            game_args.push("--versionType".to_string());
+            game_args.push("release".to_string());
+        }
+
+        for a in &game_args {
+            args.push(a.clone());
+        }
+
         args.push("--width".to_string());
         args.push(instance.width.to_string());
         args.push("--height".to_string());
@@ -145,14 +245,12 @@ impl LaunchService {
             args.push("--fullscreen".to_string());
         }
 
-        // Extra game args
         if !instance.extra_game_args.is_empty() {
             args.extend(instance.extra_game_args.split_whitespace().map(String::from));
         }
 
         args
     }
-
     pub fn launch(
         java_path: &str,
         args: &[String],
@@ -174,4 +272,12 @@ impl LaunchService {
     pub fn classpath_separator() -> &'static str {
         if cfg!(target_os = "windows") { ";" } else { ":" }
     }
+}
+
+fn substitute(template: &str, values: &std::collections::HashMap<String, String>) -> String {
+    let mut result = template.to_string();
+    for (key, val) in values {
+        result = result.replace(&format!("${{{}}}", key), val);
+    }
+    result
 }

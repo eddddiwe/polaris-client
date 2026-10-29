@@ -14,6 +14,7 @@ pub struct InstalledGame {
     pub natives: Vec<NativeEntry>,
     pub asset_index_id: String,
     pub java_major: u32,
+    pub version: VersionJson,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -523,6 +524,7 @@ impl Installer {
             natives,
             asset_index_id,
             java_major,
+            version,
         })
     }
 
