@@ -231,8 +231,8 @@ p {
   z-index: 1;
   height: 100%;
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  grid-template-rows: 42px minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-rows: 48px minmax(0, 1fr);
 }
 
 /* ---------- title bar ---------- */
@@ -243,8 +243,9 @@ p {
   align-items: center;
   gap: 12px;
   padding: 0 6px 0 18px;
-  border-bottom: 1px solid var(--line);
-  background: rgba(7, 8, 13, 0.66);
+  border-bottom: 1px solid rgba(139, 92, 246, 0.12);
+  background: rgba(5, 6, 11, 0.8);
+  backdrop-filter: blur(20px);
   -webkit-app-region: drag;
   user-select: none;
   position: relative;
@@ -320,9 +321,10 @@ p {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 18px 14px 14px;
-  border-right: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(12, 14, 23, 0.92), rgba(7, 8, 13, 0.97));
+  padding: 20px 16px 16px;
+  border-right: 1px solid rgba(139, 92, 246, 0.1);
+  background: linear-gradient(180deg, rgba(10, 12, 20, 0.95), rgba(5, 6, 11, 0.98));
+  backdrop-filter: blur(20px);
 }
 
 .sidebar-brand {
@@ -601,14 +603,15 @@ p {
   grid-row: 2;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 26px 34px 150px;
+  padding: 32px 40px 160px;
   scroll-behavior: smooth;
+  background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(139, 92, 246, 0.03) 0%, transparent 60%);
 }
 
 .page {
-  max-width: 1460px;
+  max-width: 1500px;
   margin: 0 auto;
-  animation: pageIn 0.4s cubic-bezier(0.2, 0.7, 0.3, 1);
+  animation: pageIn 0.5s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
 .game-banner {
