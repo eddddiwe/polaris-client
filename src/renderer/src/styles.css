@@ -693,6 +693,7 @@ p {
   object-fit: cover;
   border-radius: inherit;
   display: block;
+  filter: brightness(1.07) saturate(1.06);
 }
 
 .avatar-fallback {
