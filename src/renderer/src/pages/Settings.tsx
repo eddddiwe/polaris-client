@@ -302,6 +302,78 @@ export function SettingsPage(): JSX.Element {
               </select>
             </div>
           </div>
+
+          <div className="field">
+            <label>Accent color</label>
+            <div className="swatches">
+              {ACCENTS.map((color) => (
+                <button
+                  key={color}
+                  className={`swatch ${boot.settings.accent === color ? 'active' : ''}`}
+                  style={{ background: color }}
+                  aria-label={`Use ${color}`}
+                  onClick={() => void setSetting({ accent: color })}
+                >
+                  {boot.settings.accent === color && <Icon name="check" size={14} />}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="wallpaper-tuning">
+            <div className="field">
+              <label className="label-row">
+                <span>Dim</span>
+                <b>{wallDim}%</b>
+              </label>
+              <input
+                type="range"
+                min={0}
+                max={90}
+                step={5}
+                value={wallDim}
+                onChange={(event) => setWallDim(Number(event.target.value))}
+              />
+            </div>
+            <div className="field">
+              <label className="label-row">
+                <span>Blur</span>
+                <b>{wallBlur}px</b>
+              </label>
+              <input
+                type="range"
+                min={0}
+                max={30}
+                step={1}
+                value={wallBlur}
+                onChange={(event) => setWallBlur(Number(event.target.value))}
+              />
+            </div>
+          </div>
+
+          <div className="panel-actions">
+            <button
+              className="btn btn-soft btn-sm"
+              onClick={() => void setSetting({ wallpaperDim: wallDim, wallpaperBlur: wallBlur })}
+            >
+              <Icon name="check" size={14} /> Save tuning
+            </button>
+          </div>
+
+          <div className="settings-rows">
+            <ToggleRow
+              title="Animated wallpaper"
+              body="Let built-in scenes and video wallpapers move."
+              checked={boot.settings.wallpaperMotion}
+              onChange={(value) => void setSetting({ wallpaperMotion: value })}
+            />
+            <ToggleRow
+              title="Reduce motion"
+              body="Disable ambient rotation, page transitions, hover movement and wallpaper animation."
+              checked={boot.settings.reduceMotion}
+              onChange={(value) => void setSetting({ reduceMotion: value })}
+            />
+          </div>
         </section>
 
       </div>
