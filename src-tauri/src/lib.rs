@@ -621,6 +621,7 @@ async fn launch_start(instance_id: String, app: tauri::AppHandle, state: tauri::
 
     // Extract natives
     let instance_dir = state.data_dir.join(&instance.id);
+    let data_dir = state.data_dir.to_string_lossy().to_string();
     let natives_dir = instance_dir.join("natives");
     std::fs::create_dir_all(&natives_dir).ok();
     installer.extract_natives(&installed.natives, &natives_dir).await.map_err(|e| e.to_string())?;
@@ -651,11 +652,53 @@ async fn launch_start(instance_id: String, app: tauri::AppHandle, state: tauri::
 
     let pid = child.id();
 
-    // Take stdout/stderr for log capture
+    // Take stdin, stdout, stderr for log capture
+    let stdin = child.stdin.take();
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
-    *state.child_process.lock().unwrap() = Some(child);
+    *state.child_stdin.lock().unwrap() = stdin;
+
+    let child_arc = state.child_process.clone();
+    *child_arc.lock().unwrap() = Some(child);
+
+    // Spawn background thread to wait for process exit
+    let iid_exit = instance_id.clone();
+    let app_exit = app.clone();
+    let started = std::time::Instant::now();
+    std::thread::spawn(move || {
+        use tauri::Emitter;
+        // Wait for child to exit
+        let mut child_opt = {
+            let mut g = child_arc.lock().unwrap();
+            g.take()
+        };
+        if let Some(ref mut c) = child_opt {
+            let status = c.wait();
+            let code = status.ok().and_then(|s| s.code());
+            let playtime = started.elapsed().as_millis() as i64;
+            // Write to latest.log? Already handled by stdout thread
+            let _ = app_exit.emit("launch-state", serde_json::json!({
+                "instanceId": iid_exit,
+                "status": if code == Some(0) { "exited" } else { "crashed" },
+                "pid": null,
+                "exitCode": code
+            }));
+            // Update state
+            let st = app_exit.state::<AppState>();
+            *st.launch_state.lock().unwrap() = crate::models::LaunchState {
+                instance_id: None,
+                status: if code == Some(0) { "exited".to_string() } else { "crashed".to_string() },
+                message: Some(if code == Some(0) { "Game exited".to_string() } else { "Game crashed".to_string() }),
+                pid: None,
+                started_at: None,
+                exit_code: code,
+            };
+            *st.child_process.lock().unwrap() = None;
+            *st.child_stdin.lock().unwrap() = None;
+            let _ = playtime;
+        }
+    });
 
     *state.launch_state.lock().unwrap() = crate::models::LaunchState {
         instance_id: Some(instance_id.clone()),
@@ -676,13 +719,22 @@ async fn launch_start(instance_id: String, app: tauri::AppHandle, state: tauri::
     // Spawn threads to capture stdout/stderr and emit game-log events
     let iid = instance_id.clone();
     let app_clone = app.clone();
+    let log_path = format!("{}/{}/logs/latest.log", data_dir, instance_id);
+    // Ensure log dir
+    let log_dir = format!("{}/{}/logs", data_dir, instance_id);
+    std::fs::create_dir_all(&log_dir).ok();
     if let Some(out) = stdout {
+        let log_path = log_path.clone();
         std::thread::spawn(move || {
-            use std::io::{BufRead, BufReader};
+            use std::io::{BufRead, BufReader, Write};
             let reader = BufReader::new(out);
+            let mut file = std::fs::File::create(&log_path).ok();
             let mut lines = Vec::new();
             for line in reader.lines() {
                 if let Ok(l) = line {
+                    if let Some(f) = file.as_mut() {
+                        let _ = writeln!(f, "{}", l);
+                    }
                     lines.push(l);
                     if lines.len() >= 50 {
                         let _ = app_clone.emit("game-log", serde_json::json!({
@@ -743,6 +795,7 @@ fn launch_stop(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Resu
     if let Some(mut child) = state.child_process.lock().unwrap().take() {
         let _ = child.kill();
     }
+    *state.child_stdin.lock().unwrap() = None;
     let _ = app.emit("launch-state", serde_json::json!({
         "instanceId": null,
         "status": "idle",
@@ -1239,9 +1292,8 @@ async fn gameui_apply(instance_id: String, values: serde_json::Value, state: tau
 
 #[tauri::command]
 async fn server_command(instance_id: String, command: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut guard = state.child_process.lock().unwrap();
-    let child = guard.as_mut().ok_or("No server is running.")?;
-    let stdin = child.stdin.as_mut().ok_or("Server console is not available.")?;
+    let mut guard = state.child_stdin.lock().unwrap();
+    let stdin = guard.as_mut().ok_or("Server console is not available.")?;
     use std::io::Write;
     stdin.write_all(format!("{}\n", command.trim_end_matches('\n')).as_bytes())
         .map_err(|e| e.to_string())?;
