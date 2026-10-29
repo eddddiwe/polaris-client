@@ -755,20 +755,27 @@ async fn open_logs(id: String, state: tauri::State<'_, AppState>) -> Result<(), 
 async fn launch_tail(id: String, lines: Option<u32>, state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
     let instance_store = state.instance_store.lock().unwrap();
     let log_dir = instance_store.dir(&id).join("logs");
-    // Find latest log file
-    let mut log_files: Vec<_> = std::fs::read_dir(&log_dir)
-        .map(|rd| rd.filter_map(|e| e.ok()).map(|e| e.path()).collect())
-        .unwrap_or_default();
-    log_files.sort();
-    let last = log_files.last().cloned();
     let n = lines.unwrap_or(250) as usize;
-    if let Some(path) = last {
-        let content = std::fs::read_to_string(&path).unwrap_or_default();
-        let all_lines: Vec<&str> = content.lines().collect();
-        let start = all_lines.len().saturating_sub(n);
-        return Ok(all_lines[start..].iter().map(|s| s.to_string()).collect());
-    }
-    Ok(Vec::new())
+
+    // Prefer latest.log, fall back to most recent file
+    let latest = log_dir.join("latest.log");
+    let path = if latest.exists() {
+        latest
+    } else {
+        let mut log_files: Vec<_> = std::fs::read_dir(&log_dir)
+            .map(|rd| rd.filter_map(|e| e.ok()).map(|e| e.path()).collect())
+            .unwrap_or_default();
+        log_files.sort();
+        match log_files.last().cloned() {
+            Some(p) => p,
+            None => return Ok(Vec::new()),
+        }
+    };
+
+    let content = std::fs::read_to_string(&path).unwrap_or_default();
+    let all_lines: Vec<&str> = content.lines().collect();
+    let start = all_lines.len().saturating_sub(n);
+    Ok(all_lines[start..].iter().map(|s| s.to_string()).collect())
 }
 #[tauri::command]
 async fn update_instance(id: String, patch: serde_json::Value, state: tauri::State<'_, AppState>) -> Result<Instance, String> {
