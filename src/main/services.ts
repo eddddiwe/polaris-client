@@ -62,7 +62,7 @@ import { LaunchService } from '../core/launch'
 import { PACKS, packById } from '../core/packs'
 import { detectHardware, makePlan, applyOptions, readGameUi, writeGameUi } from '../core/performance'
 import { CosmeticsService } from '../core/cosmetics'
-import { scanJava, inspectJava } from '../core/java'
+import { scanJava, inspectJava, downloadJava } from '../core/java'
 
 export class AppServices extends EventEmitter {
   readonly paths = createPaths(resolveRoot())
