@@ -5,7 +5,7 @@ import { Icon, PolarisMark } from '../components/Icons'
 import { CosmeticBadge } from '../components/Cosmetics'
 import { EmptyState } from '../components/Feedback'
 
-const TARGET_FPS = { competitive: 260, balanced: 144, quality: 120 }
+
 
 export function HomePage(): JSX.Element {
   const {
@@ -168,8 +168,8 @@ export function HomePage(): JSX.Element {
               <PolarisMark size={54} />
             </span>
             <span className="orbit-target">
-              <strong>{isServer ? (active?.port ?? 25565) : TARGET_FPS[profile]}</strong>
-              <small>{isServer ? 'SERVER PORT' : 'TARGET FPS'}</small>
+              <strong>{isServer ? (active?.port ?? 25565) : `${Math.round((active?.memoryMb ?? 4096) / 1024)}GB`}</strong>
+              <small>{isServer ? 'SERVER PORT' : 'MEMORY'}</small>
             </span>
           </div>
           <div className="hero-chips">
