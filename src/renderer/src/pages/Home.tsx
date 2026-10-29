@@ -167,10 +167,7 @@ export function HomePage(): JSX.Element {
             <span className="orbit-core">
               <PolarisMark size={54} />
             </span>
-            <span className="orbit-target">
-              <strong>{isServer ? (active?.port ?? 25565) : `${Math.round((active?.memoryMb ?? 4096) / 1024)}GB`}</strong>
-              <small>{isServer ? 'SERVER PORT' : 'MEMORY'}</small>
-            </span>
+
           </div>
           <div className="hero-chips">
             {(isServer
