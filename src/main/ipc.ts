@@ -23,6 +23,16 @@ export function registerIpc(services: AppServices): void {
   handle(IPC.bootstrap, async () => services.bootstrap())
   handle(IPC.settingsSnapshot, async () => services.settingsStore.get())
 
+  handle(IPC.friendsList, async () => services.friends.list())
+  handle(IPC.friendsAdd, async (code: string, name: string) => {
+    await services.friends.add(code, name)
+    return services.friends.list()
+  })
+  handle(IPC.friendsRemove, async (code: string) => {
+    await services.friends.remove(code)
+    return services.friends.list()
+  })
+
   ipcMain.handle(IPC.windowAction, (event, action: 'minimize' | 'maximize' | 'close' | 'show') => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return

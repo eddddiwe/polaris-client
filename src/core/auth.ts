@@ -1,5 +1,5 @@
 import type { DeviceCodeInfo } from '../shared/types'
-import { AccountStore, type StoredAccount } from './accounts'
+import { AccountStore, generateFriendCode, type StoredAccount } from './accounts'
 import type { Logger } from './logger'
 import { delay } from './http'
 
@@ -171,6 +171,7 @@ export class AuthService {
       name: profile.name,
       uuid: formatUuid(profile.id),
       skinUrl: profile.skins?.[0]?.url,
+      friendCode: generateFriendCode(),
       accessToken: mc.access_token,
       refreshToken,
       expiresAt: Date.now() + (mc.expires_in ?? 86_400) * 1000,
@@ -210,6 +211,7 @@ export class AuthService {
       name: refreshed.name,
       uuid: refreshed.uuid,
       skinUrl: refreshed.skinUrl,
+      friendCode: refreshed.friendCode ?? generateFriendCode(),
       xuid: refreshed.xuid
     })
     return updated ?? refreshed

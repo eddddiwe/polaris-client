@@ -63,6 +63,9 @@ export function createTauriApi(): PolarisAPI {
     rescanJava: () => invoke('settings_rescan_java'),
     downloadJava: (major) => invoke('settings_download_java', { major }),
     settingsSnapshot: () => invoke('settings_snapshot'),
+    friendsList: () => invoke('friends_list'),
+    friendsAdd: (code, name) => invoke('friends_add', { code, name }),
+    friendsRemove: (code) => invoke('friends_remove', { code }),
     checkForUpdates: () => invoke('check_for_updates'),
     installUpdate: () => invoke('install_update'),
     onProgress: (cb) => {

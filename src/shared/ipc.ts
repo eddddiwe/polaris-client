@@ -52,7 +52,10 @@ export const IPC = {
   serverCommand: 'server:command',
   checkForUpdates: 'app:checkForUpdates',
   installUpdate: 'app:installUpdate',
-  importMrpack: 'app:importMrpack'
+  importMrpack: 'app:importMrpack',
+  friendsList: 'friends:list',
+  friendsAdd: 'friends:add',
+  friendsRemove: 'friends:remove'
 } as const
 
 export const EVENTS = {

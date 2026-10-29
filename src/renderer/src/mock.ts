@@ -996,6 +996,9 @@ export function createMockApi(): Window['polaris'] {
     rescanJava: async () => java,
     downloadJava: async () => java,
     settingsSnapshot: async () => settings,
+    friendsList: async () => [],
+    friendsAdd: async (code, name) => [{ code: code.toUpperCase(), name: name || code, addedAt: Date.now() }],
+    friendsRemove: async () => [],
     checkForUpdates: async () => ({ hasUpdate: false, currentVersion: '0.3.0', latestVersion: '0.3.0', downloadUrl: '', publishedAt: new Date().toISOString() }),
     installUpdate: async () => {},
     importMrpack: async () => {

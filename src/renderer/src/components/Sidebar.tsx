@@ -9,6 +9,7 @@ const NAV: { id: Page; label: string; icon: IconName }[] = [
   { id: 'discover', label: 'Discover', icon: 'compass' },
   { id: 'performance', label: 'Performance', icon: 'gauge' },
   { id: 'store', label: 'Cosmetics', icon: 'bag' },
+  { id: 'friends', label: 'Friends', icon: 'user' },
   { id: 'settings', label: 'Settings', icon: 'settings' }
 ]
 

@@ -23,7 +23,11 @@ export class AccountStore {
   async load(): Promise<void> {
     const loaded = await readJson<AccountFile | null>(this.path, null)
     if (loaded && Array.isArray(loaded.accounts)) this.data = loaded
-    for (const account of this.data.accounts) account.active = account.id === this.data.activeId
+    for (const account of this.data.accounts) {
+      account.active = account.id === this.data.activeId
+      if (!account.friendCode) account.friendCode = generateFriendCode()
+    }
+    await this.save()
   }
 
   async save(): Promise<void> {
@@ -31,12 +35,13 @@ export class AccountStore {
   }
 
   list(): Account[] {
-    return this.data.accounts.map(({ id, type, name, uuid, skinUrl }) => ({
+    return this.data.accounts.map(({ id, type, name, uuid, skinUrl, friendCode }) => ({
       id,
       type,
       name,
       uuid,
       skinUrl,
+      friendCode,
       active: id === this.data.activeId
     }))
   }
@@ -77,6 +82,16 @@ export class AccountStore {
   }
 }
 
+export function generateFriendCode(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const group = (): string => {
+    let out = ''
+    for (let i = 0; i < 4; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)]
+    return out
+  }
+  return `POLARIS-${group()}-${group()}`
+}
+
 export function offlineUuid(name: string): string {
   const bytes = createHash('md5').update(`OfflinePlayer:${name}`, 'utf8').digest()
   bytes[6] = (bytes[6] & 0x0f) | 0x30
@@ -97,6 +112,7 @@ export function offlineAccount(name: string): StoredAccount {
     name,
     uuid,
     accessToken: '0',
-    active: true
+    active: true,
+    friendCode: generateFriendCode()
   }
 }

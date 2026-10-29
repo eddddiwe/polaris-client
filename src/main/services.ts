@@ -62,6 +62,7 @@ import { LaunchService } from '../core/launch'
 import { PACKS, packById } from '../core/packs'
 import { detectHardware, makePlan, applyOptions, readGameUi, writeGameUi } from '../core/performance'
 import { CosmeticsService } from '../core/cosmetics'
+import { FriendStore } from '../core/friends'
 import { scanJava, inspectJava, downloadJava } from '../core/java'
 
 export class AppServices extends EventEmitter {
@@ -70,6 +71,7 @@ export class AppServices extends EventEmitter {
   readonly progress = new ProgressHub()
   readonly settingsStore = new SettingsStore(this.paths.settings, this.paths.root)
   readonly cosmetics = new CosmeticsService(this.settingsStore)
+  readonly friends = new FriendStore(join(this.paths.root, 'friends.json'))
   readonly accounts = new AccountStore(this.paths.accounts)
   readonly instances: InstanceStore
   readonly downloader: Downloader
@@ -160,7 +162,8 @@ export class AppServices extends EventEmitter {
       // Load settings and accounts in parallel
       const [settings] = await Promise.all([
         this.settingsStore.load(),
-        this.accounts.load()
+        this.accounts.load(),
+        this.friends.load()
       ])
       this.logger.info('Polaris starting', { version: app.getVersion(), dataDir: this.paths.root })
 

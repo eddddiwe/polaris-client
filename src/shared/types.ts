@@ -168,6 +168,18 @@ export interface Account {
   active: boolean
     // tokens never cross the IPC boundary
   skinUrl?: string
+  friendCode?: string
+}
+
+export interface Friend {
+  code: string
+  name: string
+  addedAt: number
+}
+
+export interface FriendSnapshot {
+  myCode: string | null
+  friends: Friend[]
 }
 
 export interface Settings {

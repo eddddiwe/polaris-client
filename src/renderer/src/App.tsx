@@ -14,6 +14,7 @@ const DiscoverPage = lazy(() => import('./pages/Discover').then(m => ({ default:
 const PerformancePage = lazy(() => import('./pages/Performance').then(m => ({ default: m.PerformancePage })))
 const StorePage = lazy(() => import('./pages/Store').then(m => ({ default: m.StorePage })))
 const SettingsPage = lazy(() => import('./pages/Settings').then(m => ({ default: m.SettingsPage })))
+const FriendsPage = lazy(() => import('./pages/Friends').then(m => ({ default: m.FriendsPage })))
 import { AccountModal, ConfirmModal, NewInstanceModal } from './components/Modals'
 import { PolarisMark } from './components/Icons'
 
@@ -344,6 +345,7 @@ export default function App(): JSX.Element {
             {page === 'performance' && <Suspense fallback={<div className="page-loading">Loading...</div>}><PerformancePage /></Suspense>}
             {page === 'store' && <Suspense fallback={<div className="page-loading">Loading...</div>}><StorePage /></Suspense>}
             {page === 'settings' && <Suspense fallback={<div className="page-loading">Loading...</div>}><SettingsPage /></Suspense>}
+            {page === 'friends' && <Suspense fallback={<div className="page-loading">Loading...</div>}><FriendsPage /></Suspense>}
           </div>
         </main>
         <ProgressDock progress={progress} />

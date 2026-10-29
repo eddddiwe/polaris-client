@@ -2,6 +2,8 @@ import type {
   AccountSnapshot,
   Bootstrap,
   CosmeticSnapshot,
+  Friend,
+  FriendSnapshot,
   CreateFromPackInput,
   CreateInstanceInput,
   DeviceCodeInfo,
@@ -117,6 +119,9 @@ export interface PolarisAPI {
   rescanJava(): Promise<JavaInfo[]>
   downloadJava(major: number): Promise<JavaInfo[]>
   settingsSnapshot(): Promise<Settings>
+  friendsList(): Promise<Friend[]>
+  friendsAdd(code: string, name: string): Promise<Friend[]>
+  friendsRemove(code: string): Promise<Friend[]>
   checkForUpdates(): Promise<UpdateInfo>
   installUpdate(): Promise<void>
   importMrpack(): Promise<InstanceSummary>

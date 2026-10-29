@@ -7784,3 +7784,68 @@ input[type='range']:focus-visible::-webkit-slider-thumb {
   color: #fff;
   box-shadow: 0 2px 8px rgba(0,0,0,0.4);
 }
+
+/* ---------- friends ---------- */
+.friend-code-card {
+  max-width: 520px;
+}
+
+.friend-code-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0 6px;
+}
+
+.friend-code {
+  font-family: var(--font-mono, 'Geist Mono', monospace);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent-2);
+  background: rgba(34, 211, 238, 0.08);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  border-radius: 10px;
+  padding: 10px 16px;
+  user-select: all;
+}
+
+.friends-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.friend-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: var(--surface-1);
+}
+
+.friend-avatar {
+  flex: none;
+}
+
+.friend-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.friend-info strong {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.friend-code-small {
+  font-size: 10px;
+  color: var(--dim);
+  font-family: var(--font-mono, 'Geist Mono', monospace);
+  letter-spacing: 0.05em;
+}
