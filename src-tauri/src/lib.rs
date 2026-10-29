@@ -89,6 +89,9 @@ pub fn run() {
             cosmetic_sync_get,
             import_mrpack,
             update_instance,
+            perf_scan,
+            perf_plan,
+            perf_apply,
             instance_get,
             versions_list,
             settings_snapshot,
@@ -777,6 +780,216 @@ async fn launch_tail(id: String, lines: Option<u32>, state: tauri::State<'_, App
     let start = all_lines.len().saturating_sub(n);
     Ok(all_lines[start..].iter().map(|s| s.to_string()).collect())
 }
+#[tauri::command]
+async fn perf_scan(state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let hw = state.hardware.lock().unwrap().clone();
+    Ok(serde_json::to_value(hw).unwrap_or_default())
+}
+
+#[tauri::command]
+async fn perf_plan(instance_id: String, profile: String, memory_mb: Option<u32>, preset: Option<String>, state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let hw = state.hardware.lock().unwrap().clone();
+    let profile = if profile.is_empty() { "balanced".to_string() } else { profile };
+
+    // Memory
+    let requested = memory_mb.unwrap_or(hw.recommended_memory_mb);
+    let memory = (requested as i64).clamp(1024, 32768);
+    let memory = (memory as f64 / 1.0).round() as u32;
+
+    // JVM preset
+    let jvm_preset = preset.unwrap_or_else(|| {
+        if profile == "competitive" { "low-latency".to_string() } else { "aikar".to_string() }
+    });
+
+    // Java major (hardware.java is Vec<String>, skip for now)
+
+    // Build JVM args (simplified)
+    let mut jvm_args = Vec::new();
+    jvm_args.push(format!("-Xms{}M", memory));
+    jvm_args.push(format!("-Xmx{}M", memory));
+    match jvm_preset.as_str() {
+        "zgc" => {
+            jvm_args.push("-XX:+UseZGC".to_string());
+            jvm_args.push("-XX:+AlwaysPreTouch".to_string());
+            jvm_args.push("-XX:+DisableExplicitGC".to_string());
+        }
+        "low-latency" => {
+            jvm_args.push("-XX:+UseG1GC".to_string());
+            jvm_args.push("-XX:MaxGCPauseMillis=20".to_string());
+            jvm_args.push("-XX:+UseStringDeduplication".to_string());
+        }
+        _ => {
+            jvm_args.push("-XX:+UseG1GC".to_string());
+            jvm_args.push("-XX:+ParallelRefProcEnabled".to_string());
+            jvm_args.push("-XX:MaxGCPauseMillis=200".to_string());
+            jvm_args.push("-XX:+UnlockExperimentalVMOptions".to_string());
+            jvm_args.push("-XX:+DisableExplicitGC".to_string());
+            jvm_args.push("-XX:+AlwaysPreTouch".to_string());
+            jvm_args.push("-XX:G1NewSizePercent=30".to_string());
+            jvm_args.push("-XX:G1MaxNewSizePercent=40".to_string());
+            jvm_args.push("-XX:G1HeapRegionSize=8M".to_string());
+            jvm_args.push("-XX:G1ReservePercent=20".to_string());
+            jvm_args.push("-XX:G1HeapWastePercent=5".to_string());
+            jvm_args.push("-XX:G1MixedGCCountTarget=4".to_string());
+            jvm_args.push("-XX:InitiatingHeapOccupancyPercent=15".to_string());
+            jvm_args.push("-XX:G1MixedGCLiveThresholdPercent=90".to_string());
+            jvm_args.push("-XX:G1RSetUpdatingPauseTimePercent=5".to_string());
+            jvm_args.push("-XX:SurvivorRatio=32".to_string());
+            jvm_args.push("-XX:+PerfDisableSharedMem".to_string());
+            jvm_args.push("-XX:MaxTenuringThreshold=1".to_string());
+            if memory >= 4096 {
+                jvm_args.push("-XX:+UseStringDeduplication".to_string());
+            }
+        }
+    }
+
+    // Options
+    let size_boost = match hw.tier.as_str() {
+        "entry" => -2,
+        "mainstream" => 0,
+        "high" => 2,
+        "enthusiast" => 4,
+        _ => 0,
+    };
+    let render = match profile.as_str() {
+        "competitive" => (4 + size_boost).max(4) as i64,
+        "balanced" => (12 + size_boost).max(6) as i64,
+        _ => (16 + size_boost).max(8) as i64,
+    };
+    let simulation = match profile.as_str() {
+        "competitive" => (5 + size_boost / 2).max(4) as i64,
+        "balanced" => 8,
+        _ => 10,
+    };
+    let max_fps = match profile.as_str() {
+        "competitive" => 260,
+        "balanced" => 144,
+        _ => 120,
+    };
+
+    let options = serde_json::json!({
+        "renderDistance": render.to_string(),
+        "simulationDistance": simulation.to_string(),
+        "maxFps": max_fps.to_string(),
+        "enableVsync": "false",
+        "graphicsMode": if profile == "competitive" { "0" } else { "1" },
+        "particles": if profile == "competitive" { "2" } else if profile == "balanced" { "1" } else { "0" },
+        "entityShadows": if profile == "competitive" { "false" } else { "true" },
+        "biomeBlendRadius": if profile == "competitive" { "0" } else if profile == "balanced" { "2" } else { "3" },
+        "mipmapLevels": if profile == "competitive" { "2" } else { "4" },
+        "ao": "true"
+    });
+
+    // Notes
+    let mut notes = Vec::new();
+    if hw.tier == "entry" { notes.push("Entry-tier GPU detected - distance is lowered to protect frame pacing.".to_string()); }
+    if hw.ram_gb <= 8.0 { notes.push("8 GB system: 3 GB heap is the safe ceiling; close background apps before playing.".to_string()); }
+    if profile == "competitive" { notes.push("Competitive mode minimizes particles, entity shadows and render distance for stable input latency.".to_string()); }
+    if profile == "quality" { notes.push("Quality mode keeps shadows and full particles; shaders will still cost frames.".to_string()); }
+    if jvm_preset == "zgc" { notes.push("Generational ZGC targets sub-millisecond pauses; it needs Java 21+ and shines on 8 GB+ heaps.".to_string()); }
+    notes.push("Game must be closed when applying video settings.".to_string());
+
+    // Score
+    let base = match hw.tier.as_str() {
+        "entry" => 38,
+        "mainstream" => 58,
+        "high" => 76,
+        "enthusiast" => 88,
+        _ => 50,
+    };
+    let thread_bonus = (hw.threads as i64 - 4).clamp(0, 8);
+    let ram_bonus = if hw.ram_gb >= 16.0 { 4 } else { 0 };
+    let score = (base + thread_bonus + ram_bonus).min(100);
+
+    Ok(serde_json::json!({
+        "profile": profile,
+        "memoryMb": memory,
+        "jvmPreset": jvm_preset,
+        "jvmArgs": jvm_args,
+        "options": options,
+        "notes": notes,
+        "score": score
+    }))
+}
+
+#[tauri::command]
+async fn perf_apply(instance_id: String, profile: String, memory_mb: Option<u32>, preset: Option<String>, state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+    // Generate plan
+    let plan = perf_plan(instance_id.clone(), profile.clone(), memory_mb, preset.clone(), state.clone()).await?;
+
+    let memory = plan.get("memoryMb").and_then(|v| v.as_u64()).unwrap_or(4096) as u32;
+    let jvm_preset = plan.get("jvmPreset").and_then(|v| v.as_str()).unwrap_or("aikar").to_string();
+    let options = plan.get("options").cloned().unwrap_or(serde_json::json!({}));
+
+    // Update instance
+    {
+        let instance_store = state.instance_store.lock().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _ = rt.block_on(instance_store.update(&instance_id, serde_json::json!({
+            "memoryMb": memory,
+            "jvmPreset": jvm_preset,
+        })));
+    }
+
+    // Update in-memory
+    {
+        let mut instances = state.instances.lock().unwrap();
+        if let Some(idx) = instances.iter().position(|i| i.id == instance_id) {
+            instances[idx].memory_mb = memory;
+            instances[idx].jvm_preset = jvm_preset.clone();
+            instances[idx].perf_profile = profile.clone();
+        }
+    }
+
+    // Apply options to options.txt
+    let instance_store = state.instance_store.lock().unwrap();
+    let instance_dir = instance_store.dir(&instance_id);
+    drop(instance_store);
+    let options_file = instance_dir.join("options.txt");
+
+    // Read existing options
+    let mut existing: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    if options_file.exists() {
+        if let Ok(content) = std::fs::read_to_string(&options_file) {
+            for line in content.lines() {
+                if let Some(idx) = line.find(':') {
+                    existing.insert(line[..idx].to_string(), line[idx+1..].to_string());
+                }
+            }
+        }
+    }
+
+    let mut changed = 0i64;
+    if let Some(obj) = options.as_object() {
+        for (key, val) in obj {
+            if let Some(v) = val.as_str() {
+                if existing.get(key) != Some(&v.to_string()) {
+                    existing.insert(key.clone(), v.to_string());
+                    changed += 1;
+                }
+            }
+        }
+    }
+
+    if changed > 0 {
+        // Backup
+        let backup = instance_dir.join(format!("options.txt.polaris-{}.bak", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()));
+        if options_file.exists() {
+            std::fs::copy(&options_file, &backup).ok();
+        }
+        // Write
+        let body: String = existing.iter().map(|(k, v)| format!("{}:{}", k, v)).collect::<Vec<_>>().join("\n");
+        std::fs::write(&options_file, format!("{}\n", body)).ok();
+    }
+
+    Ok(serde_json::json!({
+        "changed": changed,
+        "memoryMb": memory,
+        "jvmPreset": jvm_preset,
+        "profile": profile
+    }))
+}
+
 #[tauri::command]
 async fn update_instance(id: String, patch: serde_json::Value, state: tauri::State<'_, AppState>) -> Result<Instance, String> {
     let instance_store = state.instance_store.lock().unwrap();
