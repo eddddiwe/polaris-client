@@ -108,6 +108,10 @@ export class LaunchService {
         await this.installer.extractNatives(installed.natives, nativesDir)
       }
 
+      // Pre-compute JVM args (cached, skip rebuild if fresh)
+      const cachedArgs = await this.installer.loadCachedArgs(instanceDir)
+      const jvmTuning = cachedArgs ?? await this.installer.precomputeArgs(instance, instanceDir, installed, settings, java.major)
+
       const account = await this.auth.refreshIfNeeded(stored)
       const args = this.buildArguments(instance, settings, installed.version, installed.classpath, installed.assetIndexId, nativesDir, account, java)
 

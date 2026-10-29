@@ -1,11 +1,11 @@
 import { join } from 'node:path'
-import { rm, writeFile, readFile } from 'node:fs/promises'
+import { rm, writeFile, readFile, stat } from 'node:fs/promises'
 import AdmZip from 'adm-zip'
 import type { DownloadItem, Downloader } from './http'
 import { ProgressHub } from './events'
 import { Logger } from './logger'
 import type { Paths } from './paths'
-import type { InstanceConfig } from '../shared/types'
+import type { InstanceConfig, Settings } from '../shared/types'
 import { MojangMeta } from './mojang'
 import { vanillaMinecraftRoot } from './vanilla'
 import { FabricMeta } from './fabric'
@@ -55,14 +55,21 @@ export class Installer {
     if (!(await pathExists(cachePath))) return null
     try {
       const cached = JSON.parse(await readFile(cachePath, 'utf8')) as InstalledGame
-      // Verify the client jar still exists
-      if (!(await pathExists(cached.jarPath))) return null
-      // Verify at least one library exists
-      if (cached.classpath.length === 0) return null
       // Verify mc version matches
       if (cached.baseVersionId !== instance.mcVersion) return null
       // Verify loader matches
       if (instance.loader === 'fabric' && !cached.versionId.includes('fabric')) return null
+      // Verify all files exist in parallel (fast check)
+      const allPaths = [cached.jarPath, ...cached.classpath]
+      const checks = await Promise.all(allPaths.map(async (p) => {
+        try {
+          const s = await stat(p)
+          return s.size > 0
+        } catch {
+          return false
+        }
+      }))
+      if (!checks.every(Boolean)) return null
       return cached
     } catch {
       return null
@@ -75,6 +82,30 @@ export class Installer {
       await writeFile(join(instanceDir, '.install-cache.json'), JSON.stringify(installed))
     } catch {
       // Cache write is best-effort
+    }
+  }
+
+  /** Pre-compute JVM args and cache them alongside the install result. */
+  async precomputeArgs(instance: InstanceConfig, instanceDir: string, installed: InstalledGame, settings: Settings, javaMajor: number): Promise<string[]> {
+    // Build and cache the JVM tuning args (account-independent)
+    const tuning = (await import('./performance')).buildJvmFlags(instance.memoryMb, instance.jvmPreset, instance.customJvmArgs, javaMajor)
+    const cached = { ...installed, jvmTuning: tuning }
+    try {
+      await writeFile(join(instanceDir, '.args-cache.json'), JSON.stringify({ jvmTuning: tuning, computedAt: Date.now() }))
+    } catch { /* best-effort */ }
+    return tuning
+  }
+
+  /** Load pre-computed JVM args if fresh (< 1 hour). */
+  async loadCachedArgs(instanceDir: string): Promise<string[] | null> {
+    const cachePath = join(instanceDir, '.args-cache.json')
+    if (!(await pathExists(cachePath))) return null
+    try {
+      const cached = JSON.parse(await readFile(cachePath, 'utf8'))
+      if (Date.now() - cached.computedAt > 3600000) return null // stale after 1 hour
+      return cached.jvmTuning
+    } catch {
+      return null
     }
   }
 
