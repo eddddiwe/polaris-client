@@ -158,30 +158,6 @@ export function SettingsPage(): JSX.Element {
         <section className="panel">
           <div className="panel-head">
             <div>
-              <span className="eyebrow">Appearance</span>
-              <h2>Space Theme</h2>
-            </div>
-          </div>
-          <div className="settings-rows">
-            <div className="setting-row">
-              <div>
-                <strong>Cosmic Theme</strong>
-                <p>Choose your space aesthetic</p>
-              </div>
-              <select value={spaceTheme} onChange={(e) => setSpaceTheme(e.target.value)} style={{ minWidth: 180 }}>
-                <option value="default">Default (Mixed)</option>
-                <option value="constellations">Star Constellations</option>
-                <option value="nebula">Atmospheric Nebula</option>
-                <option value="scifi">High-Tech Sci-Fi</option>
-                <option value="myth">Cosmic Myth & Ancient Space</option>
-              </select>
-            </div>
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-head">
-            <div>
               <span className="eyebrow">Runtime</span>
               <h2>Java</h2>
             </div>
