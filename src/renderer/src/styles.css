@@ -444,9 +444,10 @@ p {
   flex-direction: column;
   min-height: 0;
   padding: 20px 16px 16px;
-  border-right: 1px solid rgba(139, 92, 246, 0.1);
+  border-right: 1px solid rgba(139, 92, 246, 0.15);
   background: linear-gradient(180deg, rgba(10, 12, 20, 0.95), rgba(5, 6, 11, 0.98));
   backdrop-filter: blur(20px);
+  box-shadow: inset -1px 0 0 rgba(139, 92, 246, 0.1), 4px 0 24px rgba(0, 0, 0, 0.3);
 }
 
 .sidebar-brand {
@@ -5842,10 +5843,29 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 
     0 8px 32px rgba(0, 0, 0, 0.4),
     0 0 0 1px rgba(139, 92, 246, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 40px rgba(139, 92, 246, 0.03);
   background: linear-gradient(135deg, rgba(13, 15, 24, 0.85), rgba(8, 10, 18, 0.75));
   backdrop-filter: blur(12px) saturate(1.2);
-  transition: border-color 0.3s, box-shadow 0.3s;
+  transition: border-color 0.3s, box-shadow 0.3s, transform 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+
+.panel::before, .card::before, .instance-card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), transparent 40%, transparent 60%, rgba(34, 211, 238, 0.2));
+  border-radius: 16px;
+  opacity: 0;
+  transition: opacity 0.4s;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.panel:hover::before, .card:hover::before, .instance-card:hover::before {
+  opacity: 1;
 }
 
 .panel:hover, .card:hover, .instance-card:hover {
@@ -5877,13 +5897,33 @@ h1, h2, h3, .title, .heading {
 .btn {
   border-radius: 10px;
   border: 1px solid rgba(139, 92, 246, 0.3);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(139, 92, 246, 0.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(139, 92, 246, 0.05), 0 0 12px rgba(139, 92, 246, 0.05);
   font-family: 'Geist', system-ui, sans-serif;
   font-weight: 500;
   letter-spacing: -0.01em;
-  transition: all 0.25s cubic-bezier(0.2, 0.7, 0.3, 1);
+  transition: all 0.3s cubic-bezier(0.2, 0.7, 0.3, 1);
   position: relative;
   overflow: hidden;
+}
+
+.btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(139, 92, 246, 0.2), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(139, 92, 246, 0.4), 0 0 0 1px rgba(139, 92, 246, 0.5), 0 0 30px rgba(34, 211, 238, 0.15);
+  border-color: rgba(139, 92, 246, 0.7);
+}
+
+.btn:hover::after {
+  opacity: 1;
 }
 
 .btn::before {
