@@ -5994,6 +5994,112 @@ nav, .sidebar, .topbar {
   backdrop-filter: blur(12px);
 }
 
+/* Account card styles */
+.account-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(139, 92, 246, 0.15);
+  background: linear-gradient(135deg, rgba(13, 15, 24, 0.6), rgba(8, 10, 18, 0.5));
+  transition: all 0.2s;
+}
+
+.account-card:hover {
+  border-color: rgba(139, 92, 246, 0.3);
+  background: linear-gradient(135deg, rgba(16, 18, 28, 0.8), rgba(10, 12, 20, 0.7));
+}
+
+.account-card.active {
+  border-color: rgba(139, 92, 246, 0.4);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(34, 211, 238, 0.05));
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.1);
+}
+
+.account-avatar {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.account-type-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  font-size: 8px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(139, 92, 246, 0.8);
+  color: white;
+  letter-spacing: 0.05em;
+}
+
+.account-type-badge.off {
+  background: rgba(100, 116, 139, 0.8);
+}
+
+.account-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.account-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.account-type {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+.account-uuid {
+  display: block;
+  font-size: 9px;
+  color: var(--dim);
+  font-family: var(--mono);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.badge-active {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.avatar-md {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(34, 211, 238, 0.2));
+  color: var(--text);
+  font-weight: 700;
+  font-size: 16px;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
 /* Smooth scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

@@ -122,22 +122,26 @@ export function SettingsPage(): JSX.Element {
           <div className="settings-rows">
             {boot.accounts.length === 0 && <p className="empty-line">No account yet. Offline mode works without Azure setup.</p>}
             {boot.accounts.map((account) => (
-              <div key={account.id} className={`setting-row account-setting ${account.active ? 'selected' : ''}`}>
-                <span className="avatar avatar-sm">{account.name.slice(0, 1).toUpperCase()}</span>
-                <div className="grow">
-                  <strong className="name-with-badge">
+              <div key={account.id} className={`setting-row account-card ${account.active ? 'active' : ''}`}>
+                <div className="account-avatar">
+                  <span className="avatar avatar-md">{account.name.slice(0, 1).toUpperCase()}</span>
+                  <span className={`account-type-badge ${account.type === 'microsoft' ? 'ms' : 'off'}`}>{account.type === 'microsoft' ? 'MS' : 'OFF'}</span>
+                </div>
+                <div className="account-info">
+                  <strong className="account-name">
                     {account.name}
                     {account.active && <CosmeticBadge id={boot.settings.equippedBadge} size={14} />}
                   </strong>
-                  <span>
-                    {account.type === 'microsoft' ? 'Microsoft account' : 'Offline account'} · {account.uuid}
+                  <span className="account-type">
+                    {account.type === 'microsoft' ? 'Microsoft' : 'Offline'} account
                   </span>
+                  {account.uuid && <span className="account-uuid">{account.uuid}</span>}
                 </div>
                 {account.active ? (
                   <span className="badge badge-violet">Active</span>
                 ) : (
                   <button
-                    className="btn btn-ghost btn-sm"
+                    className="btn btn-soft btn-sm"
                     onClick={() => void api.setActiveAccount(account.id).then(() => refresh())}
                   >
                     Use
