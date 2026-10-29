@@ -554,7 +554,8 @@ fn cosmetic_sync_get(player_name: String, player_uuid: String, state: tauri::Sta
 }
 
 #[tauri::command]
-async fn launch_start(instance_id: String, state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+async fn launch_start(instance_id: String, app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+    use tauri::Emitter;
     // Get instance
     let instance = {
         let instances = state.instances.lock().unwrap();
@@ -637,7 +638,13 @@ async fn launch_start(instance_id: String, state: tauri::State<'_, AppState>) ->
         .map_err(|e| e.to_string())?;
 
     let pid = child.id();
+
+    // Take stdout/stderr for log capture
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
     *state.child_process.lock().unwrap() = Some(child);
+
     *state.launch_state.lock().unwrap() = crate::models::LaunchState {
         instance_id: Some(instance_id.clone()),
         status: "running".to_string(),
@@ -647,6 +654,69 @@ async fn launch_start(instance_id: String, state: tauri::State<'_, AppState>) ->
         exit_code: None,
     };
 
+    // Emit launch-state event
+    let _ = app.emit("launch-state", serde_json::json!({
+        "instanceId": instance_id,
+        "status": "running",
+        "pid": pid
+    }));
+
+    // Spawn threads to capture stdout/stderr and emit game-log events
+    let iid = instance_id.clone();
+    let app_clone = app.clone();
+    if let Some(out) = stdout {
+        std::thread::spawn(move || {
+            use std::io::{BufRead, BufReader};
+            let reader = BufReader::new(out);
+            let mut lines = Vec::new();
+            for line in reader.lines() {
+                if let Ok(l) = line {
+                    lines.push(l);
+                    if lines.len() >= 50 {
+                        let _ = app_clone.emit("game-log", serde_json::json!({
+                            "instanceId": iid,
+                            "lines": lines.clone()
+                        }));
+                        lines.clear();
+                    }
+                }
+            }
+            if !lines.is_empty() {
+                let _ = app_clone.emit("game-log", serde_json::json!({
+                    "instanceId": iid,
+                    "lines": lines
+                }));
+            }
+        });
+    }
+    let iid2 = instance_id.clone();
+    let app_clone2 = app.clone();
+    if let Some(err) = stderr {
+        std::thread::spawn(move || {
+            use std::io::{BufRead, BufReader};
+            let reader = BufReader::new(err);
+            let mut lines = Vec::new();
+            for line in reader.lines() {
+                if let Ok(l) = line {
+                    lines.push(l);
+                    if lines.len() >= 50 {
+                        let _ = app_clone2.emit("game-log", serde_json::json!({
+                            "instanceId": iid2,
+                            "lines": lines.clone()
+                        }));
+                        lines.clear();
+                    }
+                }
+            }
+            if !lines.is_empty() {
+                let _ = app_clone2.emit("game-log", serde_json::json!({
+                    "instanceId": iid2,
+                    "lines": lines
+                }));
+            }
+        });
+    }
+
     Ok(serde_json::json!({
         "status": "running",
         "pid": pid,
@@ -655,11 +725,17 @@ async fn launch_start(instance_id: String, state: tauri::State<'_, AppState>) ->
 }
 
 #[tauri::command]
-fn launch_stop(state: tauri::State<'_, AppState>) -> Result<(), String> {
+fn launch_stop(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    use tauri::Emitter;
     // Kill the process if running
     if let Some(mut child) = state.child_process.lock().unwrap().take() {
         let _ = child.kill();
     }
+    let _ = app.emit("launch-state", serde_json::json!({
+        "instanceId": null,
+        "status": "idle",
+        "pid": null
+    }));
     *state.launch_state.lock().unwrap() = crate::models::LaunchState {
         instance_id: None,
         status: "idle".to_string(),
