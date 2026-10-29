@@ -14,6 +14,7 @@ mod launch;
 mod models;
 mod mod_install;
 mod mods;
+mod nbt;
 mod modpacks;
 mod modrinth;
 mod paths;

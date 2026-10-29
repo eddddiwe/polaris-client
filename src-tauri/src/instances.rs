@@ -88,6 +88,8 @@ impl InstanceStore {
         for folder in ["mods", "config", "logs", "saves", "resourcepacks", "shaderpacks", "screenshots", "natives"] {
             fs::create_dir_all(dir.join(folder)).map_err(|e| format!("Failed to create folder: {}", e))?;
         }
+        // Write servers.dat with CobbleClash server
+        let _ = crate::nbt::ensure_servers_dat(&dir);
         let config_path = self.config_path(&id);
         let json = serde_json::to_string_pretty(&config)
             .map_err(|e| format!("Failed to serialize instance: {}", e))?;
