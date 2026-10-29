@@ -2,21 +2,27 @@
 
 :root {
   color-scheme: dark;
-  --bg: #05060b;
-  --bg-elev: #0a0c14;
-  --panel: #0f111a;
-  --panel-2: #131622;
-  --line: rgba(139, 92, 246, 0.12);
-  --line-2: rgba(139, 92, 246, 0.22);
-  --text: #f0f2fa;
-  --muted: #8b93b0;
-  --dim: #5c6480;
-  --accent: #a78bfa;
-  --accent-2: #22d3ee;
-  --accent-glow: rgba(139, 92, 246, 0.4);
-  --good: #34d399;
+  --bg: #03040a;
+  --bg-elev: #080a12;
+  --panel: #0d0f18;
+  --panel-2: #11141f;
+  --line: rgba(139, 92, 246, 0.15);
+  --line-2: rgba(139, 92, 246, 0.28);
+  --text: #eef0fa;
+  --muted: #7b85a8;
+  --dim: #4a5270;
+  --accent: #b4a0ff;
+  --accent-2: #38e8ff;
+  --accent-3: #f472b6;
+  --accent-glow: rgba(139, 92, 246, 0.5);
+  --accent-glow-2: rgba(34, 211, 238, 0.4);
+  --good: #4ade80;
   --warn: #fbbf24;
-  --bad: #fb7185;
+  --bad: #f87171;
+  --cosmic-purple: #7c3aed;
+  --cosmic-cyan: #06b6d4;
+  --cosmic-pink: #ec4899;
+  --cosmic-blue: #3b82f6;
   --radius: 12px;
   --radius-sm: 8px;
   --font: 'Geist', 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -54,15 +60,28 @@ body::before {
   z-index: 0;
   pointer-events: none;
   background:
-    /* Milky Way band */
-    linear-gradient(135deg, transparent 40%, rgba(139, 92, 246, 0.06) 45%, rgba(34, 211, 238, 0.08) 50%, rgba(244, 114, 182, 0.06) 55%, transparent 60%),
-    /* Nebula clouds */
-    radial-gradient(ellipse 120% 60% at 50% -10%, rgba(139, 92, 246, 0.2) 0%, transparent 50%),
-    radial-gradient(ellipse 80% 40% at 80% 0%, rgba(34, 211, 238, 0.15) 0%, transparent 45%),
-    radial-gradient(ellipse 60% 50% at 20% 100%, rgba(244, 114, 182, 0.1) 0%, transparent 50%),
-    radial-gradient(ellipse 90% 30% at 50% 100%, rgba(52, 211, 153, 0.06) 0%, transparent 45%),
-    radial-gradient(ellipse 40% 30% at 30% 40%, rgba(168, 85, 247, 0.08) 0%, transparent 50%);
-  animation: nebula-drift 25s ease-in-out infinite alternate;
+    /* Cosmic dust band (Milky Way) */
+    linear-gradient(135deg, transparent 35%, rgba(139, 92, 246, 0.08) 42%, rgba(34, 211, 238, 0.12) 48%, rgba(244, 114, 182, 0.1) 52%, rgba(168, 85, 247, 0.08) 58%, transparent 65%),
+    /* Deep space nebulas */
+    radial-gradient(ellipse 140% 70% at 50% -15%, rgba(139, 92, 246, 0.25) 0%, transparent 55%),
+    radial-gradient(ellipse 90% 50% at 85% 5%, rgba(34, 211, 238, 0.18) 0%, transparent 40%),
+    radial-gradient(ellipse 70% 60% at 15% 90%, rgba(244, 114, 182, 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse 100% 35% at 50% 105%, rgba(52, 211, 153, 0.08) 0%, transparent 45%),
+    radial-gradient(ellipse 50% 40% at 25% 35%, rgba(168, 85, 247, 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse 45% 35% at 75% 65%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
+    /* Cosmic dust particles */
+    radial-gradient(1px 1px at 10% 20%, rgba(255, 255, 255, 0.3), transparent),
+    radial-gradient(1px 1px at 30% 60%, rgba(255, 255, 255, 0.2), transparent),
+    radial-gradient(1px 1px at 70% 30%, rgba(255, 255, 255, 0.25), transparent),
+    radial-gradient(1px 1px at 90% 80%, rgba(255, 255, 255, 0.15), transparent);
+  animation: cosmic-drift 30s ease-in-out infinite alternate;
+}
+
+@keyframes cosmic-drift {
+  0% { opacity: 0.75; transform: scale(1) rotate(0deg); filter: hue-rotate(0deg); }
+  33% { opacity: 0.9; transform: scale(1.02) rotate(0.3deg); filter: hue-rotate(5deg); }
+  66% { opacity: 0.85; transform: scale(1.04) rotate(-0.3deg); filter: hue-rotate(-5deg); }
+  100% { opacity: 0.8; transform: scale(1.06) rotate(0.5deg); filter: hue-rotate(10deg); }
 }
 
 @keyframes nebula-drift {
@@ -226,16 +245,17 @@ body::after {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 8px;
-  height: 8px;
-  background: radial-gradient(circle, #ffffff 0%, #a78bfa 30%, transparent 70%);
+  width: 10px;
+  height: 10px;
+  background: radial-gradient(circle, #ffffff 0%, #c4b5fd 20%, #8b5cf6 50%, transparent 70%);
   border-radius: 50%;
   box-shadow:
-    0 0 12px 4px rgba(255, 255, 255, 0.9),
-    0 0 30px 10px rgba(139, 92, 246, 0.7),
-    0 0 60px 20px rgba(139, 92, 246, 0.4),
-    0 0 100px 30px rgba(34, 211, 238, 0.2);
-  animation: polaris-pulse 4s ease-in-out infinite;
+    0 0 15px 5px rgba(255, 255, 255, 0.95),
+    0 0 40px 15px rgba(139, 92, 246, 0.8),
+    0 0 80px 30px rgba(139, 92, 246, 0.5),
+    0 0 120px 40px rgba(34, 211, 238, 0.25),
+    0 0 200px 60px rgba(244, 114, 182, 0.1);
+  animation: polaris-pulse 3s ease-in-out infinite;
 }
 .polaris-star::after {
   content: '';
@@ -5815,15 +5835,26 @@ input:focus, select:focus, textarea:focus {
 
 /* === Clean Space/Polaris Theme === */
 
-/* Panels - subtle glass with rounded corners */
+/* Panels - cosmic glass with depth */
 .panel, .card, .modal, .instance-card {
   border-radius: 16px;
-  border: 1px solid rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.2);
   box-shadow: 
-    0 4px 24px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  background: linear-gradient(135deg, rgba(16, 18, 28, 0.8), rgba(12, 14, 23, 0.7));
-  backdrop-filter: blur(8px);
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(139, 92, 246, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  background: linear-gradient(135deg, rgba(13, 15, 24, 0.85), rgba(8, 10, 18, 0.75));
+  backdrop-filter: blur(12px) saturate(1.2);
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.panel:hover, .card:hover, .instance-card:hover {
+  border-color: rgba(139, 92, 246, 0.35);
+  box-shadow: 
+    0 12px 40px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(139, 92, 246, 0.2),
+    0 0 20px rgba(139, 92, 246, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 /* Clean typography */
@@ -5842,21 +5873,41 @@ h1, h2, h3, .title, .heading {
   color: var(--accent);
 }
 
-/* Clean buttons */
+/* Cosmic buttons */
 .btn {
   border-radius: 10px;
   border: 1px solid rgba(139, 92, 246, 0.3);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(139, 92, 246, 0.05);
   font-family: 'Geist', system-ui, sans-serif;
   font-weight: 500;
   letter-spacing: -0.01em;
-  transition: all 0.2s cubic-bezier(0.2, 0.7, 0.3, 1);
+  transition: all 0.25s cubic-bezier(0.2, 0.7, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), transparent);
+  opacity: 0;
+  transition: opacity 0.25s;
 }
 
 .btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.3);
-  border-color: rgba(139, 92, 246, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.35), 0 0 0 1px rgba(139, 92, 246, 0.4);
+  border-color: rgba(139, 92, 246, 0.6);
+}
+
+.btn:hover::before {
+  opacity: 1;
+}
+
+.btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .btn:active {
