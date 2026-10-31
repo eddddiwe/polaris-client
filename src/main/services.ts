@@ -632,7 +632,7 @@ export class AppServices extends EventEmitter {
     const currentVersion = app.getVersion()
     const repo = 'eddddiwe/polaris-client'
     // Try API first, fall back to GitHub
-    let url = 'https://api.polaris-client.workers.dev/v1/version'
+    let url = 'https://polaris-api.joykelows17.workers.dev/v1/version'
     try {
       const apiRes = await fetch(url, { signal: AbortSignal.timeout(5000) })
       if (apiRes.ok) {
@@ -691,33 +691,15 @@ export class AppServices extends EventEmitter {
     if (!info.hasUpdate || !info.downloadUrl) return
 
     // Download the installer to a temp location
-    const fs = await import('node:fs')
     const path = await import('node:path')
     const os = await import('node:os')
-    const https = await import('node:https')
 
     const tempDir = os.tmpdir()
-    const fileName = info.downloadUrl.split('/').pop() || 'Polaris-Setup.exe'
+    const fileName = info.downloadUrl.split('/').pop()?.split('?')[0] || 'Polaris-Setup.exe'
     const destPath = path.join(tempDir, fileName)
 
-    // Download the file
-    await new Promise<void>((resolve, reject) => {
-      const file = fs.createWriteStream(destPath)
-      https.get(info.downloadUrl, (response) => {
-        if (response.statusCode !== 200) {
-          reject(new Error(`Download failed: ${response.statusCode}`))
-          return
-        }
-        response.pipe(file)
-        file.on('finish', () => {
-          file.close()
-          resolve()
-        })
-      }).on('error', (err) => {
-        fs.unlinkSync(destPath)
-        reject(err)
-      })
-    })
+    // fetch-based downloader follows GitHub's redirect to the release-asset CDN
+    await this.downloader.downloadFile(info.downloadUrl, destPath)
 
     // Run the installer
     const { spawn } = await import('node:child_process')

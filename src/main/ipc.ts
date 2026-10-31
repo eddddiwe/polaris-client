@@ -230,6 +230,7 @@ export function registerIpc(services: AppServices): void {
   handle(IPC.fabricLoaders, async (mcVersion: string) => services.fabricLoaders(mcVersion))
   handle(IPC.fabricEnsure, async (mcVersion: string, preferredLoader?: string) => services.fabricEnsure(mcVersion, preferredLoader))
   handle(IPC.installUpdate, async () => services.installUpdate())
+  handle(IPC.checkForUpdates, async () => services.checkForUpdates())
   handle(IPC.importMrpack, async () => services.importMrpack())
 
   ipcMain.handle(IPC.settingsChooseJava, async (event) => {

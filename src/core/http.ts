@@ -47,7 +47,7 @@ export class Downloader {
     return await response.text()
   }
 
-  private async request(url: string, init?: RequestInit, retries = 3): Promise<Response> {
+  private async request(url: string, init?: RequestInit, retries = 3, timeoutMs = 60_000): Promise<Response> {
     let lastError: unknown
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
@@ -57,7 +57,7 @@ export class Downloader {
             'User-Agent': USER_AGENT,
             ...(init?.headers ?? {})
           },
-          signal: AbortSignal.timeout(60_000)
+          signal: AbortSignal.timeout(timeoutMs)
         })
         if (response.status === 429) {
           const retryAfter = Number(response.headers.get('retry-after') ?? '2')
@@ -112,6 +112,20 @@ export class Downloader {
     report('Preparing downloads')
     await Promise.all(Array.from({ length: Math.min(this.concurrency, unique.length) }, () => worker()))
     return { downloaded, reused }
+  }
+
+  /**
+   * Download a single file, following redirects. Used for the installer,
+   * which GitHub serves through a redirect to its release-asset CDN.
+   */
+  async downloadFile(url: string, dest: string, timeoutMs = 10 * 60_000): Promise<void> {
+    const response = await this.request(url, undefined, 3, timeoutMs)
+    if (!response.body) throw new Error('Empty response body')
+    await ensureDir(dirname(dest))
+    const tmp = `${dest}.part`
+    await pipeline(Readable.fromWeb(response.body as never), createWriteStream(tmp))
+    await rm(dest, { force: true })
+    await rename(tmp, dest)
   }
 
   private async downloadOne(item: DownloadItem): Promise<'downloaded' | 'reused'> {
