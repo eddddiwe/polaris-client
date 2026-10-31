@@ -23,9 +23,9 @@ export function registerIpc(services: AppServices): void {
   handle(IPC.bootstrap, async () => services.bootstrap())
   handle(IPC.settingsSnapshot, async () => services.settingsStore.get())
 
-  const activeFriendAccount = (): { code: string; name: string } | null => {
+  const activeFriendAccount = (): { code: string; name: string; uuid: string } | null => {
     const account = services.accounts.activeStored()
-    return account?.friendCode ? { code: account.friendCode, name: account.name } : null
+    return account?.friendCode ? { code: account.friendCode, name: account.name, uuid: account.uuid } : null
   }
 
   handle(IPC.friendsList, async () => {
@@ -34,7 +34,7 @@ export function registerIpc(services: AppServices): void {
       // Keep the display name on the worker in sync so friends see a name,
       // not just a raw code. Fire-and-forget so an offline worker does not
       // delay the friends list.
-      void services.friends.registerCode(account.code, account.name)
+      void services.friends.registerCode(account.code, account.name, account.uuid)
       await services.friends.syncFromServer(account.code)
     }
     return services.friends.list()
@@ -42,7 +42,7 @@ export function registerIpc(services: AppServices): void {
   handle(IPC.friendsAdd, async (code: string, name: string) => {
     const account = activeFriendAccount()
     if (!account) throw new Error('Sign in to add friends.')
-    await services.friends.registerCode(account.code, account.name)
+    await services.friends.registerCode(account.code, account.name, account.uuid)
     await services.friends.add(account.code, code, name)
     await services.friends.syncFromServer(account.code)
     return services.friends.list()
@@ -62,7 +62,7 @@ export function registerIpc(services: AppServices): void {
   handle(IPC.friendsRequest, async (code: string) => {
     const account = activeFriendAccount()
     if (!account) throw new Error('Sign in to send friend request.')
-    await services.friends.registerCode(account.code, account.name)
+    await services.friends.registerCode(account.code, account.name, account.uuid)
     await services.friends.sendRequest(account.code, code)
     await services.friends.syncFromServer(account.code)
     return services.friends.getRequests(account.code)
@@ -70,7 +70,7 @@ export function registerIpc(services: AppServices): void {
   handle(IPC.friendsRespond, async (_myCode: string, friendCode: string, action: 'accept' | 'decline') => {
     const account = activeFriendAccount()
     if (!account) throw new Error('Sign in to respond to friend request.')
-    await services.friends.registerCode(account.code, account.name)
+    await services.friends.registerCode(account.code, account.name, account.uuid)
     await services.friends.respondRequest(account.code, friendCode, action)
     await services.friends.syncFromServer(account.code)
     return services.friends.getRequests(account.code)

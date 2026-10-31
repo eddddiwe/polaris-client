@@ -36,6 +36,7 @@ export class FriendStore {
         this.data.friends = data.friends.map((f: any) => ({
           code: String(f.code).toUpperCase(),
           name: String(f.name || f.code),
+          uuid: f.uuid ? String(f.uuid) : undefined,
           addedAt: f.addedAt ?? Date.now()
         }))
         await this.save()
@@ -45,13 +46,13 @@ export class FriendStore {
     }
   }
 
-  async registerCode(code: string, name: string): Promise<void> {
+  async registerCode(code: string, name: string, uuid?: string): Promise<void> {
     if (this.registered.has(code)) return
     try {
       const res = await fetch(`${WORKER_BASE}/v1/friends/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, name }),
+        body: JSON.stringify({ code, name, uuid }),
         signal: AbortSignal.timeout(8000)
       })
       if (res.ok) this.registered.add(code)
@@ -151,7 +152,7 @@ export class FriendStore {
     }
   }
 
-  async getRequests(myCode: string): Promise<Array<{ code: string; name: string; createdAt: number }>> {
+  async getRequests(myCode: string): Promise<Array<{ code: string; name: string; uuid?: string; createdAt: number }>> {
     try {
       const res = await fetch(`${WORKER_BASE}/v1/friends/requests?code=${encodeURIComponent(myCode)}`, { signal: AbortSignal.timeout(8000) })
       if (!res.ok) return []
@@ -159,6 +160,7 @@ export class FriendStore {
       return (data.requests || []).map((r: any) => ({
         code: String(r.code).toUpperCase(),
         name: String(r.name || r.code),
+        uuid: r.uuid ? String(r.uuid) : undefined,
         createdAt: r.createdAt ?? Date.now()
       }))
     } catch {

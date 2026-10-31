@@ -14,7 +14,7 @@ export function FriendsPage(): JSX.Element {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [pendingRequests, setPendingRequests] = useState<Array<{ code: string; name: string; createdAt: number }>>([])
+  const [pendingRequests, setPendingRequests] = useState<Array<{ code: string; name: string; uuid?: string; createdAt: number }>>([])
   const [requestsLoading, setRequestsLoading] = useState(false)
   const pollBusy = useRef(false)
 
@@ -203,7 +203,7 @@ export function FriendsPage(): JSX.Element {
               {pendingRequests.map((req) => (
                 <div key={req.code} className="friend-row" style={{ borderColor: 'var(--accent-2)' }}>
                   <div className="friend-avatar">
-                    <SkinAvatar name={req.name} size={36} radius={10} />
+                    <SkinAvatar name={req.name} uuid={req.uuid} size={36} radius={10} />
                   </div>
                   <div className="friend-info">
                     <strong>{req.name}</strong>
@@ -241,7 +241,7 @@ export function FriendsPage(): JSX.Element {
             {friends.map((friend) => (
               <div key={friend.code} className="friend-row">
                 <div className="friend-avatar">
-                  <SkinAvatar name={friend.name} size={36} radius={10} />
+                  <SkinAvatar name={friend.name} uuid={friend.uuid} size={36} radius={10} />
                 </div>
                 <div className="friend-info">
                   <strong>{friend.name}</strong>

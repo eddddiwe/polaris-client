@@ -16,6 +16,30 @@
 const REPO = 'eddddiwe/polaris-client'
 const CURRENT_VERSION = '0.3.5'
 
+async function resolveFriendUuid(kv, code, info) {
+  if (!info || info.uuid) return info
+  const name = String(info.name || '').trim()
+  if (!name || name === code) return info
+  try {
+    const res = await fetch(`https://playerdb.co/api/player/minecraft/${encodeURIComponent(name)}`, {
+      headers: { 'User-Agent': 'Polaris-API' },
+      signal: AbortSignal.timeout(5000)
+    })
+    if (!res.ok) return info
+    const body = await res.json()
+    const raw = String(body?.data?.player?.id || '')
+    if (!raw) return info
+    const uuid = /^[0-9a-f]{32}$/i.test(raw)
+      ? raw.replace(/^(\w{8})(\w{4})(\w{4})(\w{4})(\w{12})$/, '$1-$2-$3-$4-$5')
+      : raw
+    const updated = { ...info, uuid, createdAt: info.createdAt ?? Date.now() }
+    await kv.put(`friend:${code}`, JSON.stringify(updated))
+    return updated
+  } catch {
+    return info
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url)
@@ -93,8 +117,9 @@ export default {
         const body = await request.json()
         const code = String(body.code || '').trim().toUpperCase()
         const name = String(body.name || '').trim() || code
+        const uuid = String(body.uuid || '').trim()
         if (!code) return new Response(JSON.stringify({ ok: false, error: 'code required' }), { status: 400, headers: corsHeaders })
-        await kv.put(`friend:${code}`, JSON.stringify({ name, createdAt: Date.now() }))
+        await kv.put(`friend:${code}`, JSON.stringify({ name, uuid, createdAt: Date.now() }))
         return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders })
       } catch (e) {
         return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 400, headers: corsHeaders })
@@ -201,8 +226,8 @@ export default {
         const friends = []
         for (const fc of codes) {
           const infoRaw = await kv.get(`friend:${fc}`)
-          const info = infoRaw ? JSON.parse(infoRaw) : { name: fc }
-          friends.push({ code: fc, name: info.name || fc })
+          const info = await resolveFriendUuid(kv, fc, infoRaw ? JSON.parse(infoRaw) : { name: fc })
+          friends.push({ code: fc, name: info.name || fc, uuid: info.uuid || undefined })
         }
         return new Response(JSON.stringify({ friends }), { headers: corsHeaders })
       } catch (e) {
@@ -300,8 +325,8 @@ export default {
           if (!reqRaw) continue
           const req = JSON.parse(reqRaw)
           const infoRaw = await kv.get(`friend:${senderCode}`)
-          const info = infoRaw ? JSON.parse(infoRaw) : {}
-          requests.push({ code: senderCode, name: info.name || senderCode, createdAt: req.createdAt ?? 0 })
+          const info = await resolveFriendUuid(kv, senderCode, infoRaw ? JSON.parse(infoRaw) : {})
+          requests.push({ code: senderCode, name: info.name || senderCode, uuid: info.uuid || undefined, createdAt: req.createdAt ?? 0 })
         }
         return new Response(JSON.stringify({ requests }), { headers: corsHeaders })
       } catch (e) {

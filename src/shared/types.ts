@@ -174,6 +174,7 @@ export interface Account {
 export interface Friend {
   code: string
   name: string
+  uuid?: string
   addedAt: number
 }
 

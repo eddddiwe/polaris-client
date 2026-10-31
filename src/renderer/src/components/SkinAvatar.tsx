@@ -103,8 +103,7 @@ export function SkinAvatar({
   }, [skinUrl])
 
   const cls = className ?? 'avatar'
-  const minotarUrl =
-    uuid && skinUrl ? `https://minotar.net/helm/${uuid}/${Math.max(64, (size ?? 64) * 2)}` : null
+  const minotarUrl = uuid ? `https://minotar.net/helm/${uuid}/${Math.max(64, (size ?? 64) * 2)}` : null
 
   // Prefer a rendered head (minotar) that actually shows the account's skin; fall back to the
   // local skin crop (with helmet layer) and finally to the gradient initial. mc-heads returns a
