@@ -40,10 +40,12 @@ export default {
         })
         const gh = await ghRes.json()
         const latestVersion = (gh.tag_name || '').replace(/^v/, '')
+        const version = latestVersion || CURRENT_VERSION
+        const directUrl = `https://github.com/${REPO}/releases/download/v${version}/Polaris-Setup-${version}.exe`
         const asset = (gh.assets || []).find(a => a.name.endsWith('.exe')) || (gh.assets || [])[0]
         return new Response(JSON.stringify({
-          version: latestVersion || CURRENT_VERSION,
-          url: asset?.browser_download_url || `https://github.com/${REPO}/releases/latest`,
+          version,
+          url: asset?.browser_download_url || directUrl,
           sha256: '',
           minVersion: '0.3.0',
           changelog: gh.body || '',
@@ -52,7 +54,7 @@ export default {
       } catch (e) {
         return new Response(JSON.stringify({
           version: CURRENT_VERSION,
-          url: `https://github.com/${REPO}/releases/latest`,
+          url: `https://github.com/${REPO}/releases/download/v${CURRENT_VERSION}/Polaris-Setup-${CURRENT_VERSION}.exe`,
           sha256: '',
           minVersion: '0.3.0',
           changelog: '',
