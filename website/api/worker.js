@@ -14,7 +14,7 @@
 //   GET  /v1/friends/requests?code= -> list pending requests { requests: [{ code, name, createdAt }] }
 
 const REPO = 'eddddiwe/polaris-client'
-const CURRENT_VERSION = '0.3.5'
+const CURRENT_VERSION = '0.3.6'
 
 async function resolveFriendUuid(kv, code, info) {
   if (!info || info.uuid) return info
