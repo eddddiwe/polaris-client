@@ -107,8 +107,52 @@ export default {
       }
     }
 
-    // ---------- Friends API (requires KV binding: FRIENDS) ----------
+    // ---------- Presence API (same KV namespace) ----------
     const kv = env.FRIENDS
+    if (path === '/v1/presence') {
+      if (!kv) return new Response(JSON.stringify({ ok: false, error: 'KV not configured' }), { status: 500, headers: corsHeaders })
+      if (request.method === 'POST') {
+        try {
+          const body = await request.json()
+          const uuid = String(body.uuid || '').trim()
+          const name = String(body.name || '').trim() || uuid
+          const server = String(body.server || '').trim().toLowerCase()
+          if (!uuid || !server) return new Response(JSON.stringify({ ok: false, error: 'uuid and server required' }), { status: 400, headers: corsHeaders })
+          if (server.length > 200) return new Response(JSON.stringify({ ok: false, error: 'server too long' }), { status: 400, headers: corsHeaders })
+          const key = `presence:${encodeURIComponent(server)}:${uuid}`
+          await kv.put(key, JSON.stringify({ uuid, name, server, lastSeen: Date.now() }), { expirationTtl: 120 })
+          return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 400, headers: corsHeaders })
+        }
+      }
+      if (request.method === 'GET') {
+        try {
+          const server = String(url.searchParams.get('server') || '').trim().toLowerCase()
+          if (!server) return new Response(JSON.stringify({ ok: false, error: 'server required' }), { status: 400, headers: corsHeaders })
+          const prefix = `presence:${encodeURIComponent(server)}:`
+          const listed = await kv.list({ prefix, limit: 100 })
+          const users = []
+          const now = Date.now()
+          for (const entry of (listed.keys || [])) {
+            const raw = await kv.get(entry.name)
+            if (!raw) continue
+            const user = JSON.parse(raw)
+            if (now - Number(user.lastSeen || 0) > 90000) continue
+            users.push({ uuid: user.uuid, name: user.name, lastSeen: user.lastSeen })
+          }
+          if (url.searchParams.get('format') === 'text') {
+            const textHeaders = { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' }
+            return new Response(users.map(u => `${u.uuid}|${u.name}`).join('\n'), { headers: textHeaders })
+          }
+          return new Response(JSON.stringify({ users }), { headers: corsHeaders })
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 400, headers: corsHeaders })
+        }
+      }
+    }
+
+    // ---------- Friends API (requires KV binding: FRIENDS) ----------
 
     // Register a friend code
     if (path === '/v1/friends/register' && request.method === 'POST') {
