@@ -790,19 +790,25 @@ export class AppServices extends EventEmitter {
   }
 
   /**
-   * Launch a detached PowerShell helper. It waits for Polaris to exit, runs
-   * the NSIS installer silently with retries for antivirus locks, then opens
-   * the updated client. If silent install keeps failing, it falls back to the
-   * normal visible installer so the user can finish manually.
+   * Hand off to a one-shot Windows scheduled task. A detached child process
+   * is killed with Electron on this platform, so Task Scheduler is used to
+   * run the helper independently of the launcher. The helper waits for the
+   * launcher PID to exit, runs the NSIS installer silently with retries, then
+   * opens the updated client and removes the task.
    */
   private async launchWindowsInstaller(installerPath: string): Promise<void> {
     const appExe = app.isPackaged ? app.getPath('exe') : ''
+    const taskName = 'PolarisClientUpdate'
+    const helperPath = join(this.paths.root, 'update-helper.ps1')
+    const taskXmlPath = join(this.paths.root, 'update-helper-task.xml')
     const logPath = join(this.paths.logs, 'update-helper.log')
     const script = `
 $ErrorActionPreference = 'SilentlyContinue'
 $parentPid = ${process.pid}
 $installer = ${quotePowerShell(installerPath)}
 $appExe = ${quotePowerShell(appExe)}
+$taskName = ${quotePowerShell(taskName)}
+$taskXml = ${quotePowerShell(taskXmlPath)}
 $log = ${quotePowerShell(logPath)}
 
 function Write-Log([string]$message) {
@@ -843,29 +849,59 @@ if ($installed) {
   Write-Log 'silent install failed; opening visible installer'
   Start-Process -FilePath $installer
 }
+
+schtasks.exe /Delete /TN $taskName /F | Out-Null
+Remove-Item -Path $taskXml -Force
+Write-Log 'helper finished'
 `
-    const encoded = Buffer.from(script, 'utf16le').toString('base64')
-    const child = spawn(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded],
-      { detached: true, stdio: 'ignore', windowsHide: true }
+    const xml = buildUpdateTaskXml(helperPath)
+    await writeFile(helperPath, '\uFEFF' + script, 'utf8')
+    await writeFile(
+      taskXmlPath,
+      Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(xml, 'utf16le')])
     )
 
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, 1500)
-      child.once('spawn', () => {
-        this.logger.info('Update helper started', { pid: child.pid, logPath })
+    const created = await this.runProcess('schtasks.exe', [
+      '/Create', '/TN', taskName, '/XML', taskXmlPath, '/F'
+    ])
+    if (created !== 0) {
+      this.logger.warn('Could not register the update helper task; opening installer directly', { code: created })
+      await shell.openPath(installerPath)
+      return
+    }
+
+    const started = await this.runProcess('schtasks.exe', ['/Run', '/TN', taskName])
+    if (started !== 0) {
+      this.logger.warn('Could not start the update helper task; opening installer directly', { code: started })
+      await shell.openPath(installerPath)
+      return
+    }
+
+    this.logger.info('Update helper task started', { taskName, helperPath, logPath })
+  }
+
+  private runProcess(command: string, args: string[], timeoutMs = 60_000): Promise<number> {
+    return new Promise((resolve) => {
+      let settled = false
+      let timer: NodeJS.Timeout
+      const child = spawn(command, args, { windowsHide: true, stdio: 'ignore' })
+      const finish = (code: number): void => {
+        if (settled) return
+        settled = true
         clearTimeout(timer)
-        resolve()
-      })
-      child.once('error', (error) => {
-        this.logger.warn('Update helper failed to start; opening installer directly', error)
-        void shell.openPath(installerPath)
-        clearTimeout(timer)
-        resolve()
-      })
+        resolve(code)
+      }
+      timer = setTimeout(() => {
+        try {
+          child.kill()
+        } catch {
+          // already gone
+        }
+        finish(-1)
+      }, timeoutMs)
+      child.once('error', () => finish(-1))
+      child.once('exit', (code) => finish(code ?? -1))
     })
-    child.unref()
   }
 
   /** Import a local .mrpack file: parse manifest, create instance, return summary. */
@@ -955,6 +991,59 @@ if ($installed) {
 /** PowerShell single-quoted literal; embedded quotes are doubled. */
 function quotePowerShell(value: string): string {
   return `'${value.replace(/'/g, "''")}'`
+}
+
+/** One-shot per-user task that runs the update helper outside the app. */
+function buildUpdateTaskXml(helperPath: string): string {
+  const args = `-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "${helperPath}"`
+  return `<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Polaris Client update helper</Description>
+  </RegistrationInfo>
+  <Triggers />
+  <Principals>
+    <Principal id="Author">
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT30M</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>powershell.exe</Command>
+      <Arguments>${xmlEscape(args)}</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+`
+}
+
+function xmlEscape(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
 }
 
 function fallbackHardware(): HardwareInfo {
