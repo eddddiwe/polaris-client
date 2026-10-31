@@ -27,6 +27,7 @@ import type {
   ModUpdateResult,
   ModVersionEntry,
   ModrinthSearchHit,
+  InstallUpdateResult,
   PackApplyResult,
   PackModStatus,
   PerfApplyResult,
@@ -127,7 +128,7 @@ export interface PolarisAPI {
   friendsRespond(myCode: string, friendCode: string, action: 'accept' | 'decline'): Promise<Array<{ code: string; name: string; uuid?: string; createdAt: number }>>
   friendsGetRequests(myCode: string): Promise<Array<{ code: string; name: string; uuid?: string; createdAt: number }>>
   checkForUpdates(): Promise<UpdateInfo>
-  installUpdate(): Promise<void>
+  installUpdate(): Promise<InstallUpdateResult>
   importMrpack(): Promise<InstanceSummary>
 
   onProgress(cb: (event: ProgressEvent) => void): () => void

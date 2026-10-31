@@ -27,6 +27,14 @@ export interface DownloadProgress {
   detail: string
 }
 
+export interface DownloadFileOptions {
+  timeoutMs?: number
+  /** Exact byte size published by the release API. */
+  expectedSize?: number
+  /** SHA-256 digest published by the release API. */
+  sha256?: string
+}
+
 export type ProgressFn = (progress: DownloadProgress) => void
 
 export class Downloader {
@@ -117,15 +125,42 @@ export class Downloader {
   /**
    * Download a single file, following redirects. Used for the installer,
    * which GitHub serves through a redirect to its release-asset CDN.
+   *
+   * Each attempt writes to a unique `.part` file so two update checks can
+   * never delete each other's download, and the final rename is retried
+   * because antivirus scanners briefly lock freshly written executables.
    */
-  async downloadFile(url: string, dest: string, timeoutMs = 10 * 60_000): Promise<void> {
+  async downloadFile(
+    url: string,
+    dest: string,
+    options: DownloadFileOptions | number = {}
+  ): Promise<number> {
+    const opts = typeof options === 'number' ? { timeoutMs: options } : options
+    const timeoutMs = opts.timeoutMs ?? 10 * 60_000
     const response = await this.request(url, undefined, 3, timeoutMs)
     if (!response.body) throw new Error('Empty response body')
     await ensureDir(dirname(dest))
-    const tmp = `${dest}.part`
-    await pipeline(Readable.fromWeb(response.body as never), createWriteStream(tmp))
-    await rm(dest, { force: true })
-    await rename(tmp, dest)
+    const tmp = `${dest}.${process.pid}-${Date.now()}.part`
+    try {
+      await pipeline(Readable.fromWeb(response.body as never), createWriteStream(tmp))
+      const written = (await stat(tmp)).size
+      const declared = Number(response.headers.get('content-length') ?? 0)
+      const expected = opts.expectedSize && opts.expectedSize > 0 ? opts.expectedSize : declared
+      if (expected > 0 && written !== expected) {
+        throw new Error(`Incomplete download: expected ${expected} bytes, received ${written}`)
+      }
+      if (opts.sha256) {
+        const digest = await hashFile(tmp, 'sha256')
+        if (digest.toLowerCase() !== opts.sha256.toLowerCase()) {
+          throw new Error('Downloaded installer failed its SHA-256 check')
+        }
+      }
+      await replaceFile(tmp, dest)
+      return written
+    } catch (error) {
+      await rm(tmp, { force: true }).catch(() => undefined)
+      throw error
+    }
   }
 
   private async downloadOne(item: DownloadItem): Promise<'downloaded' | 'reused'> {
@@ -197,6 +232,24 @@ export function dedupeByDest(items: DownloadItem[]): DownloadItem[] {
 
 export function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Move a finished download into place. Windows refuses a rename while an
+ * antivirus scanner or a previous installer still holds the destination, so
+ * retry briefly instead of failing the whole update.
+ */
+async function replaceFile(tmp: string, dest: string): Promise<void> {
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    try {
+      await rm(dest, { force: true })
+      await rename(tmp, dest)
+      return
+    } catch (error) {
+      if (attempt === 6) throw error
+      await delay(250 * attempt)
+    }
+  }
 }
 
 export function assetUrl(hash: string): string {

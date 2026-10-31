@@ -14,7 +14,7 @@
 //   GET  /v1/friends/requests?code= -> list pending requests { requests: [{ code, name, createdAt }] }
 
 const REPO = 'eddddiwe/polaris-client'
-const CURRENT_VERSION = '0.3.6'
+const CURRENT_VERSION = '0.3.7'
 
 async function resolveFriendUuid(kv, code, info) {
   if (!info || info.uuid) return info
@@ -67,10 +67,12 @@ export default {
         const version = latestVersion || CURRENT_VERSION
         const directUrl = `https://github.com/${REPO}/releases/download/v${version}/Polaris-Setup-${version}.exe`
         const asset = (gh.assets || []).find(a => a.name.endsWith('.exe')) || (gh.assets || [])[0]
+        const digest = typeof asset?.digest === 'string' ? asset.digest.replace(/^sha256:/i, '') : ''
         return new Response(JSON.stringify({
           version,
           url: asset?.browser_download_url || directUrl,
-          sha256: '',
+          sha256: digest,
+          size: Number(asset?.size) || 0,
           minVersion: '0.3.0',
           changelog: gh.body || '',
           publishedAt: gh.published_at || new Date().toISOString(),
@@ -80,6 +82,7 @@ export default {
           version: CURRENT_VERSION,
           url: `https://github.com/${REPO}/releases/download/v${CURRENT_VERSION}/Polaris-Setup-${CURRENT_VERSION}.exe`,
           sha256: '',
+          size: 0,
           minVersion: '0.3.0',
           changelog: '',
           publishedAt: new Date().toISOString(),

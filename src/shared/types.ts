@@ -454,5 +454,15 @@ export interface UpdateInfo {
   latestVersion: string
   releaseNotes?: string
   downloadUrl: string
+  /** Published installer size in bytes, when the release API exposes it. */
+  downloadSize?: number
+  /** Published installer SHA-256, when the release API exposes it. */
+  downloadSha256?: string
   publishedAt: string
+}
+
+export interface InstallUpdateResult {
+  status: 'installing' | 'up-to-date' | 'unavailable'
+  version: string
+  installerPath?: string
 }

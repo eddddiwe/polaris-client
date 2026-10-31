@@ -1007,7 +1007,7 @@ export function createMockApi(): Window['polaris'] {
       return []
     },
     checkForUpdates: async () => ({ hasUpdate: false, currentVersion: '0.3.0', latestVersion: '0.3.0', downloadUrl: '', publishedAt: new Date().toISOString() }),
-    installUpdate: async () => {},
+    installUpdate: async () => ({ status: 'up-to-date', version: '0.3.0' }),
     importMrpack: async () => {
       const created: InstanceSummary = {
         ...baseInstance(

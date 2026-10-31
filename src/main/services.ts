@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import os from 'node:os'
-import { join, dirname, resolve } from 'node:path'
-import { writeFile } from 'node:fs/promises'
+import { join, dirname, resolve, basename, extname } from 'node:path'
+import { stat, writeFile } from 'node:fs/promises'
 import { app, shell } from 'electron'
 import type {
   AccountSnapshot,
@@ -13,6 +13,7 @@ import type {
   GameUiOptions,
   GameUiSnapshot,
   HardwareInfo,
+  InstallUpdateResult,
   InstanceConfig,
   InstanceDetail,
   InstanceSummary,
@@ -56,7 +57,7 @@ import { ensureServersDat } from '../core/nbt'
 import { ModrinthClient, mapVersionEntry, type ModrinthVersion } from '../core/modrinth'
 import { ModsService } from '../core/mods'
 import { ModpackService, safeOverridePath, parseMrpackIndex } from '../core/modpacks'
-import { ensureDir } from '../core/fsutil'
+import { ensureDir, hashFile } from '../core/fsutil'
 import { ServerService } from '../core/server'
 import { LaunchService } from '../core/launch'
 import { PACKS, packById } from '../core/packs'
@@ -91,6 +92,7 @@ export class AppServices extends EventEmitter {
   latestVersion?: string
   ready: Promise<void>
   private initialized = false
+  private updateInFlight: Promise<InstallUpdateResult> | null = null
 
   constructor() {
     super()
@@ -644,6 +646,8 @@ export class AppServices extends EventEmitter {
           latestVersion: apiData.version,
           releaseNotes: apiData.changelog,
           downloadUrl: apiData.url,
+          downloadSize: Number(apiData.size) || undefined,
+          downloadSha256: apiData.sha256 || undefined,
           publishedAt: apiData.publishedAt
         }
       }
@@ -660,12 +664,15 @@ export class AppServices extends EventEmitter {
       const latestVersion = data.tag_name?.replace(/^v/, '') ?? '0.0.0'
       const hasUpdate = this.compareVersions(latestVersion, currentVersion) > 0
       const asset = data.assets?.find((a: any) => a.name === 'Polaris-Setup.exe') || data.assets?.[0]
+      const digest = typeof asset?.digest === 'string' ? asset.digest.replace(/^sha256:/i, '') : ''
       return {
         hasUpdate,
         currentVersion,
         latestVersion,
         releaseNotes: data.body ?? undefined,
         downloadUrl: asset?.browser_download_url ?? `https://github.com/${repo}/releases/latest`,
+        downloadSize: Number(asset?.size) || undefined,
+        downloadSha256: digest || undefined,
         publishedAt: data.published_at ?? new Date().toISOString()
       }
     } catch (err) {
@@ -685,37 +692,152 @@ export class AppServices extends EventEmitter {
     return 0
   }
 
-  /** Download and install the latest release. */
-  async installUpdate(): Promise<void> {
+  /**
+   * Download and hand off to the platform installer.
+   *
+   * Repeated clicks share one in-flight operation: the old implementation
+   * downloaded every click to the same temp file, so concurrent download,
+   * rename and spawn attempts deleted or locked each other (`EBUSY`, `EPERM`,
+   * and `.part` rename failures) and no installer ever ran.
+   */
+  installUpdate(): Promise<InstallUpdateResult> {
+    if (this.updateInFlight) return this.updateInFlight
+    const run = this.performInstallUpdate().finally(() => {
+      this.updateInFlight = null
+    })
+    this.updateInFlight = run
+    return run
+  }
+
+  private async performInstallUpdate(): Promise<InstallUpdateResult> {
     const info = await this.checkForUpdates()
-    if (!info.hasUpdate || !info.downloadUrl) return
-
-    // Download the installer to a temp location
-    const path = await import('node:path')
-    const os = await import('node:os')
-
-    const tempDir = os.tmpdir()
-    const fileName = info.downloadUrl.split('/').pop()?.split('?')[0] || 'Polaris-Setup.exe'
-    const destPath = path.join(tempDir, fileName)
-
-    // fetch-based downloader follows GitHub's redirect to the release-asset CDN
-    await this.downloader.downloadFile(info.downloadUrl, destPath)
-
-    // Run the installer
-    const { spawn } = await import('node:child_process')
-    if (process.platform === 'win32') {
-      // NSIS installer - run with /S for silent install
-      spawn(destPath, ['/S'], { detached: true, stdio: 'ignore' }).unref()
-    } else if (process.platform === 'darwin') {
-      // macOS - open the DMG
-      await shell.openPath(destPath)
-    } else {
-      // Linux - open the file
-      await shell.openPath(destPath)
+    if (!info.hasUpdate) {
+      return { status: 'up-to-date', version: info.latestVersion }
+    }
+    if (!info.downloadUrl) {
+      return { status: 'unavailable', version: info.latestVersion }
     }
 
-    // Quit the app after a short delay
-    setTimeout(() => app.quit(), 1000)
+    const installerPath = await this.downloadInstaller(info)
+    this.logger.info('Update downloaded; starting installer handoff', {
+      version: info.latestVersion,
+      installerPath
+    })
+
+    if (process.platform === 'win32') {
+      this.launchWindowsInstaller(installerPath)
+    } else {
+      // macOS DMG / Linux AppImage: let the desktop open the downloaded file.
+      await shell.openPath(installerPath)
+    }
+
+    // Give the IPC reply time to reach the renderer, then hand the app over
+    // to the installer. The helper waits for this process to exit before it
+    // touches the installation directory.
+    setTimeout(() => {
+      app.quit()
+      setTimeout(() => app.exit(0), 2000)
+    }, 400)
+
+    return { status: 'installing', version: info.latestVersion, installerPath }
+  }
+
+  /**
+   * Download the installer into the Polaris data directory (not %TEMP%),
+   * verify its published size/SHA-256, and reuse an intact previous download.
+   * A per-attempt filename means a locked stale installer can never block a
+   * fresh update.
+   */
+  private async downloadInstaller(info: UpdateInfo): Promise<string> {
+    const dir = join(this.paths.downloads, 'updates')
+    await ensureDir(dir)
+
+    const rawName = info.downloadUrl.split('/').pop()?.split('?')[0] || `Polaris-Setup-${info.latestVersion}.exe`
+    const name = rawName.replace(/[^A-Za-z0-9._-]/g, '_')
+    const canonical = join(dir, name)
+
+    if (await this.installerIsUsable(canonical, info)) {
+      this.logger.info('Reusing verified installer download', { installerPath: canonical })
+      return canonical
+    }
+
+    const stem = basename(name, extname(name))
+    const target = join(dir, `${stem}-${Date.now()}${extname(name) || '.exe'}`)
+    const written = await this.downloader.downloadFile(info.downloadUrl, target, {
+      expectedSize: info.downloadSize,
+      sha256: info.downloadSha256
+    })
+    if (written < 1_000_000) {
+      throw new Error(`Downloaded installer is unexpectedly small (${written} bytes)`)
+    }
+    return target
+  }
+
+  private async installerIsUsable(path: string, info: UpdateInfo): Promise<boolean> {
+    try {
+      const file = await stat(path)
+      if (file.size < 1_000_000) return false
+      if (info.downloadSize && file.size !== info.downloadSize) return false
+      if (info.downloadSha256) {
+        const digest = await hashFile(path, 'sha256')
+        return digest.toLowerCase() === info.downloadSha256.toLowerCase()
+      }
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Launch a detached PowerShell helper. It waits for Polaris to exit, runs
+   * the NSIS installer silently with retries for antivirus locks, then opens
+   * the updated client. If silent install keeps failing, it falls back to the
+   * normal visible installer so the user can finish manually.
+   */
+  private launchWindowsInstaller(installerPath: string): void {
+    const appExe = app.isPackaged ? app.getPath('exe') : ''
+    const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+$parentPid = ${process.pid}
+$installer = ${quotePowerShell(installerPath)}
+$appExe = ${quotePowerShell(appExe)}
+
+$deadline = (Get-Date).AddSeconds(45)
+while ((Get-Date) -lt $deadline -and (Get-Process -Id $parentPid -ErrorAction SilentlyContinue)) {
+  Start-Sleep -Milliseconds 400
+}
+Start-Sleep -Milliseconds 1200
+
+$installed = $false
+for ($attempt = 0; $attempt -lt 8; $attempt++) {
+  try {
+    $proc = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru -ErrorAction SilentlyContinue
+    if ($proc -and $proc.ExitCode -eq 0) { $installed = $true; break }
+  } catch {
+    $installed = $false
+  }
+  Start-Sleep -Seconds 2
+}
+
+if ($installed) {
+  if ($appExe -and (Test-Path $appExe)) { Start-Process -FilePath $appExe }
+} else {
+  Start-Process -FilePath $installer
+}
+`
+    const encoded = Buffer.from(script, 'utf16le').toString('base64')
+    void import('node:child_process').then(({ spawn }) => {
+      const child = spawn(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded],
+        { detached: true, stdio: 'ignore', windowsHide: true }
+      )
+      child.on('error', (error) => {
+        this.logger.warn('Update helper failed to start; opening installer directly', error)
+        void shell.openPath(installerPath)
+      })
+      child.unref()
+    })
   }
 
   /** Import a local .mrpack file: parse manifest, create instance, return summary. */
@@ -800,6 +922,11 @@ export class AppServices extends EventEmitter {
 
     return await this.summarize(await this.instances.get(config.id))
   }
+}
+
+/** PowerShell single-quoted literal; embedded quotes are doubled. */
+function quotePowerShell(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`
 }
 
 function fallbackHardware(): HardwareInfo {

@@ -36,6 +36,7 @@ export function SettingsPage(): JSX.Element {
   const [wallDim, setWallDim] = useState(boot.settings.wallpaperDim)
   const [wallBlur, setWallBlur] = useState(boot.settings.wallpaperBlur)
   const [activeSection, setActiveSection] = useState('accounts')
+  const [installing, setInstalling] = useState(false)
 
   // Apply space theme to body
   useEffect(() => {
@@ -377,12 +378,28 @@ export function SettingsPage(): JSX.Element {
                 </div>
                 <button
                   className="btn btn-primary"
+                  disabled={installing}
                   onClick={async () => {
-                    await api.installUpdate()
-                    toast('Downloading and installing update...', 'info')
+                    if (installing) return
+                    setInstalling(true)
+                    try {
+                      const result = await api.installUpdate()
+                      if (result.status === 'installing') {
+                        toast(`Downloaded v${result.version}. Installing and restarting Polaris...`, 'success')
+                      } else if (result.status === 'up-to-date') {
+                        toast('You are already on the latest version', 'success')
+                        setInstalling(false)
+                      } else {
+                        toast('No installer is available for this release', 'error')
+                        setInstalling(false)
+                      }
+                    } catch (error) {
+                      toast(errorMessage(error), 'error')
+                      setInstalling(false)
+                    }
                   }}
                 >
-                  <Icon name="download" size={14} /> Download Update
+                  <Icon name={installing ? 'refresh' : 'download'} size={14} /> {installing ? 'Downloading update...' : 'Download Update'}
                 </button>
               </div>
             )}
