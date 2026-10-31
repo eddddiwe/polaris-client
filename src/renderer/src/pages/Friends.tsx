@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useState } from 'react'
 import { errorMessage, useApp } from '../context'
 import { Icon } from '../components/Icons'
 import { Modal, Spinner } from '../components/Feedback'
@@ -14,6 +14,8 @@ export function FriendsPage(): JSX.Element {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [pendingRequests, setPendingRequests] = useState<Array<{ code: string; name: string; createdAt: number }>>([])
+  const [requestsLoading, setRequestsLoading] = useState(false)
 
   const active = boot.accounts.find((account) => account.id === boot.activeAccountId)
   const myCode = active?.friendCode ?? null
@@ -29,9 +31,26 @@ export function FriendsPage(): JSX.Element {
     }
   }
 
+  const loadRequests = async (): Promise<void> => {
+    if (!myCode) return
+    setRequestsLoading(true)
+    try {
+      const requests = await api.friendsGetRequests(myCode)
+      setPendingRequests(requests)
+    } catch {
+      setPendingRequests([])
+    } finally {
+      setRequestsLoading(false)
+    }
+  }
+
   useEffect(() => {
     void refresh()
   }, [api])
+
+  useEffect(() => {
+    void loadRequests()
+  }, [myCode])
 
   const copyCode = async (): Promise<void> => {
     if (!myCode) return
@@ -44,7 +63,7 @@ export function FriendsPage(): JSX.Element {
     }
   }
 
-  const add = async (): Promise<void> => {
+  const sendRequest = async (friendCode: string, friendName: string): Promise<void> => {
     const c = code.trim().toUpperCase()
     if (!c) {
       toast('Enter a friend code', 'error')
@@ -52,12 +71,12 @@ export function FriendsPage(): JSX.Element {
     }
     setBusy(true)
     try {
-      const list = await api.friendsAdd(c, name.trim())
-      setFriends(list)
+      await api.friendsRequest(c, friendName || c)
       setCode('')
       setName('')
       setAddOpen(false)
-      toast('Friend added', 'success')
+      toast('Friend request sent', 'success')
+      void loadRequests()
     } catch (error) {
       toast(errorMessage(error), 'error')
     } finally {
@@ -65,11 +84,25 @@ export function FriendsPage(): JSX.Element {
     }
   }
 
-  const remove = async (friendCode: string): Promise<void> => {
+  const respondRequest = async (friendCode: string, action: 'accept' | 'decline'): Promise<void> => {
+    if (!myCode) return
     try {
-      const list = await api.friendsRemove(friendCode)
-      setFriends(list)
-      toast('Friend removed', 'info')
+      await api.friendsRespond(myCode, friendCode, action)
+      await refresh()
+      void loadRequests()
+      const actionText = action === 'accept' ? 'accepted' : 'declined'
+      toast(`Friend request ${actionText}`, 'info')
+    } catch (error) {
+      toast(errorMessage(error), 'error')
+    }
+  }
+
+  const removeFriend = async (friendCode: string): Promise<void> => {
+    if (!friendCode) return
+    try {
+      await api.friendsRemoveMutual(friendCode)
+      await refresh()
+      toast('Friend removed from both lists', 'success')
     } catch (error) {
       toast(errorMessage(error), 'error')
     }
@@ -101,7 +134,7 @@ export function FriendsPage(): JSX.Element {
         <div>
           <span className="eyebrow">Social</span>
           <h1>Friends</h1>
-          <p className="page-sub">Add friends by their Polaris friend code. Presence requires the backend to be deployed.</p>
+          <p className="page-sub">Add friends by their Polaris friend code. Pending requests appear below.</p>
         </div>
         <button className="btn btn-primary btn-sm" onClick={() => setAddOpen(true)}>
           <Icon name="plus" size={14} /> Add friend
@@ -124,6 +157,45 @@ export function FriendsPage(): JSX.Element {
         <p className="fine-print">Friends add you using this code. Codes are unique to your account.</p>
       </section>
 
+      {myCode && (
+        <section className="panel" style={{ marginTop: '12px' }}>
+          <div className="panel-head">
+            <div>
+              <span className="eyebrow">Pending requests</span>
+              <h2>Friend requests</h2>
+            </div>
+          </div>
+          {requestsLoading ? (
+            <Spinner label="Loading requests" />
+          ) : pendingRequests.length === 0 ? (
+            <p className="fine-print">No pending friend requests.</p>
+          ) : (
+            <div>
+              {pendingRequests.map((req) => (
+                <div key={req.code} className="friend-row" style={{ borderColor: 'var(--accent-2)' }}>
+                  <div className="friend-avatar">
+                    <SkinAvatar name={req.name} size={36} radius={10} />
+                  </div>
+                  <div className="friend-info">
+                    <strong>{req.name}</strong>
+                    <span className="friend-code-small">{req.code}</span>
+                  </div>
+                  <span className="badge badge-violet">Pending</span>
+                  <div className="icon-btn-group">
+                    <button className="icon-btn" aria-label={`Accept ${req.name}`} onClick={() => void respondRequest(req.code, 'accept')}>
+                      <Icon name="check" size={12} />
+                    </button>
+                    <button className="icon-btn" aria-label={`Decline ${req.name}`} onClick={() => void respondRequest(req.code, 'decline')}>
+                      <Icon name="x" size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       <section className="panel">
         <div className="panel-head">
           <div>
@@ -144,10 +216,12 @@ export function FriendsPage(): JSX.Element {
                 </div>
                 <div className="friend-info">
                   <strong>{friend.name}</strong>
-                  <span className="friend-code-small">{friend.code}</span>
+                  {friend.code && (
+                    <span className="friend-code-small muted">({friend.code})</span>
+                  )}
                 </div>
-                <span className="badge badge-violet">Offline</span>
-                <button className="icon-btn" aria-label={`Remove ${friend.name}`} onClick={() => void remove(friend.code)}>
+                <span className="badge badge-violet">Online</span>
+                <button className="icon-btn" aria-label={`Remove ${friend.name}`} onClick={() => void removeFriend(friend.code)}>
                   <Icon name="trash" size={14} />
                 </button>
               </div>
@@ -181,8 +255,8 @@ export function FriendsPage(): JSX.Element {
             <button className="btn btn-ghost" onClick={() => setAddOpen(false)} disabled={busy}>
               Cancel
             </button>
-            <button className="btn btn-primary" onClick={() => void add()} disabled={busy || !code.trim()}>
-              {busy ? <span className="spinner spinner-sm" /> : <Icon name="plus" size={14} />} Add
+            <button className="btn btn-primary" onClick={() => void sendRequest(code, name)} disabled={busy || !code.trim()}>
+              {busy ? <span className="spinner spinner-sm" /> : <Icon name="plus" size={14} />} Send request
             </button>
           </div>
         </Modal>

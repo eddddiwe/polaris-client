@@ -122,6 +122,10 @@ export interface PolarisAPI {
   friendsList(): Promise<Friend[]>
   friendsAdd(code: string, name: string): Promise<Friend[]>
   friendsRemove(code: string): Promise<Friend[]>
+  friendsRemoveMutual(friendCode: string): Promise<Friend[]>
+  friendsRequest(code: string, name: string): Promise<Array<{ code: string; name: string; createdAt: number }>>
+  friendsRespond(myCode: string, friendCode: string, action: 'accept' | 'decline'): Promise<Array<{ code: string; name: string; createdAt: number }>>
+  friendsGetRequests(myCode: string): Promise<Array<{ code: string; name: string; createdAt: number }>>
   checkForUpdates(): Promise<UpdateInfo>
   installUpdate(): Promise<void>
   importMrpack(): Promise<InstanceSummary>

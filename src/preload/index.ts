@@ -67,6 +67,11 @@ const api: PolarisAPI & { platform: NodeJS.Platform } = {
   friendsList: () => ipcRenderer.invoke(IPC.friendsList),
   friendsAdd: (code: string, name: string) => ipcRenderer.invoke(IPC.friendsAdd, code, name),
   friendsRemove: (code: string) => ipcRenderer.invoke(IPC.friendsRemove, code),
+  friendsRemoveMutual: (friendCode: string) => ipcRenderer.invoke(IPC.friendsRemoveMutual, friendCode),
+  friendsRequest: (code: string, name: string) => ipcRenderer.invoke(IPC.friendsRequest, code, name),
+  friendsRespond: (myCode: string, friendCode: string, action: 'accept' | 'decline') =>
+    ipcRenderer.invoke(IPC.friendsRespond, myCode, friendCode, action),
+  friendsGetRequests: (myCode: string) => ipcRenderer.invoke(IPC.friendsGetRequests, myCode),
   checkForUpdates: () => ipcRenderer.invoke(IPC.checkForUpdates),
   installUpdate: () => ipcRenderer.invoke(IPC.installUpdate),
   importMrpack: () => ipcRenderer.invoke(IPC.importMrpack),

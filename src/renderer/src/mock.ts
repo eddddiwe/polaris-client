@@ -999,6 +999,13 @@ export function createMockApi(): Window['polaris'] {
     friendsList: async () => [],
     friendsAdd: async (code, name) => [{ code: code.toUpperCase(), name: name || code, addedAt: Date.now() }],
     friendsRemove: async () => [],
+    friendsRemoveMutual: async () => [],
+    friendsGetRequests: async () => [],
+    friendsRequest: async (code, name) => [{ code: code.toUpperCase(), name: name || code, createdAt: Date.now() }],
+    friendsRespond: async (myCode, friendCode, action) => {
+      if (action === 'accept') return [{ code: friendCode, name: friendCode, createdAt: Date.now() }]
+      return []
+    },
     checkForUpdates: async () => ({ hasUpdate: false, currentVersion: '0.3.0', latestVersion: '0.3.0', downloadUrl: '', publishedAt: new Date().toISOString() }),
     installUpdate: async () => {},
     importMrpack: async () => {

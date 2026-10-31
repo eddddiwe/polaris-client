@@ -97,6 +97,72 @@ export class FriendStore {
     }
   }
 
+  async removeMutual(myCode: string, friendCode: string): Promise<void> {
+    try {
+      const res = await fetch(`${WORKER_BASE}/v1/friends/remove-mutual`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ myCode, friendCode }),
+        signal: AbortSignal.timeout(8000)
+      })
+      if (!res.ok) {
+        // Server-side error (format validation, self-removal, KV not configured)
+        // Still try local removal to keep UI consistent
+        this.data.friends = this.data.friends.filter((f) => f.code !== friendCode)
+        await this.save()
+        return
+      }
+      // Success: also clean up local list
+      this.data.friends = this.data.friends.filter((f) => f.code !== friendCode)
+      await this.save()
+    } catch {
+      // offline: local only - remove from local list only
+      this.data.friends = this.data.friends.filter((f) => f.code !== friendCode)
+      await this.save()
+    }
+  }
+
+  async sendRequest(myCode: string, friendCode: string): Promise<void> {
+    try {
+      await fetch(`${WORKER_BASE}/v1/friends/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ myCode, friendCode }),
+        signal: AbortSignal.timeout(8000)
+      })
+    } catch {
+      // offline: local only
+    }
+  }
+
+  async respondRequest(myCode: string, friendCode: string, action: 'accept' | 'decline'): Promise<void> {
+    try {
+      await fetch(`${WORKER_BASE}/v1/friends/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ myCode, friendCode, action }),
+        signal: AbortSignal.timeout(8000)
+      })
+    } catch {
+      // offline: local only
+    }
+  }
+
+  async getRequests(myCode: string): Promise<Array<{ code: string; name: string; createdAt: number }>> {
+    try {
+      const res = await fetch(`${WORKER_BASE}/v1/friends/requests?code=${encodeURIComponent(myCode)}`, { signal: AbortSignal.timeout(8000) })
+      if (!res.ok) return []
+      const data = await res.json()
+      return (data.requests || []).map((r: any) => ({
+        code: String(r.code).toUpperCase(),
+        name: String(r.name || r.code),
+        createdAt: r.createdAt ?? Date.now()
+      }))
+    } catch {
+      return []
+    }
+  }
+
   has(code: string): boolean {
     return this.data.friends.some((f) => f.code === code.trim().toUpperCase())
   }

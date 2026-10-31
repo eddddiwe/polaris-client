@@ -23,9 +23,21 @@ export class AccountStore {
   async load(): Promise<void> {
     const loaded = await readJson<AccountFile | null>(this.path, null)
     if (loaded && Array.isArray(loaded.accounts)) this.data = loaded
+    const usedCodes = this.data.accounts.map((a) => a.friendCode).filter((c) => c)
     for (const account of this.data.accounts) {
       account.active = account.id === this.data.activeId
-      if (!account.friendCode) account.friendCode = generateFriendCode()
+      // Only generate friend code for Microsoft accounts, not offline accounts
+      if (!account.friendCode && account.type === 'microsoft') {
+        let code = generateFriendCode()
+        while (usedCodes.includes(code)) {
+          code = generateFriendCode()
+        }
+        account.friendCode = code
+        usedCodes.push(code)
+      } else if (!account.friendCode && account.type === 'offline') {
+        // Offline accounts intentionally have no friend code
+        account.friendCode = undefined
+      }
     }
     await this.save()
   }
@@ -112,7 +124,6 @@ export function offlineAccount(name: string): StoredAccount {
     name,
     uuid,
     accessToken: '0',
-    active: true,
-    friendCode: generateFriendCode()
+    active: true
   }
 }

@@ -41,6 +41,31 @@ export function registerIpc(services: AppServices): void {
     else await services.friends.remove('', code)
     return services.friends.list()
   })
+  handle(IPC.friendsRemoveMutual, async (friendCode: string) => {
+    const myCode = services.accounts.activeStored()?.friendCode
+    if (!myCode) throw new Error('Sign in to remove friends.')
+    await services.friends.removeMutual(myCode, friendCode)
+    if (myCode) await services.friends.syncFromServer(myCode)
+    return services.friends.list()
+  })
+  handle(IPC.friendsRequest, async (code: string, name: string) => {
+    const myCode = services.accounts.activeStored()?.friendCode
+    if (!myCode) throw new Error('Sign in to send friend request.')
+    await services.friends.sendRequest(myCode, code)
+    if (myCode) await services.friends.syncFromServer(myCode)
+    return services.friends.getRequests(myCode)
+  })
+  handle(IPC.friendsRespond, async (myCode: string, friendCode: string, action: 'accept' | 'decline') => {
+    if (!myCode) throw new Error('Sign in to respond to friend request.')
+    await services.friends.respondRequest(myCode, friendCode, action)
+    if (myCode) await services.friends.syncFromServer(myCode)
+    return services.friends.getRequests(myCode)
+  })
+  handle(IPC.friendsGetRequests, async () => {
+    const myCode = services.accounts.activeStored()?.friendCode
+    if (myCode) await services.friends.syncFromServer(myCode)
+    return services.friends.list()
+  })
 
   ipcMain.handle(IPC.windowAction, (event, action: 'minimize' | 'maximize' | 'close' | 'show') => {
     const win = BrowserWindow.fromWebContents(event.sender)

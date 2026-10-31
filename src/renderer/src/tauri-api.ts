@@ -23,6 +23,9 @@ export function createTauriApi(): PolarisAPI {
     fabricLoaders: (mcVersion) => invoke('fabric_loaders', { mcVersion }),
     fabricEnsure: (mcVersion, preferredLoader) => invoke('fabric_ensure', { mcVersion, preferredLoader }),
     importMrpack: () => invoke('import_mrpack'),
+    friendsRequest: async (code: string, name: string) => invoke('friends_request', { code, name }),
+    friendsRespond: async (code: string, name: string) => invoke('friends_respond', { code, name }),
+    friendsGetRequests: async () => invoke('friends_getRequests'),
     getInstance: (id) => invoke('instance_get', { id }),
     createInstance: (input) => invoke('create_instance', { name: input.name, mcVersion: input.mcVersion, loader: input.loader }),
     updateInstance: (id, patch) => invoke('update_instance', { id, patch }),
@@ -66,6 +69,7 @@ export function createTauriApi(): PolarisAPI {
     friendsList: () => invoke('friends_list'),
     friendsAdd: (code, name) => invoke('friends_add', { code, name }),
     friendsRemove: (code) => invoke('friends_remove', { code }),
+    friendsRemoveMutual: (friendCode) => invoke('friends_remove_mutual', { friendCode }),
     checkForUpdates: () => invoke('check_for_updates'),
     installUpdate: () => invoke('install_update'),
     onProgress: (cb) => {
