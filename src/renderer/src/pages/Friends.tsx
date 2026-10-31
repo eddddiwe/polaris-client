@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { errorMessage, useApp } from '../context'
 import { Icon } from '../components/Icons'
 import { Modal, Spinner } from '../components/Feedback'
@@ -16,31 +16,35 @@ export function FriendsPage(): JSX.Element {
   const [copied, setCopied] = useState(false)
   const [pendingRequests, setPendingRequests] = useState<Array<{ code: string; name: string; createdAt: number }>>([])
   const [requestsLoading, setRequestsLoading] = useState(false)
+  const pollBusy = useRef(false)
 
   const active = boot.accounts.find((account) => account.id === boot.activeAccountId)
   const myCode = active?.friendCode ?? null
 
-  const refresh = async (): Promise<void> => {
+  const refresh = async (silent = false): Promise<void> => {
     try {
       const list = await api.friendsList()
       setFriends(list)
     } catch (error) {
-      toast(errorMessage(error), 'error')
+      if (!silent) toast(errorMessage(error), 'error')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
-  const loadRequests = async (): Promise<void> => {
-    if (!myCode) return
-    setRequestsLoading(true)
+  const loadRequests = async (silent = false): Promise<void> => {
+    if (!myCode) {
+      setPendingRequests([])
+      return
+    }
+    if (!silent) setRequestsLoading(true)
     try {
       const requests = await api.friendsGetRequests(myCode)
       setPendingRequests(requests)
     } catch {
-      setPendingRequests([])
+      if (!silent) setPendingRequests([])
     } finally {
-      setRequestsLoading(false)
+      if (!silent) setRequestsLoading(false)
     }
   }
 
@@ -51,6 +55,30 @@ export function FriendsPage(): JSX.Element {
   useEffect(() => {
     void loadRequests()
   }, [myCode])
+
+  // Keep the Friends tab live: poll requests and the friend list, and refresh
+  // immediately when the window regains focus.
+  useEffect(() => {
+    const poll = (): void => {
+      if (document.visibilityState !== 'visible' || pollBusy.current) return
+      pollBusy.current = true
+      void Promise.all([refresh(true), loadRequests(true)]).finally(() => {
+        pollBusy.current = false
+      })
+    }
+    const timer = window.setInterval(poll, 4000)
+    const onFocus = (): void => poll()
+    const onVisibility = (): void => {
+      if (document.visibilityState === 'visible') poll()
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [api, myCode])
 
   const copyCode = async (): Promise<void> => {
     if (!myCode) return
@@ -164,6 +192,7 @@ export function FriendsPage(): JSX.Element {
               <span className="eyebrow">Pending requests</span>
               <h2>Friend requests</h2>
             </div>
+            <span className="badge badge-violet">Live</span>
           </div>
           {requestsLoading ? (
             <Spinner label="Loading requests" />

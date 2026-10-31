@@ -10,6 +10,7 @@ interface FriendFile {
 
 export class FriendStore {
   private data: FriendFile = { friends: [] }
+  private registered = new Set<string>()
 
   constructor(private readonly path: string) {}
 
@@ -45,13 +46,15 @@ export class FriendStore {
   }
 
   async registerCode(code: string, name: string): Promise<void> {
+    if (this.registered.has(code)) return
     try {
-      await fetch(`${WORKER_BASE}/v1/friends/register`, {
+      const res = await fetch(`${WORKER_BASE}/v1/friends/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code, name }),
         signal: AbortSignal.timeout(8000)
       })
+      if (res.ok) this.registered.add(code)
     } catch {
       // best-effort
     }
