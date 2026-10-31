@@ -1,11 +1,15 @@
 import { randomBytes } from 'node:crypto'
-import { readdir, rm } from 'node:fs/promises'
+import { copyFile, readdir, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { CreateInstanceInput, InstanceConfig, InstanceSummary } from '../shared/types'
 import { assertSafeSegment, dirSize, ensureDir, isSafeSegment, pathExists, readJson, writeJson } from './fsutil'
 import { ensureServersDat } from './nbt'
 import type { Paths } from './paths'
 import type { Settings } from '../shared/types'
+
+const POLARIS_CONFIG_INTERMEDIARY = 'polaris-config-1.1.0.jar'
+const POLARIS_CONFIG_OFFICIAL = 'polaris-config-1.1.0-official.jar'
+const POLARIS_CONFIG_PATTERN = /^polaris-config-.*\.jar$/i
 
 export class InstanceStore {
   constructor(private readonly paths: Paths) {}
@@ -31,6 +35,7 @@ export class InstanceStore {
       if (!isSafeSegment(id)) continue
       const config = await readJson<InstanceConfig | null>(this.configPath(id), null)
       if (!config) continue
+      await this.syncPolarisConfig(config, false)
       const modsDir = join(this.dir(id), 'mods')
       const modFiles = await safeReaddir(modsDir)
       summaries.push({
@@ -92,6 +97,7 @@ export class InstanceStore {
     }
     await this.ensureLayout(id)
     await writeJson(this.configPath(id), config)
+    await this.syncPolarisConfig(config, true)
     return config
   }
 
@@ -129,17 +135,39 @@ export class InstanceStore {
       await ensureDir(join(root, folder))
     }
     await ensureServersDat(root)
-    // Copy PolarisConfig mod if bundled
+  }
+
+  /**
+   * Install or migrate the bundled PolarisConfig mod. Existing installs with a
+   * PolarisConfig jar are upgraded; deleting the mod keeps it deleted. New
+   * instances always get the build that matches their mapping family.
+   */
+  private async syncPolarisConfig(config: InstanceConfig, installIfMissing: boolean): Promise<void> {
+    if (config.kind !== 'game' || config.loader !== 'fabric') return
     try {
-      const { copyFile } = await import('node:fs/promises')
       const { app } = await import('electron')
-      const resourcePath = join(app.getAppPath(), 'resources', 'mods', 'polaris-config-1.0.0.jar')
-      const destPath = join(root, 'mods', 'polaris-config-1.0.0.jar')
-      if (await pathExists(resourcePath) && !(await pathExists(destPath))) {
-        await copyFile(resourcePath, destPath)
+      const official = Number(config.mcVersion.split('.')[0]) >= 26
+      const sourceName = official ? POLARIS_CONFIG_OFFICIAL : POLARIS_CONFIG_INTERMEDIARY
+      const source = join(app.getAppPath(), 'resources', 'mods', sourceName)
+      if (!(await pathExists(source))) return
+
+      const modsDir = join(this.dir(config.id), 'mods')
+      const existing = (await safeReaddir(modsDir)).filter((name) => POLARIS_CONFIG_PATTERN.test(name))
+      if (!existing.length && !installIfMissing) return
+
+      const dest = join(modsDir, sourceName)
+      const [sourceStat, destStat] = await Promise.all([
+        stat(source),
+        stat(dest).catch(() => null)
+      ])
+      if (!destStat || destStat.size !== sourceStat.size) {
+        await copyFile(source, dest)
+      }
+      for (const name of existing) {
+        if (name !== sourceName) await rm(join(modsDir, name), { force: true })
       }
     } catch {
-      // Ignore errors - mod is optional
+      // Optional bundled mod; never block instance listing or creation.
     }
   }
 

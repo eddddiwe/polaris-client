@@ -14,6 +14,7 @@ Thumbs.db
 src-tauri/target/
 .cargo/
 polaris-config-*.jar
+!resources/mods/polaris-config-*.jar
 site/public/downloads/latest.json
 site/public/downloads/Polaris-Setup.exe.sha256
 

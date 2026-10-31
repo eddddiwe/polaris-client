@@ -239,12 +239,10 @@ export async function scanJava(extraPaths: string[] = []): Promise<JavaInfo[]> {
 export function selectJava(java: JavaInfo[], requiredMajor: number, override?: string): JavaInfo {
   if (override) {
     const found = java.find((entry) => normalizePath(entry.path) === normalizePath(override))
-    if (found) {
-      if (found.major < requiredMajor) {
-        throw new Error(`Minecraft ${requiredMajor} needs Java ${requiredMajor}+, but the selected runtime is Java ${found.major}.`)
-      }
-      return found
-    }
+    // A manually selected runtime wins when it satisfies the version. If it
+    // is too old, ignore it and auto-pick a compatible runtime instead of
+    // failing the launch.
+    if (found && found.major >= requiredMajor) return found
   }
   const exact = java.filter((entry) => entry.major === requiredMajor).sort((a, b) => a.version.localeCompare(b.version))
   if (exact.length) return exact[0]

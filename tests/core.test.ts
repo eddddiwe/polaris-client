@@ -14,6 +14,7 @@ import {
   type VersionJson
 } from '../src/core/version'
 import { compactUuid, offlineUuid } from '../src/core/accounts'
+import { selectJava } from '../src/core/java'
 import {
   GAME_UI_DEFAULTS,
   buildJvmFlags,
@@ -540,5 +541,20 @@ describe('ZGC preset', () => {
     const plan = makePlan('balanced', hardware, 8192, 'zgc')
     expect(plan.jvmPreset).toBe('zgc')
     expect(plan.jvmArgs).toContain('-XX:+UseZGC')
+  })
+})
+
+describe('Java runtime selection', () => {
+  const runtimes = [
+    { path: 'C:/java21/bin/java.exe', major: 21, version: '21.0.12', vendor: 'Temurin', source: 'system' },
+    { path: 'C:/java25/bin/java.exe', major: 25, version: '25.0.4', vendor: 'Temurin', source: 'system' }
+  ]
+
+  it('keeps a compatible manual runtime', () => {
+    expect(selectJava(runtimes, 21, 'C:/java21/bin/java.exe').major).toBe(21)
+  })
+
+  it('auto-picks a newer runtime when the configured one is too old', () => {
+    expect(selectJava(runtimes, 25, 'C:/java21/bin/java.exe').major).toBe(25)
   })
 })
