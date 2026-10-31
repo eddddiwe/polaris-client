@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
 import { rename, rm, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -140,7 +140,7 @@ export class Downloader {
     const response = await this.request(url, undefined, 3, timeoutMs)
     if (!response.body) throw new Error('Empty response body')
     await ensureDir(dirname(dest))
-    const tmp = `${dest}.${process.pid}-${Date.now()}.part`
+    const tmp = `${dest}.${process.pid}-${randomUUID()}.part`
     try {
       await pipeline(Readable.fromWeb(response.body as never), createWriteStream(tmp))
       const written = (await stat(tmp)).size
