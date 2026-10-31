@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { lazy, Suspense } from 'react'
+import { Component, lazy, Suspense, type ErrorInfo, type ReactNode } from 'react'
 import type { Bootstrap, InstanceDetail, LaunchState, ProgressEvent, Settings } from '@shared/types'
 import type { PolarisAPI } from '@shared/api'
 import { AppContext, errorMessage, type Page, type Toast, type ToastKind, type ConfirmFn, type ConfirmOptions } from './context'
@@ -25,6 +25,38 @@ function getApi(): PolarisAPI {
   if (mockModule) return mockModule.createMockApi()
   // Synchronous fallback - should not reach here in production
   throw new Error('Polaris API not available. Run in Electron or use npm run dev:web for preview.')
+}
+
+/**
+ * Keeps a broken page from unmounting the whole app. Without this, any render
+ * error replaces the entire window with a blank screen (as the old Friends
+ * page used to do).
+ */
+class PageErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null }
+
+  static getDerivedStateFromError(error: Error): { error: Error } {
+    return { error }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.error('Page crashed:', error, info.componentStack)
+  }
+
+  render(): ReactNode {
+    if (this.state.error) {
+      return (
+        <div className="empty-state">
+          <h2>This page hit an error</h2>
+          <p className="fine-print">{this.state.error.message}</p>
+          <button className="btn btn-primary" onClick={() => this.setState({ error: null })}>
+            Try again
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
 }
 
 export default function App(): JSX.Element {
@@ -338,14 +370,16 @@ export default function App(): JSX.Element {
             </div>
           )}
           <div className="page" key={page}>
-            {page === 'home' && <HomePage />}
-            {page === 'instances' && <Suspense fallback={<div className="page-loading">Loading...</div>}><InstancesPage /></Suspense>}
-            {page === 'instance' && <Suspense fallback={<div className="page-loading">Loading...</div>}><InstancePage /></Suspense>}
-            {page === 'discover' && <Suspense fallback={<div className="page-loading">Loading...</div>}><DiscoverPage /></Suspense>}
-            {page === 'performance' && <Suspense fallback={<div className="page-loading">Loading...</div>}><PerformancePage /></Suspense>}
-            {page === 'store' && <Suspense fallback={<div className="page-loading">Loading...</div>}><StorePage /></Suspense>}
-            {page === 'settings' && <Suspense fallback={<div className="page-loading">Loading...</div>}><SettingsPage /></Suspense>}
-            {page === 'friends' && <Suspense fallback={<div className="page-loading">Loading...</div>}><FriendsPage /></Suspense>}
+            <PageErrorBoundary>
+              {page === 'home' && <HomePage />}
+              {page === 'instances' && <Suspense fallback={<div className="page-loading">Loading...</div>}><InstancesPage /></Suspense>}
+              {page === 'instance' && <Suspense fallback={<div className="page-loading">Loading...</div>}><InstancePage /></Suspense>}
+              {page === 'discover' && <Suspense fallback={<div className="page-loading">Loading...</div>}><DiscoverPage /></Suspense>}
+              {page === 'performance' && <Suspense fallback={<div className="page-loading">Loading...</div>}><PerformancePage /></Suspense>}
+              {page === 'store' && <Suspense fallback={<div className="page-loading">Loading...</div>}><StorePage /></Suspense>}
+              {page === 'settings' && <Suspense fallback={<div className="page-loading">Loading...</div>}><SettingsPage /></Suspense>}
+              {page === 'friends' && <Suspense fallback={<div className="page-loading">Loading...</div>}><FriendsPage /></Suspense>}
+            </PageErrorBoundary>
           </div>
         </main>
         <ProgressDock progress={progress} />
