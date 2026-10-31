@@ -157,33 +157,61 @@ export function recommendMemory(ramGb: number, tier: HardwareInfo['tier'], modCo
   return Math.max(1024, Math.round(base / 512) * 512) // round to 512MB
 }
 
+/** Bump when the generated flag set changes so per-instance arg caches rebuild. */
+export const JVM_FLAGS_VERSION = 2
+
+/**
+ * Build the JVM flags for an instance.
+ *
+ * Every option is gated by the detected Java major version. HotSpot aborts with
+ * "Could not create the Java Virtual Machine" as soon as it sees an option it
+ * does not recognise, which kills the process before Minecraft can start.
+ *
+ * The heap is also clamped to what the machine can actually reserve so an
+ * oversized allocation can never produce the same error.
+ */
 export function buildJvmFlags(
   memoryMb: number,
   preset: JvmPresetId,
   custom = '',
   javaMajor?: number
 ): string[] {
-  if (preset === 'custom') return ['-Xms' + memoryMb + 'M', '-Xmx' + memoryMb + 'M', ...tokenize(custom)]
-  const heap = Math.max(1024, memoryMb)
-  if (preset === 'zgc') {
-    // Generational ZGC: sub-millisecond pauses on big heaps. JDK 21–22 need the
-    // opt-in flag, JDK 23+ is generational by default and rejects the flag.
-    const generational = javaMajor !== undefined && javaMajor >= 21 && javaMajor <= 22
+  const totalRamMb = Math.floor(os.totalmem() / 1024 ** 2)
+  const ceiling = Math.max(1024, Math.min(32768, Math.floor(totalRamMb * 0.75)))
+  const requested = Number.isFinite(memoryMb) ? Math.round(memoryMb) : 1024
+  const heap = Math.max(1024, Math.min(requested, ceiling))
+  // 0 means "unknown runtime" — only emit options that exist since Java 8.
+  const major = javaMajor && javaMajor > 0 ? javaMajor : 0
+
+  if (preset === 'custom') {
+    return [`-Xms${heap}M`, `-Xmx${heap}M`, ...tokenize(custom)]
+  }
+
+  // ZGC only exists from Java 11. Older runtimes fall through to G1 so
+  // selecting the ZGC preset can never crash a Java 8 instance.
+  if (preset === 'zgc' && major >= 11) {
+    // ZGC was experimental in 11–14. Generational ZGC is experimental in
+    // 21–22 and becomes the default (no flag) from 23 onwards.
+    const experimental = major <= 14 || (major >= 21 && major <= 22)
+    const generational = major >= 21 && major <= 22
     return [
       `-Xms${heap}M`,
       `-Xmx${heap}M`,
+      ...(experimental ? ['-XX:+UnlockExperimentalVMOptions'] : []),
       '-XX:+UseZGC',
       ...(generational ? ['-XX:+ZGenerational'] : []),
+      // -XX:+UseStringDeduplication requires G1GC. Combining it with ZGC is a
+      // hard JVM start failure, so it must never appear in this branch.
       '-XX:+AlwaysPreTouch',
       '-XX:+DisableExplicitGC',
       '-XX:+ParallelRefProcEnabled',
-      ...(javaMajor === undefined || javaMajor >= 18 ? ['-XX:+UseStringDeduplication'] : []),
       '-XX:+PerfDisableSharedMem',
       '-Dfile.encoding=UTF-8',
       '-Djava.awt.headless=false'
     ]
   }
-  const region = heap >= 16384 ? '16M' : '8M'
+
+  const region = heap >= 16384 ? '16M' : heap >= 8192 ? '8M' : '4M'
   const flags = [
     `-Xms${heap}M`,
     `-Xmx${heap}M`,
@@ -209,24 +237,16 @@ export function buildJvmFlags(
     '-Djava.awt.headless=false',
     // Faster JVM startup
     '-XX:+TieredCompilation',
-    '-XX:TieredStopAtLevel=4',
-    // Additional optimizations for Java 21+
-    ...(javaMajor && javaMajor >= 21 ? [
-      '-XX:+UseStringDeduplication',
-      '-XX:+UseCompactObjectHeaders',
-      '-XX:+OptimizeStringConcat',
-      '-Djdk.nio.maxCachedBufferSize=262144'
-    ] : []),
-    // Large heap optimizations
-    ...(heap >= 4096 ? [
-      '-XX:G1ConcRefinementThreads=4',
-      '-XX:G1ConcMarkStepDurationMillis=5'
-    ] : [])
+    '-XX:TieredStopAtLevel=4'
   ]
-  if (preset === 'low-latency') {
-    flags.push('-XX:+UseStringDeduplication')
+  // String deduplication is a G1-only feature (Java 8u20+).
+  flags.push('-XX:+UseStringDeduplication')
+  // Large heap optimisations
+  if (heap >= 4096) {
+    flags.push('-XX:G1ConcRefinementThreads=4', '-XX:G1ConcMarkStepDurationMillis=5')
   }
-  if (heap >= 4096 && preset !== 'low-latency') flags.push('-XX:+UseStringDeduplication')
+  // Property is ignored by older runtimes, but keep it version-gated anyway.
+  if (major >= 21) flags.push('-Djdk.nio.maxCachedBufferSize=262144')
   return flags
 }
 

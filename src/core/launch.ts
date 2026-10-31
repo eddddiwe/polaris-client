@@ -108,12 +108,12 @@ export class LaunchService {
         await this.installer.extractNatives(installed.natives, nativesDir)
       }
 
-      // Pre-compute JVM args (cached, skip rebuild if fresh)
-      const cachedArgs = await this.installer.loadCachedArgs(instanceDir)
+      // Pre-compute JVM args (cached, rebuilt when settings or Java change)
+      const cachedArgs = await this.installer.loadCachedArgs(instanceDir, instance, java.major)
       const jvmTuning = cachedArgs ?? await this.installer.precomputeArgs(instance, instanceDir, installed, settings, java.major)
 
       const account = await this.auth.refreshIfNeeded(stored)
-      const args = this.buildArguments(instance, settings, installed.version, installed.classpath, installed.assetIndexId, nativesDir, account, java)
+      const args = this.buildArguments(instance, settings, installed.version, installed.classpath, installed.assetIndexId, nativesDir, account, java, jvmTuning)
 
       this.setState({ status: 'running', message: `Running on Java ${java.major}`, startedAt: Date.now() })
       const child = spawn(java.path, args, {
@@ -234,7 +234,8 @@ export class LaunchService {
     assetIndexId: string,
     nativesDir: string,
     account: { name: string; uuid: string; accessToken: string; type: 'offline' | 'microsoft'; clientId?: string; xuid?: string },
-    java: JavaInfo
+    java: JavaInfo,
+    tuning: string[]
   ): string[] {
     const instanceDir = join(this.paths.instances, instance.id)
     const ctx = createRuleContext(defaultFeatures())
@@ -281,7 +282,6 @@ export class LaunchService {
         })
       : legacyArguments(version)
 
-    const tuning = buildJvmFlags(instance.memoryMb, instance.jvmPreset, instance.customJvmArgs, java.major)
     const extraJvm = [
       '-Dpolaris.client=true',
       '-Dminecraft.launcher.brand=Polaris',

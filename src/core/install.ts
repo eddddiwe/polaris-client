@@ -88,22 +88,46 @@ export class Installer {
   /** Pre-compute JVM args and cache them alongside the install result. */
   async precomputeArgs(instance: InstanceConfig, instanceDir: string, installed: InstalledGame, settings: Settings, javaMajor: number): Promise<string[]> {
     // Build and cache the JVM tuning args (account-independent)
-    const tuning = (await import('./performance')).buildJvmFlags(instance.memoryMb, instance.jvmPreset, instance.customJvmArgs, javaMajor)
-    const cached = { ...installed, jvmTuning: tuning }
+    const { buildJvmFlags, JVM_FLAGS_VERSION } = await import('./performance')
+    const tuning = buildJvmFlags(instance.memoryMb, instance.jvmPreset, instance.customJvmArgs, javaMajor)
     try {
-      await writeFile(join(instanceDir, '.args-cache.json'), JSON.stringify({ jvmTuning: tuning, computedAt: Date.now() }))
+      await writeFile(
+        join(instanceDir, '.args-cache.json'),
+        JSON.stringify({
+          flagsVersion: JVM_FLAGS_VERSION,
+          memoryMb: instance.memoryMb,
+          jvmPreset: instance.jvmPreset,
+          customJvmArgs: instance.customJvmArgs,
+          javaMajor,
+          jvmTuning: tuning,
+          computedAt: Date.now()
+        })
+      )
     } catch { /* best-effort */ }
     return tuning
   }
 
-  /** Load pre-computed JVM args if fresh (< 1 hour). */
-  async loadCachedArgs(instanceDir: string): Promise<string[] | null> {
+  /**
+   * Load pre-computed JVM args when the cache is fresh and still matches the
+   * instance settings and Java runtime. Any mismatch rebuilds the flags, so a
+   * fix to the flag builder (or a memory/preset change) takes effect on the
+   * very next launch instead of reusing crash-causing cache entries.
+   */
+  async loadCachedArgs(instanceDir: string, instance?: InstanceConfig, javaMajor?: number): Promise<string[] | null> {
     const cachePath = join(instanceDir, '.args-cache.json')
     if (!(await pathExists(cachePath))) return null
     try {
       const cached = JSON.parse(await readFile(cachePath, 'utf8'))
       if (Date.now() - cached.computedAt > 3600000) return null // stale after 1 hour
-      return cached.jvmTuning
+      const { JVM_FLAGS_VERSION } = await import('./performance')
+      if (cached.flagsVersion !== JVM_FLAGS_VERSION) return null
+      if (instance) {
+        if (cached.memoryMb !== instance.memoryMb) return null
+        if (cached.jvmPreset !== instance.jvmPreset) return null
+        if ((cached.customJvmArgs ?? '') !== (instance.customJvmArgs ?? '')) return null
+        if (javaMajor !== undefined && cached.javaMajor !== javaMajor) return null
+      }
+      return Array.isArray(cached.jvmTuning) ? cached.jvmTuning : null
     } catch {
       return null
     }
