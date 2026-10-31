@@ -8,8 +8,17 @@ import type { Paths } from './paths'
 import type { Settings } from '../shared/types'
 
 const POLARIS_CONFIG_INTERMEDIARY = 'polaris-config-1.1.0.jar'
+const POLARIS_CONFIG_MODERN = 'polaris-config-1.1.0-modern.jar'
 const POLARIS_CONFIG_OFFICIAL = 'polaris-config-1.1.0-official.jar'
 const POLARIS_CONFIG_PATTERN = /^polaris-config-.*\.jar$/i
+
+function polarisConfigFile(mcVersion: string): string {
+  const [major = 0, minor = 0, patch = 0] = mcVersion.split('.').map(Number)
+  if (major >= 26) return POLARIS_CONFIG_OFFICIAL
+  // 1.21.11 changed mouse/key input to event objects.
+  if (major === 1 && (minor > 21 || (minor === 21 && patch >= 11))) return POLARIS_CONFIG_MODERN
+  return POLARIS_CONFIG_INTERMEDIARY
+}
 
 export class InstanceStore {
   constructor(private readonly paths: Paths) {}
@@ -146,8 +155,7 @@ export class InstanceStore {
     if (config.kind !== 'game' || config.loader !== 'fabric') return
     try {
       const { app } = await import('electron')
-      const official = Number(config.mcVersion.split('.')[0]) >= 26
-      const sourceName = official ? POLARIS_CONFIG_OFFICIAL : POLARIS_CONFIG_INTERMEDIARY
+      const sourceName = polarisConfigFile(config.mcVersion)
       const source = join(app.getAppPath(), 'resources', 'mods', sourceName)
       if (!(await pathExists(source))) return
 
