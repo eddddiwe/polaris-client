@@ -23,48 +23,62 @@ export function registerIpc(services: AppServices): void {
   handle(IPC.bootstrap, async () => services.bootstrap())
   handle(IPC.settingsSnapshot, async () => services.settingsStore.get())
 
+  const activeFriendAccount = (): { code: string; name: string } | null => {
+    const account = services.accounts.activeStored()
+    return account?.friendCode ? { code: account.friendCode, name: account.name } : null
+  }
+
   handle(IPC.friendsList, async () => {
-    const myCode = services.accounts.activeStored()?.friendCode
-    if (myCode) await services.friends.syncFromServer(myCode)
+    const account = activeFriendAccount()
+    if (account) {
+      // Keep the display name on the worker in sync so friends see a name,
+      // not just a raw code. Fire-and-forget so an offline worker does not
+      // delay the friends list.
+      void services.friends.registerCode(account.code, account.name)
+      await services.friends.syncFromServer(account.code)
+    }
     return services.friends.list()
   })
   handle(IPC.friendsAdd, async (code: string, name: string) => {
-    const myCode = services.accounts.activeStored()?.friendCode
-    if (!myCode) throw new Error('Sign in to add friends.')
-    await services.friends.add(myCode, code, name)
-    if (myCode) await services.friends.syncFromServer(myCode)
+    const account = activeFriendAccount()
+    if (!account) throw new Error('Sign in to add friends.')
+    await services.friends.registerCode(account.code, account.name)
+    await services.friends.add(account.code, code, name)
+    await services.friends.syncFromServer(account.code)
     return services.friends.list()
   })
   handle(IPC.friendsRemove, async (code: string) => {
-    const myCode = services.accounts.activeStored()?.friendCode
-    if (myCode) await services.friends.remove(myCode, code)
-    else await services.friends.remove('', code)
+    const account = activeFriendAccount()
+    await services.friends.remove(account?.code ?? '', code)
     return services.friends.list()
   })
   handle(IPC.friendsRemoveMutual, async (friendCode: string) => {
-    const myCode = services.accounts.activeStored()?.friendCode
-    if (!myCode) throw new Error('Sign in to remove friends.')
-    await services.friends.removeMutual(myCode, friendCode)
-    if (myCode) await services.friends.syncFromServer(myCode)
+    const account = activeFriendAccount()
+    if (!account) throw new Error('Sign in to remove friends.')
+    await services.friends.removeMutual(account.code, friendCode)
+    await services.friends.syncFromServer(account.code)
     return services.friends.list()
   })
-  handle(IPC.friendsRequest, async (code: string, name: string) => {
-    const myCode = services.accounts.activeStored()?.friendCode
-    if (!myCode) throw new Error('Sign in to send friend request.')
-    await services.friends.sendRequest(myCode, code)
-    if (myCode) await services.friends.syncFromServer(myCode)
-    return services.friends.getRequests(myCode)
+  handle(IPC.friendsRequest, async (code: string) => {
+    const account = activeFriendAccount()
+    if (!account) throw new Error('Sign in to send friend request.')
+    await services.friends.registerCode(account.code, account.name)
+    await services.friends.sendRequest(account.code, code)
+    await services.friends.syncFromServer(account.code)
+    return services.friends.getRequests(account.code)
   })
-  handle(IPC.friendsRespond, async (myCode: string, friendCode: string, action: 'accept' | 'decline') => {
-    if (!myCode) throw new Error('Sign in to respond to friend request.')
-    await services.friends.respondRequest(myCode, friendCode, action)
-    if (myCode) await services.friends.syncFromServer(myCode)
-    return services.friends.getRequests(myCode)
+  handle(IPC.friendsRespond, async (_myCode: string, friendCode: string, action: 'accept' | 'decline') => {
+    const account = activeFriendAccount()
+    if (!account) throw new Error('Sign in to respond to friend request.')
+    await services.friends.registerCode(account.code, account.name)
+    await services.friends.respondRequest(account.code, friendCode, action)
+    await services.friends.syncFromServer(account.code)
+    return services.friends.getRequests(account.code)
   })
   handle(IPC.friendsGetRequests, async () => {
-    const myCode = services.accounts.activeStored()?.friendCode
-    if (myCode) await services.friends.syncFromServer(myCode)
-    return services.friends.list()
+    const account = activeFriendAccount()
+    if (!account) return []
+    return services.friends.getRequests(account.code)
   })
 
   ipcMain.handle(IPC.windowAction, (event, action: 'minimize' | 'maximize' | 'close' | 'show') => {

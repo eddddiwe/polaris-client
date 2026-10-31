@@ -534,7 +534,7 @@ describe('ZGC preset', () => {
       arch: 'x64',
       tier: 'enthusiast' as const,
       recommendedMemoryMb: 8192,
-      java: [],
+      java: [{ path: 'java', major: 21, version: '21', vendor: 'Temurin', source: 'test' }],
       detectedAt: 0
     }
     const plan = makePlan('balanced', hardware, 8192, 'zgc')

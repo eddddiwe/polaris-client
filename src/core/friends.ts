@@ -123,28 +123,28 @@ export class FriendStore {
   }
 
   async sendRequest(myCode: string, friendCode: string): Promise<void> {
-    try {
-      await fetch(`${WORKER_BASE}/v1/friends/request`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ myCode, friendCode }),
-        signal: AbortSignal.timeout(8000)
-      })
-    } catch {
-      // offline: local only
+    const res = await fetch(`${WORKER_BASE}/v1/friends/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ myCode, friendCode }),
+      signal: AbortSignal.timeout(8000)
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw new Error(data?.error || `Could not send friend request (${res.status})`)
     }
   }
 
   async respondRequest(myCode: string, friendCode: string, action: 'accept' | 'decline'): Promise<void> {
-    try {
-      await fetch(`${WORKER_BASE}/v1/friends/respond`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ myCode, friendCode, action }),
-        signal: AbortSignal.timeout(8000)
-      })
-    } catch {
-      // offline: local only
+    const res = await fetch(`${WORKER_BASE}/v1/friends/respond`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ myCode, friendCode, action }),
+      signal: AbortSignal.timeout(8000)
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw new Error(data?.error || `Could not respond to friend request (${res.status})`)
     }
   }
 
