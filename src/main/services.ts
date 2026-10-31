@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
 import os from 'node:os'
+import { spawn } from 'node:child_process'
 import { join, dirname, resolve, basename, extname } from 'node:path'
 import { stat, writeFile } from 'node:fs/promises'
 import { app, shell } from 'electron'
@@ -725,7 +726,7 @@ export class AppServices extends EventEmitter {
     })
 
     if (process.platform === 'win32') {
-      this.launchWindowsInstaller(installerPath)
+      await this.launchWindowsInstaller(installerPath)
     } else {
       // macOS DMG / Linux AppImage: let the desktop open the downloaded file.
       await shell.openPath(installerPath)
@@ -794,50 +795,77 @@ export class AppServices extends EventEmitter {
    * the updated client. If silent install keeps failing, it falls back to the
    * normal visible installer so the user can finish manually.
    */
-  private launchWindowsInstaller(installerPath: string): void {
+  private async launchWindowsInstaller(installerPath: string): Promise<void> {
     const appExe = app.isPackaged ? app.getPath('exe') : ''
+    const logPath = join(this.paths.logs, 'update-helper.log')
     const script = `
 $ErrorActionPreference = 'SilentlyContinue'
 $parentPid = ${process.pid}
 $installer = ${quotePowerShell(installerPath)}
 $appExe = ${quotePowerShell(appExe)}
+$log = ${quotePowerShell(logPath)}
+
+function Write-Log([string]$message) {
+  Add-Content -Path $log -Value ((Get-Date).ToString('o') + ' ' + $message)
+}
+
+Write-Log "helper start parent=$parentPid installer=$installer"
 
 $deadline = (Get-Date).AddSeconds(45)
 while ((Get-Date) -lt $deadline -and (Get-Process -Id $parentPid -ErrorAction SilentlyContinue)) {
   Start-Sleep -Milliseconds 400
 }
 Start-Sleep -Milliseconds 1200
+Write-Log 'launcher process exited; starting installer'
 
 $installed = $false
 for ($attempt = 0; $attempt -lt 8; $attempt++) {
   try {
     $proc = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru -ErrorAction SilentlyContinue
+    Write-Log "installer attempt $attempt exit=$($proc.ExitCode)"
     if ($proc -and $proc.ExitCode -eq 0) { $installed = $true; break }
   } catch {
+    Write-Log "installer attempt $attempt failed: $($_.Exception.Message)"
     $installed = $false
   }
   Start-Sleep -Seconds 2
 }
 
 if ($installed) {
-  if ($appExe -and (Test-Path $appExe)) { Start-Process -FilePath $appExe }
+  Write-Log 'install succeeded'
+  if ($appExe -and (Test-Path $appExe)) {
+    Write-Log "relaunching $appExe"
+    Start-Process -FilePath $appExe
+  } else {
+    Write-Log 'app executable not found for relaunch'
+  }
 } else {
+  Write-Log 'silent install failed; opening visible installer'
   Start-Process -FilePath $installer
 }
 `
     const encoded = Buffer.from(script, 'utf16le').toString('base64')
-    void import('node:child_process').then(({ spawn }) => {
-      const child = spawn(
-        'powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded],
-        { detached: true, stdio: 'ignore', windowsHide: true }
-      )
-      child.on('error', (error) => {
+    const child = spawn(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded],
+      { detached: true, stdio: 'ignore', windowsHide: true }
+    )
+
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 1500)
+      child.once('spawn', () => {
+        this.logger.info('Update helper started', { pid: child.pid, logPath })
+        clearTimeout(timer)
+        resolve()
+      })
+      child.once('error', (error) => {
         this.logger.warn('Update helper failed to start; opening installer directly', error)
         void shell.openPath(installerPath)
+        clearTimeout(timer)
+        resolve()
       })
-      child.unref()
     })
+    child.unref()
   }
 
   /** Import a local .mrpack file: parse manifest, create instance, return summary. */

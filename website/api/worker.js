@@ -59,8 +59,9 @@ export default {
     // Version check
     if (path === '/v1/version' || path === '/version') {
       try {
-        const ghRes = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-          headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'Polaris-API' }
+        const ghRes = await fetch(`https://api.github.com/repos/${REPO}/releases/latest?t=${Date.now()}`, {
+          headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'Polaris-API' },
+          cf: { cacheTtl: 0, cacheEverything: false }
         })
         const gh = await ghRes.json()
         const latestVersion = (gh.tag_name || '').replace(/^v/, '')
