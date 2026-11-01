@@ -1,0 +1,32 @@
+Polaris Client
+Copyright (C) 2026 Polaris Client Contributors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 3 only.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+The complete GPL-3.0 text is included with this installation as LICENSE.
+A summary and the source code are available at:
+  https://github.com/eddddiwe/polaris-client
+
+Third-party components (Electron, React, Vite, TypeScript, adm-zip and others)
+remain under their own licenses. See NOTICE for the main components.
+
+Polaris does not distribute Minecraft, the Minecraft client or its assets.
+Minecraft is a trademark of Mojang Synergies AB. Polaris is not affiliated with
+Mojang Studios or Microsoft. Use of Minecraft is subject to the Minecraft End
+User License Agreement.
+
+Privacy: no analytics or ad tracking; presence sharing is off by default.
+  https://github.com/eddddiwe/polaris-client/blob/master/site/privacy.html
+Terms:
+  https://github.com/eddddiwe/polaris-client/blob/master/site/terms.html
+Cookies:
+  https://github.com/eddddiwe/polaris-client/blob/master/site/cookies.html
+
+By installing or using Polaris you agree to the GNU GPL-3.0-only license terms
+and the project terms above.

@@ -3,7 +3,6 @@
 // Endpoints:
 //   GET  /v1/version            -> { version, url, sha256, minVersion, changelog }
 //   GET  /v1/announcements      -> { announcements: [...] }
-//   POST /v1/telemetry          -> accept crash reports (opt-in)
 //   POST /v1/friends/register   -> register a friend code { code, name }
 //   POST /v1/friends/add        -> add confirmed friend { myCode, friendCode }
 //   POST /v1/friends/remove     -> remove friend { myCode, friendCode }
@@ -14,7 +13,7 @@
 //   GET  /v1/friends/requests?code= -> list pending requests { requests: [{ code, name, createdAt }] }
 
 const REPO = 'eddddiwe/polaris-client'
-const CURRENT_VERSION = '0.3.9'
+const CURRENT_VERSION = '0.4.0'
 
 async function resolveFriendUuid(kv, code, info) {
   if (!info || info.uuid) return info
@@ -98,17 +97,6 @@ export default {
         minVersion: '0.3.0',
         killSwitch: false,
       }), { headers: corsHeaders })
-    }
-
-    // Telemetry (opt-in)
-    if (path === '/v1/telemetry' && request.method === 'POST') {
-      try {
-        const body = await request.json()
-        console.log('Telemetry received:', JSON.stringify(body).substring(0, 500))
-        return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders })
-      } catch {
-        return new Response(JSON.stringify({ ok: false }), { status: 400, headers: corsHeaders })
-      }
     }
 
     // ---------- Presence API (same KV namespace) ----------

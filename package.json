@@ -1,10 +1,18 @@
 {
   "name": "polaris-client",
-  "version": "0.3.9",
-  "description": "Polaris Client - a performance-first Minecraft launcher and client platform",
+  "version": "0.4.0",
+  "description": "Polaris Client - a performance-focused Minecraft launcher and client platform",
   "main": "./out/main/index.js",
   "author": "Polaris Client Contributors <polaris@example.com>",
   "license": "GPL-3.0-only",
+  "homepage": "https://github.com/eddddiwe/polaris-client",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eddddiwe/polaris-client.git"
+  },
+  "bugs": {
+    "url": "https://github.com/eddddiwe/polaris-client/issues"
+  },
   "private": true,
   "scripts": {
     "dev": "electron-vite dev",
@@ -65,7 +73,9 @@
       "out/main/**/*",
       "out/preload/**/*",
       "out/renderer/**/*",
-      "resources/**/*"
+      "resources/**/*",
+      "LICENSE",
+      "NOTICE"
     ],
     "compression": "maximum",
     "publish": null,
@@ -85,6 +95,7 @@
       "shortcutName": "Polaris Client",
       "uninstallDisplayName": "Polaris Client ${version}",
       "deleteAppDataOnUninstall": false,
+      "license": "build/license.txt",
       "artifactName": "Polaris-Setup-${version}.${ext}"
     },
     "mac": {

@@ -391,6 +391,11 @@
       })
       .then((manifest) => {
         if (manifest.file) downloadLink.setAttribute('href', `downloads/${manifest.file}`)
+        if (manifest.version) {
+          $$('[data-site-version]').forEach((node) => {
+            node.textContent = manifest.version
+          })
+        }
         const size = formatBytes(manifest.size)
         if (size && downloadSize) downloadSize.textContent = size
         if (manifest.sha256 && downloadSha) {

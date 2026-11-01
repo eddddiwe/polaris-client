@@ -10,7 +10,7 @@
   --line-2: rgba(139, 92, 246, 0.28);
   --text: #eef0fa;
   --muted: #8c95b1;
-  --dim: #6b7595;
+  --dim: #8a93ad;
   --accent: #b4a0ff;
   --accent-2: #38e8ff;
   --accent-3: #f472b6;
@@ -6156,7 +6156,6 @@ nav, .sidebar, .topbar {
   padding: 40px 20px;
   color: var(--muted);
   font-size: 0.9rem;
-  opacity: 0.7;
 }
 
 .empty-state::before {
@@ -6713,7 +6712,7 @@ textarea:focus {
 .sidebar-brand span {
   font-size: 8px;
   letter-spacing: 0.27em;
-  color: #505a78;
+  color: #8a93ad;
 }
 .nav {
   gap: 2px;
@@ -6722,7 +6721,7 @@ textarea:focus {
   margin: 2px 12px 10px;
   font-size: 8.5px;
   letter-spacing: 0.2em;
-  color: #4b5470;
+  color: #8a93ad;
 }
 .nav-item {
   height: 43px;
@@ -6801,11 +6800,11 @@ textarea:focus {
 .titlebar-tag {
   font-size: 8px;
   letter-spacing: 0.4em;
-  color: #4e5876;
+  color: #8a93ad;
 }
 .titlebar-ver {
   font-size: 9px;
-  color: #6b7492;
+  color: #8a93ad;
   border-color: var(--stroke);
   background: rgba(255, 255, 255, 0.03);
 }
@@ -7017,7 +7016,7 @@ textarea:focus {
   align-self: center;
   font-size: 9px;
   letter-spacing: 0.16em;
-  color: #6c7594;
+  color: #8a93ad;
 }
 .stat-card strong {
   grid-area: value;
@@ -7312,7 +7311,7 @@ textarea:focus {
 }
 .filter-count {
   font-size: 10.5px;
-  color: #6f7896;
+  color: #8a93ad;
 }
 .category-chips {
   gap: 7px;

@@ -11,7 +11,7 @@
   --line-strong: rgba(226, 232, 255, 0.16);
   --text: #f2f0fa;
   --muted: #a3a1b5;
-  --dim: #727386;
+  --dim: #8a8ca3;
   --violet: #8b5cf6;
   --violet-soft: #a78bfa;
   --violet-light: #c4b5fd;
@@ -261,13 +261,13 @@ section[id] {
 
 .btn-primary {
   border-color: rgba(196, 181, 253, 0.36);
-  background: linear-gradient(180deg, #9f75ff, #7c3aed);
+  background: linear-gradient(180deg, #7c3aed, #5b21b6);
   color: #fff;
   box-shadow: 0 10px 28px rgba(124, 58, 237, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 .btn-primary:hover {
-  background: linear-gradient(180deg, #ac88ff, #8b5cf6);
+  background: linear-gradient(180deg, #7c3aed, #6d28d9);
   box-shadow: 0 14px 34px rgba(124, 58, 237, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.34);
   transform: translateY(-1px);
 }
@@ -769,7 +769,7 @@ section[id] {
   align-items: center;
   padding: 17px 0 22px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
-  color: #6f7083;
+  color: #8a8ca3;
   font-family: var(--font-mono);
   font-size: 0.6rem;
   letter-spacing: 0.1em;
@@ -1261,7 +1261,7 @@ section[id] {
 }
 
 .code-block .c {
-  color: #4b4d63;
+  color: #8a8ca3;
 }
 
 .lab-side {
@@ -3050,7 +3050,7 @@ section[id] {
 
 .footer-top {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.7fr) minmax(0, 0.7fr);
+  grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 0.65fr));
   gap: 48px;
 }
 
@@ -3078,7 +3078,7 @@ section[id] {
 
 .footer-col h3 {
   margin-bottom: 14px;
-  color: #6f7086;
+  color: #8a8ca3;
   font-family: var(--font-sans);
   font-size: 0.62rem;
   font-weight: 600;
@@ -3117,7 +3117,7 @@ section[id] {
   gap: 24px;
   padding-top: 18px;
   border-top: 1px solid var(--line);
-  color: #636477;
+  color: #8a8ca3;
   font-size: 0.64rem;
   line-height: 1.6;
 }

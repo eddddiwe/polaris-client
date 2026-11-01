@@ -3,17 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Polaris — Every machine. Every frame.</title>
+    <title>Polaris - A performance-focused Minecraft launcher</title>
     <meta
       name="description"
-      content="Polaris is a performance-first Minecraft launcher for Windows, with Linux source builds. Hardware-aware profiles, verified Modrinth mods, Fabric modpacks, dedicated servers, and local-first cosmetics."
+      content="Polaris is a performance-focused Minecraft launcher for Windows, with Linux source builds. Hardware-aware profiles, verified Modrinth mods, Fabric modpacks, dedicated servers, and local-first cosmetics."
     />
     <meta name="theme-color" content="#06070c" />
     <meta name="color-scheme" content="dark" />
-    <meta property="og:title" content="Polaris — Every machine. Every frame." />
+    <meta property="og:title" content="Polaris - A performance-focused Minecraft launcher" />
     <meta
       property="og:description"
-      content="A performance-first Minecraft launcher for Windows, with Linux source builds. Tuned before the first frame."
+      content="A performance-focused Minecraft launcher for Windows, with Linux source builds. Tuned before the first frame."
     />
     <meta property="og:type" content="website" />
     <link rel="icon" href="assets/polaris.svg" type="image/svg+xml" />
@@ -118,7 +118,7 @@
         <a class="brand" href="#top" aria-label="Polaris home">
           <img class="brand-mark" src="assets/polaris.svg" alt="" width="36" height="36" />
           <span class="brand-name">Polaris</span>
-          <span class="brand-version">0.3.1</span>
+          <span class="brand-version" data-site-version>0.4.0</span>
         </a>
         <nav class="site-nav" id="site-nav" aria-label="Main navigation">
           <a href="#performance">Performance</a>
@@ -159,12 +159,11 @@
               Windows-first · Linux builds from source
             </span>
             <h1 id="hero-title">
-              Every machine.<br />
-              <span class="gradient-text">Every frame.</span>
+              Your machine.<br />
+              <span class="gradient-text">Your frames.</span>
             </h1>
             <p class="hero-lede">
-              Polaris is a performance-first Minecraft launcher. It reads your hardware, matches
-              every mod to your exact version, and tunes the game before the first frame — then
+              Polaris is a performance-focused Minecraft launcher. It reads your hardware, matches mods to your installed version, and applies conservative JVM and game settings — then
               gets out of the way.
             </p>
             <div class="hero-actions">
@@ -179,8 +178,8 @@
             </div>
             <ul class="hero-proof">
               <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>Hardware-aware</li>
-              <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>Modrinth verified</li>
-              <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>No telemetry</li>
+              <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>SHA-1 verified downloads</li>
+              <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>No ad tracking</li>
             </ul>
           </div>
 
@@ -217,9 +216,9 @@
         </div>
 
         <div class="wrap hero-foot">
-          <span><i class="status-dot" aria-hidden="true"></i>Ready on first launch</span>
+          <span><i class="status-dot" aria-hidden="true"></i>Java auto-selection</span>
           <span>Windows 10 / 11 · Linux from source</span>
-          <span>Fabric 1.21+</span>
+          <span>Fabric 1.21–26.x</span>
           <span>GPL-3.0-only</span>
         </div>
       </section>
@@ -244,14 +243,14 @@
             </div>
             <div class="stat">
               <strong>0</strong>
-              <span>telemetry calls</span>
-              <p>Only the requests an install needs.</p>
+              <span>analytics SDKs</span>
+              <p>No ad trackers. Every network call is documented.</p>
             </div>
           </div>
           <aside class="release-bar">
-            <span class="release-tag">New in 0.3.1</span>
-            <p>Cosmetics, animated wallpapers, and a full in-game interface panel.</p>
-            <a class="text-link" href="#cosmetics">
+            <span class="release-tag">New in 0.4.0</span>
+            <p>A launcher-matched in-game menu, unified HUD, and a repaired update flow.</p>
+            <a class="text-link" href="#game-ui">
               See what changed
               <svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg>
             </a>
@@ -504,7 +503,7 @@
               <h3>Local-first progress</h3>
               <p>
                 Shards, owned cosmetics, and wallpapers live in your local settings. No checkout,
-                no account server, no analytics calls.
+                no real-money purchases, and no analytics SDKs. Microsoft sign-in stays on your machine.
               </p>
               <div class="feature-facts" aria-hidden="true">
                 <span class="fact-pill"><svg class="icon"><use href="#i-gem" /></svg>900 starter</span>
@@ -640,6 +639,11 @@
                   in-game needs a companion relay — that is roadmap, not a shipping claim.
                 </p>
               </div>
+              <p class="split-note">
+                <svg class="icon" aria-hidden="true"><use href="#i-info" /></svg>
+                Shards are local, non-transferable, and have no monetary value. There is no
+                checkout or real-money purchase in this build.
+              </p>
             </div>
             <div class="cosmetics-media" data-reveal>
               <figure class="shot-frame">
@@ -653,7 +657,7 @@
               </figure>
               <span class="media-tag media-tag--gem">
                 <svg class="icon" aria-hidden="true"><use href="#i-gem" /></svg>
-                Preview balance · 780
+                Preview only · 780
               </span>
             </div>
           </div>
@@ -1012,13 +1016,13 @@
               <span class="eyebrow">07 · Install &amp; build</span>
               <h2 id="download-title">Take it for a spin.</h2>
               <p>
-                Polaris 0.3.1 ships as a per-user Windows installer built from this source. Linux
+                Polaris 0.4.0 ships as a per-user Windows installer built from this source. Linux
                 builders can produce an AppImage from the same checkout.
               </p>
               <ul class="download-facts">
                 <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>Offline accounts work out of the box.</li>
                 <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>Core logic is covered by unit tests.</li>
-                <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>No account server, no telemetry, GPL-3.0-only.</li>
+                <li><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>No ad tracking, local Microsoft sign-in, GPL-3.0-only.</li>
               </ul>
               <div class="download-actions">
                 <a
@@ -1066,7 +1070,7 @@
           <div class="download-meta">
             <div><strong>Windows</strong><span>10/11 x64 · per-user NSIS installer · unsigned</span></div>
             <div><strong>Linux</strong><span>AppImage from source · Linux or WSL2 · experimental</span></div>
-            <div><strong>License</strong><span>GPL-3.0-only · no telemetry</span></div>
+            <div><strong>License</strong><span>GPL-3.0-only · open source</span></div>
           </div>
         </div>
       </section>
@@ -1107,10 +1111,11 @@
             <details data-reveal>
               <summary>Does it phone home?</summary>
               <p>
-                There is no telemetry and no analytics endpoint. Polaris talks to Mojang, Fabric
-                meta, and Modrinth only when it needs version data, files, or updates. Microsoft
-                sign-in is the device-code flow with an Azure client ID you supply; offline accounts
-                need no network at all.
+                Polaris does not use analytics or advertising SDKs. It contacts Mojang, Fabric,
+                Modrinth and GitHub for version data, files and updates. Our small Cloudflare API
+                handles update metadata, friend codes and optional presence. Presence shares your
+                UUID, name and current server with other Polaris users, is off by default, and can be
+                disabled at any time. Details are in the <a href="privacy.html">privacy policy</a>.
               </p>
             </details>
             <details data-reveal>
@@ -1124,10 +1129,10 @@
             <details data-reveal>
               <summary>Will other players see my badge or cape in-game?</summary>
               <p>
-                Not yet. Cosmetics show next to your account inside Polaris — on Home, in Settings,
-                and in the account switcher. In-game visibility for other players requires a
-                companion mod or server relay, which is not shipped in 0.3.1. The website and the
-                store label it as roadmap instead of pretending it already works.
+                Polaris user badges ([P]) appear in-game for players running the bundled
+                PolarisConfig mod. Custom cape rendering for other players still needs a companion
+                relay; that part is roadmap, not a shipping claim. Cosmetics remain visible next to
+                your account inside Polaris.
               </p>
             </details>
             <details data-reveal>
@@ -1186,13 +1191,13 @@
             <a class="brand" href="#top" aria-label="Polaris home">
               <img class="brand-mark" src="assets/polaris.svg" alt="" width="36" height="36" />
               <span class="brand-name">Polaris</span>
-              <span class="brand-version">0.3.1</span>
+              <span class="brand-version" data-site-version>0.4.0</span>
             </a>
             <p>
-              A performance-first Minecraft launcher for Windows, with Linux builds from source.
+              A performance-focused Minecraft launcher for Windows, with Linux builds from source.
               Built with Electron, React, and a healthy distrust of default settings.
             </p>
-            <span class="footer-badge"><i class="status-dot" aria-hidden="true"></i>0.3.1 · Aurora update</span>
+            <span class="footer-badge"><i class="status-dot" aria-hidden="true"></i><span data-site-version>0.4.0</span> · Aurora update</span>
           </div>
           <div class="footer-col">
             <h3>Explore</h3>
@@ -1206,13 +1211,21 @@
             <a href="#download">Download &amp; build</a>
             <a href="#faq">FAQ</a>
             <a href="#game-ui">In-game options</a>
-            <a href="#top">Back to top</a>
+            <a href="https://github.com/eddddiwe/polaris-client">Source code</a>
+          </div>
+          <div class="footer-col">
+            <h3>Legal</h3>
+            <a href="privacy.html">Privacy</a>
+            <a href="terms.html">Terms</a>
+            <a href="cookies.html">Cookies</a>
+            <a href="license.html">License</a>
           </div>
         </div>
         <div class="footer-wordmark" aria-hidden="true">POLARIS</div>
         <div class="footer-bottom">
           <span>© <span id="year">2026</span> Polaris Client Contributors · GPL-3.0-only</span>
           <span>Not affiliated with Mojang Studios or Microsoft. Minecraft is a trademark of Mojang Synergies AB.</span>
+          <span>No paid reviews, ratings, or fictional testimonials.</span>
         </div>
       </div>
     </footer>

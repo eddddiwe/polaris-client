@@ -16,5 +16,6 @@ src-tauri/target/
 polaris-config-*.jar
 !resources/mods/polaris-config-*.jar
 site/public/downloads/latest.json
+site/public/downloads/Polaris-Setup.exe
 site/public/downloads/Polaris-Setup.exe.sha256
 

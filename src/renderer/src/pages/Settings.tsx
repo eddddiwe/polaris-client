@@ -537,15 +537,31 @@ export function SettingsPage(): JSX.Element {
           Not affiliated with Mojang Studios, Microsoft, Polyfrost, Prism Launcher or Dawn. Minecraft is a trademark of Mojang
           Studios. Mod metadata and downloads are provided by Modrinth.
         </p>
+        <p className="fine-print">
+          No analytics or ad tracking. Presence sharing is off by default and can be disabled in-game under General. The
+          legal documents ship with the project and are linked below.
+        </p>
         <div className="about-links">
+          <button className="btn btn-ghost btn-sm" onClick={() => void api.openExternal('https://github.com/eddddiwe/polaris-client/blob/master/site/privacy.html')}>
+            <Icon name="external" size={13} /> Privacy
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => void api.openExternal('https://github.com/eddddiwe/polaris-client/blob/master/site/terms.html')}>
+            <Icon name="external" size={13} /> Terms
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => void api.openExternal('https://github.com/eddddiwe/polaris-client/blob/master/site/cookies.html')}>
+            <Icon name="external" size={13} /> Cookies
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => void api.openExternal('https://github.com/eddddiwe/polaris-client')}>
+            <Icon name="external" size={13} /> Source
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => void api.openExternal('https://www.gnu.org/licenses/gpl-3.0.html')}>
+            <Icon name="external" size={13} /> License
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={() => void api.openExternal('https://modrinth.com')}>
             <Icon name="external" size={13} /> Modrinth
           </button>
           <button className="btn btn-ghost btn-sm" onClick={() => void api.openExternal('https://fabricmc.net')}>
             <Icon name="external" size={13} /> Fabric
-          </button>
-          <button className="btn btn-ghost btn-sm" onClick={() => void api.openExternal('https://www.gnu.org/licenses/gpl-3.0.html')}>
-            <Icon name="external" size={13} /> License
           </button>
         </div>
       </section>

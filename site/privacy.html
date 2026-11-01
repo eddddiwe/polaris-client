@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy Policy — Polaris Client</title>
+    <meta
+      name="description"
+      content="What Polaris Client stores, what it sends, and how to delete it. No analytics, no ad tracking, no data sales."
+    />
+    <link rel="icon" href="assets/polaris.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="legal.css" />
+  </head>
+  <body>
+    <header class="legal-header">
+      <div class="wrap legal-header-inner">
+        <a class="brand" href="index.html" aria-label="Polaris home">
+          <img class="brand-mark" src="assets/polaris.svg" alt="" width="34" height="34" />
+          <span class="brand-name">Polaris</span>
+          <span class="brand-version">0.4.0</span>
+        </a>
+        <nav class="legal-nav" aria-label="Legal">
+          <a href="index.html">Home</a>
+          <a href="index.html#download">Download</a>
+          <a href="privacy.html" aria-current="page">Privacy</a>
+          <a href="terms.html">Terms</a>
+          <a href="cookies.html">Cookies</a>
+          <a href="license.html">License</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="legal-main">
+      <div class="legal-wrap">
+        <span class="legal-kicker">Legal</span>
+        <h1>Privacy Policy</h1>
+        <p class="legal-meta">Effective 1 November 2026 · Applies to the Polaris Client launcher, the bundled PolarisConfig mod, and this website.</p>
+
+        <p class="legal-lede">
+          Polaris is local-first. Your accounts, instances, settings, logs, cosmetics and shards live on
+          your computer. We do not use analytics or advertising SDKs, and we do not sell data. The only
+          data that leaves your machine is the network traffic needed for the features you use.
+        </p>
+
+        <div class="legal-toc">
+          <strong>Contents</strong>
+          <ol>
+            <li><a href="#who">Who we are</a></li>
+            <li><a href="#local">Data stored on your device</a></li>
+            <li><a href="#microsoft">Microsoft, Xbox and Minecraft</a></li>
+            <li><a href="#polaris-api">The Polaris API</a></li>
+            <li><a href="#presence">Presence sharing</a></li>
+            <li><a href="#website">This website</a></li>
+            <li><a href="#third-parties">Third-party services</a></li>
+            <li><a href="#retention">Retention and deletion</a></li>
+            <li><a href="#security">Security</a></li>
+            <li><a href="#children">Children</a></li>
+            <li><a href="#rights">Your rights</a></li>
+            <li><a href="#transfers">International transfers</a></li>
+            <li><a href="#changes">Changes</a></li>
+            <li><a href="#contact">Contact</a></li>
+          </ol>
+        </div>
+
+        <h2 id="who">1. Who we are</h2>
+        <p>
+          Polaris Client is an open-source project maintained by Polaris Client Contributors. We are not a
+          company, and we do not operate a commercial account service. For privacy questions or requests,
+          open an issue at
+          <a href="https://github.com/eddddiwe/polaris-client/issues">github.com/eddddiwe/polaris-client</a>.
+        </p>
+
+        <h2 id="local">2. Data stored on your device</h2>
+        <p>
+          Polaris stores its data in <code>%APPDATA%\Polaris</code> on Windows or
+          <code>~/.config/Polaris</code> on Linux. A <code>portable.txt</code> file next to the executable
+          switches storage to a <code>data</code> folder beside the app. This data stays on your machine
+          unless a feature below sends it:
+        </p>
+        <table class="legal-table">
+          <thead>
+            <tr><th>Data</th><th>Where</th><th>Why</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Settings</td><td><code>settings.json</code></td><td>Java path, appearance, wallpaper, update and privacy preferences.</td></tr>
+            <tr><td>Accounts</td><td><code>accounts.json</code></td><td>Minecraft profile, UUID, friend code, access token and refresh token. Stored as plain JSON protected by your OS account permissions; Polaris does not add a second layer of encryption at rest.</td></tr>
+            <tr><td>Friends cache</td><td><code>friends.json</code></td><td>A local copy of your friend list so the Friends page can render offline.</td></tr>
+            <tr><td>Instances</td><td><code>instances/</code></td><td>Minecraft files, mods, saves, logs, options and per-instance PolarisConfig settings.</td></tr>
+            <tr><td>Logs</td><td><code>logs/</code></td><td>Launcher diagnostics. Logs are not uploaded automatically.</td></tr>
+            <tr><td>Downloads</td><td><code>downloads/</code>, <code>cache/</code></td><td>Installers, libraries, assets and mods you asked Polaris to download.</td></tr>
+            <tr><td>Cosmetics and shards</td><td><code>settings.json</code></td><td>Local-only progress. Shards have no monetary value and are not transferable.</td></tr>
+          </tbody>
+        </table>
+        <p>
+          To delete local data, remove each account in Settings, then delete the Polaris data folder. Deleting
+          an instance removes its game files and its PolarisConfig settings.
+        </p>
+
+        <h2 id="microsoft">3. Microsoft, Xbox and Minecraft</h2>
+        <p>
+          Microsoft sign-in uses the OAuth device-code flow with an Azure public-client ID that you supply.
+          Polaris sends the device-code and token requests to
+          <code>login.microsoftonline.com</code>, then exchanges the Microsoft token for Xbox Live and
+          Minecraft Services tokens. The resulting tokens are stored locally in <code>accounts.json</code>.
+          Microsoft, Xbox and Minecraft process that traffic under their own privacy statements. Offline
+          accounts need no network at all.
+        </p>
+
+        <h2 id="polaris-api">4. The Polaris API</h2>
+        <p>
+          Polaris runs a small Cloudflare Worker at
+          <code>polaris-api.joykelows17.workers.dev</code>. It is not an account service and it does not
+          receive your Microsoft tokens, Minecraft password or game files. It handles:
+        </p>
+        <ul>
+          <li><strong>Update and announcement checks.</strong> The launcher requests the current version. Cloudflare and GitHub process standard request metadata such as IP address, user agent, timestamp and requested URL. No account identifier is sent.</li>
+          <li><strong>Friend codes.</strong> If you create or add a friend, the API stores your friend code, display name, optional Minecraft UUID, friend list and pending requests in Cloudflare KV. People who know your code can resolve that record. Removing a friend or responding to a request updates or deletes the relevant records.</li>
+          <li><strong>Presence.</strong> If you enable presence sharing, the API stores your UUID, Minecraft name, current server address and a last-seen timestamp. See the next section.</li>
+        </ul>
+        <p>
+          The API does not run an analytics pipeline, does not log request bodies for advertising, and does
+          not use your data to train models. The former <code>/v1/telemetry</code> route has been removed;
+          the launcher has no telemetry setting because it does not send telemetry.
+        </p>
+
+        <h2 id="presence">5. Presence sharing</h2>
+        <p>
+          Presence is the feature behind Polaris user badges. When it is on, the bundled PolarisConfig mod
+          sends your UUID, Minecraft name and current server address to the API roughly every 20 seconds
+          while you are connected to a multiplayer server. Other Polaris users on the same server can read
+          that list to show a <code>[P]</code> marker. Entries expire automatically after about two minutes.
+        </p>
+        <p>
+          <strong>Presence is off by default as of 0.4.0.</strong> You can enable or disable it at any time
+          under <strong>Right Shift → General → Share presence &amp; show badges</strong>. Disabling it stops
+          new posts immediately; the last entry expires within two minutes. Presence is not sent in
+          singleplayer. The server-side list is readable by anyone who knows the server address, so treat it
+          as public while it is enabled.
+        </p>
+
+        <h2 id="website">6. This website</h2>
+        <p>
+          This website is a static site. It does not set cookies, does not use analytics or advertising
+          pixels, and does not load third-party fonts or scripts. The download button points at an installer
+          or a release page you choose to open. Our hosting provider may process standard request logs (IP
+          address, user agent, requested URL, timestamp) to serve the site and protect it from abuse.
+        </p>
+
+        <h2 id="third-parties">7. Third-party services</h2>
+        <table class="legal-table">
+          <thead>
+            <tr><th>Service</th><th>When</th><th>Data</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Microsoft / Xbox / Minecraft Services</td><td>You sign in with a Microsoft account</td><td>OAuth device code and tokens, Xbox and Minecraft profile data</td></tr>
+            <tr><td>Mojang version metadata</td><td>Installing or launching the game</td><td>Version and asset requests; standard request metadata</td></tr>
+            <tr><td>Fabric meta</td><td>Installing or updating Fabric</td><td>Loader and game version requests</td></tr>
+            <tr><td>Modrinth</td><td>Searching, installing or updating mods and packs</td><td>Search queries, project and version requests</td></tr>
+            <tr><td>GitHub</td><td>Update checks and downloads</td><td>Release metadata requests; downloads if you install from GitHub</td></tr>
+            <tr><td>Cloudflare</td><td>All Polaris API calls</td><td>Request metadata and the API records described above</td></tr>
+            <tr><td>PlayerDB</td><td>Resolving a friend's skin from a name</td><td>The friend's Minecraft name</td></tr>
+          </tbody>
+        </table>
+        <p>
+          Each service processes data under its own policy. We choose services that are necessary for the
+          feature you are using; we do not add advertising or data-broker SDKs.
+        </p>
+
+        <h2 id="retention">8. Retention and deletion</h2>
+        <ul>
+          <li>Local files remain until you delete them.</li>
+          <li>Friend records remain in Cloudflare KV until you remove the friend or ask us to delete them.</li>
+          <li>Presence records expire automatically after about two minutes.</li>
+          <li>Version-check requests are transient; we do not build a profile from them.</li>
+          <li>Hosting logs are retained according to the hosting provider's policy.</li>
+        </ul>
+
+        <h2 id="security">9. Security</h2>
+        <p>
+          Network requests use HTTPS. Tokens are stored in a local JSON file protected by your operating
+          system account permissions; Polaris does not encrypt that file separately, so use full-disk
+          encryption and a locked OS account if you need protection at rest. No system is perfectly secure,
+          and we cannot guarantee that a compromise will never occur.
+        </p>
+
+        <h2 id="children">10. Children</h2>
+        <p>
+          Polaris is not directed at children under 13. Minecraft and Microsoft accounts have their own age
+          requirements. If you believe a child has sent personal data through the friend or presence
+          features, contact us and we will remove it.
+        </p>
+
+        <h2 id="rights">11. Your rights</h2>
+        <p>
+          Depending on where you live, you may have rights to access, correct, delete, restrict or object to
+          the processing of your personal data, and to lodge a complaint with a supervisory authority. You
+          can exercise most of these directly:
+        </p>
+        <ul>
+          <li>Delete local data by removing accounts and deleting the Polaris data folder.</li>
+          <li>Remove a friend in the Friends page, which updates the API records.</li>
+          <li>Disable presence sharing under General.</li>
+          <li>Ask us to delete a friend-code record by opening a GitHub issue.</li>
+        </ul>
+        <p>We do not sell personal data and we do not use it for targeted advertising.</p>
+
+        <h2 id="transfers">12. International transfers</h2>
+        <p>
+          Cloudflare, Microsoft, GitHub and the other services above operate globally, so your data may be
+          processed outside your country. They apply their own transfer safeguards. The Polaris project
+          itself does not maintain a separate data warehouse.
+        </p>
+
+        <h2 id="changes">13. Changes</h2>
+        <p>
+          We will update this page when the app's data flows change and revise the effective date. Material
+          changes will be called out in the release notes. Continuing to use Polaris after a change means
+          you accept the updated policy.
+        </p>
+
+        <h2 id="contact">14. Contact</h2>
+        <p>
+          Privacy questions and deletion requests:
+          <a href="https://github.com/eddddiwe/polaris-client/issues">github.com/eddddiwe/polaris-client/issues</a>.
+          Please do not include access tokens, passwords or other secrets in a public issue.
+        </p>
+
+        <p class="legal-note">
+          Polaris is not affiliated with Mojang Studios or Microsoft. Minecraft is a trademark of Mojang
+          Synergies AB. This policy covers the Polaris launcher, its bundled mods and this website; it does
+          not cover Minecraft, Microsoft, Modrinth or any other third-party service.
+        </p>
+      </div>
+    </main>
+
+    <footer class="legal-footer">
+      <div class="legal-footer-inner">
+        <span>© 2026 Polaris Client Contributors · GPL-3.0-only</span>
+        <nav aria-label="Footer legal">
+          <a href="privacy.html">Privacy</a>
+          <a href="terms.html">Terms</a>
+          <a href="cookies.html">Cookies</a>
+          <a href="license.html">License</a>
+          <a href="index.html">Home</a>
+        </nav>
+        <span>Not affiliated with Mojang Studios or Microsoft. No paid reviews or fictional testimonials.</span>
+      </div>
+    </footer>
+  </body>
+</html>

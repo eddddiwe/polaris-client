@@ -1,6 +1,6 @@
 # Polaris Client
 
-A performance-first Minecraft launcher and client platform for Windows, with Linux builds from
+A performance-focused Minecraft launcher and client platform for Windows, with Linux builds from
 source. Polaris combines a Prism-style instance manager with a hardware-aware performance stack,
 Modrinth discovery, local cosmetics, and a customization layer for both the launcher and the game.
 
@@ -20,14 +20,14 @@ Modrinth discovery, local cosmetics, and a customization layer for both the laun
 
 ## Status
 
-Polaris is at **0.3.1** (the Aurora update). Installation, Fabric mod loading, launching, log capture, mod install/remove/toggle, curated packs, update checks, `.mrpack` modpack planning, dedicated server launch, performance plans, `options.txt` writes, the cosmetics store, launcher appearance and the in-game options panel are implemented. Core logic is covered by unit tests. Game installation and Fabric loading have been exercised against live Minecraft 26.3; modpack and server flows should be treated as new in this release.
+Polaris is at **0.4.0**. Installation, Fabric mod loading, launching, log capture, mod install/remove/toggle, curated packs, update checks, `.mrpack` modpack planning, dedicated server launch, performance plans, `options.txt` writes, the local cosmetics store, launcher appearance, the in-game PolarisConfig menu and the HUD are implemented. Core logic is covered by unit tests. Game installation and Fabric loading have been exercised against live Minecraft 26.3; modpack and server flows should be treated as new.
 
 Known gaps:
 
 - Microsoft sign-in needs a user-supplied Azure client ID and Mojang's Minecraft Services authorization; unapproved apps can receive `403 Invalid app registration` (offline mode needs nothing).
 - Modpacks and mods are Fabric-only. Quilt, Forge and NeoForge packs are rejected rather than half-installed.
 - Dedicated servers are managed locally by this launcher; there is no remote panel or multi-user management.
-- Cosmetics live in the local profile. The equipped badge and cape appear next to your name inside Polaris; **other players seeing them in-game is not shipped**. That needs a shared backend or a companion relay/mod and is roadmap, not a current claim.
+- Cosmetics live in the local profile. The equipped badge and cape appear next to your name inside Polaris; **custom capes for other players in-game are not shipped**. Polaris user `[P]` badges are shown in-game through the bundled PolarisConfig mod when both players opt in to presence sharing. Custom cape rendering still needs shared infrastructure and is roadmap, not a current claim.
 - Animated wallpapers apply to the launcher. The in-game panel only edits vanilla `options.txt`; no UI mods are injected, and an animated in-game wallpaper would need a client mod, so it is roadmap.
 - Windows 10/11 is the primary target. Linux packaging is available from source (`npm run dist:linux`) and CI builds an AppImage, but Linux runtime support is experimental. macOS is untested.
 - The Windows installer and portable build are unsigned, so SmartScreen may warn. Verify the published SHA-256 before running the file, and sign with a certificate you control before wide distribution.
@@ -55,7 +55,7 @@ npm.cmd run test            # unit tests
 npm.cmd run typecheck
 npm.cmd run build           # production bundles into out/
 npm.cmd run dist            # current platform: installer on Windows, AppImage on Linux
-npm.cmd run dist:win        # unsigned NSIS installer: dist/Polaris-Setup-0.3.1.exe
+npm.cmd run dist:win        # unsigned NSIS installer: dist/Polaris-Setup-0.4.0.exe
 npm.cmd run dist:win:portable
 npm.cmd run dist:linux      # Linux AppImage (run on Linux or WSL2)
 npm.cmd run icons           # regenerate the PNG/ICO icon set from build/icon.svg
@@ -88,7 +88,7 @@ Cosmetics are deliberately local-first:
 
 - Shards live in `settings.json` alongside owned items and the equipped badge/cape. There is no economy server, checkout, or way to buy shards in this build.
 - The store is a normal page with the same catalog and prices for every account; it is not a hidden admin screen.
-- The equipped badge/cape is stored in the local settings and appears next to the profile name in the launcher. Cross-player visibility in Minecraft requires shared infrastructure that is not part of 0.3.1.
+- The equipped badge/cape is stored in the local settings and appears next to the profile name in the launcher. Cross-player cape visibility in Minecraft requires shared infrastructure that is not part of 0.4.0; the `[P]` presence badge is available through PolarisConfig when both players enable presence sharing.
 
 Launcher appearance supports wallpaper presets, an animated aurora, direct GIF/WebP/MP4 wallpaper links, dim/blur tuning, accent colors and reduced-motion behavior. The in-game options panel is a careful writer, not a mod injector: it only edits whitelisted vanilla keys in `options.txt`, creates a timestamped backup before writing, and asks you to close the game first. In-game animated wallpapers are not faked.
 
@@ -151,6 +151,15 @@ See [docs/ATTRIBUTION.md](docs/ATTRIBUTION.md) and [NOTICE](NOTICE) for details.
 
 Polaris is not affiliated with Mojang Studios, Microsoft, Polyfrost, Prism Launcher or Dawn. Minecraft is a trademark of Mojang Studios. Mod metadata and downloads are provided by Modrinth.
 
+## Privacy and legal
+
+- [Privacy policy](site/privacy.html) — what is stored locally, what the Polaris API receives, and how to delete it.
+- [Terms of service](site/terms.html) — license, acceptable use, updates, no-warranty terms and editorial integrity.
+- [Cookie policy](site/cookies.html) — the site sets no cookies and uses no analytics.
+- [License page](site/license.html) — GPL-3.0-only summary, source and third-party notices.
+
+Polaris has no analytics or ad tracking. Presence sharing (the `[P]` badge) is off by default. The small Cloudflare API handles update metadata, friend codes and optional presence; the launcher sends no crash reports or telemetry.
+
 ## License
 
-GPL-3.0-only. See [LICENSE](LICENSE).
+GPL-3.0-only. See [LICENSE](LICENSE) for the full text, [NOTICE](NOTICE) for third-party components, and the [license page](site/license.html) for a summary. Source: https://github.com/eddddiwe/polaris-client

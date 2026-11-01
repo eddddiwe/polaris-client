@@ -21,6 +21,15 @@ export default defineConfig({
   },
   build: {
     outDir: resolve(__dirname, 'out/site'),
-    emptyOutDir: true
+    emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'site/index.html'),
+        privacy: resolve(__dirname, 'site/privacy.html'),
+        terms: resolve(__dirname, 'site/terms.html'),
+        cookies: resolve(__dirname, 'site/cookies.html'),
+        license: resolve(__dirname, 'site/license.html')
+      }
+    }
   }
 })
