@@ -20,7 +20,7 @@ Modrinth discovery, local cosmetics, and a customization layer for both the laun
 
 ## Status
 
-Polaris is at **0.4.2**. Installation, Fabric mod loading, launching, log capture, mod install/remove/toggle, curated packs, update checks, `.mrpack` modpack planning, dedicated server launch, performance plans, `options.txt` writes, the local cosmetics store, launcher appearance, the in-game PolarisConfig menu and the HUD are implemented. Core logic is covered by unit tests. Game installation and Fabric loading have been exercised against live Minecraft 26.3; modpack and server flows should be treated as new.
+Polaris is at **0.4.4**. Installation, Fabric mod loading, launching, log capture, mod install/remove/toggle, curated packs, update checks, `.mrpack` modpack planning, dedicated server launch, performance plans, `options.txt` writes, the local cosmetics store, launcher appearance, the in-game PolarisConfig menu and the HUD are implemented. Core logic is covered by unit tests. Game installation and Fabric loading have been exercised against live Minecraft 26.3; modpack and server flows should be treated as new.
 
 Known gaps:
 
@@ -55,7 +55,7 @@ npm.cmd run test            # unit tests
 npm.cmd run typecheck
 npm.cmd run build           # production bundles into out/
 npm.cmd run dist            # current platform: installer on Windows, AppImage on Linux
-npm.cmd run dist:win        # unsigned NSIS installer: dist/Polaris-Setup-0.4.2.exe
+npm.cmd run dist:win        # unsigned NSIS installer: dist/Polaris-Setup-0.4.4.exe
 npm.cmd run dist:win:portable
 npm.cmd run dist:linux      # Linux AppImage (run on Linux or WSL2)
 npm.cmd run icons           # regenerate the PNG/ICO icon set from build/icon.svg
@@ -86,9 +86,9 @@ Without `POLARIS_HOME`, Polaris stores data in `%APPDATA%\Polaris` on Windows an
 
 Cosmetics are deliberately local-first:
 
-- Shards live in `settings.json` alongside owned items and the equipped badge/cape. There is no checkout or purchase flow; queued shard adjustments apply locally at startup.
+- Shards live in `settings.json` alongside owned items and the equipped badge/cape. There is no checkout or purchase flow; queued shard adjustments apply while the launcher is running or at startup.
 - The store is a normal page with the same catalog and prices for every account; there is no privileged store mode.
-- The equipped badge/cape is stored in the local settings and appears next to the profile name in the launcher. Cross-player cape visibility in Minecraft requires shared infrastructure that is not part of 0.4.3; the `[P]` presence badge is available through PolarisConfig when both players enable presence sharing.
+- The equipped badge/cape is stored in the local settings and appears next to the profile name in the launcher. Cross-player cape visibility in Minecraft requires shared infrastructure that is not part of 0.4.4; the `[P]` presence badge is available through PolarisConfig when both players enable presence sharing.
 
 Launcher appearance supports wallpaper presets, an animated aurora, direct GIF/WebP/MP4 wallpaper links, dim/blur tuning, accent colors and reduced-motion behavior. The in-game options panel is a careful writer, not a mod injector: it only edits whitelisted vanilla keys in `options.txt`, creates a timestamped backup before writing, and asks you to close the game first. In-game animated wallpapers are not faked.
 
