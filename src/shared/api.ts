@@ -140,6 +140,7 @@ export interface PolarisAPI {
   onAccountChanged(cb: (snapshot: AccountSnapshot) => void): () => void
   onAccountError(cb: (message: string) => void): () => void
   onDeviceCode(cb: (info: DeviceCodeInfo) => void): () => void
+  onShardsChanged(cb: () => void): () => void
 }
 
 export type { ModrinthSearchHit }

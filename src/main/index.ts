@@ -151,6 +151,7 @@ function wireServices(services: AppServices, win: BrowserWindow): void {
   services.on('device-code', (info) => send(win, EVENTS.deviceCode, info))
   services.on('account-changed', (snapshot) => send(win, EVENTS.accountChanged, snapshot))
   services.on('account-error', (message) => send(win, EVENTS.accountError, message))
+  services.on('shards-changed', () => send(win, EVENTS.shardsChanged, {}))
 
   services.on('game-started', ({ instanceId }: { instanceId: string }) => {
     const settings = services.settingsStore.get()

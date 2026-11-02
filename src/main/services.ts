@@ -106,6 +106,7 @@ export class AppServices extends EventEmitter {
   private shardSync: Promise<void> | null = null
   private shardSyncAccount: string | null = null
   private shardSyncAgain = false
+  private shardTimer?: NodeJS.Timeout
 
   constructor() {
     super()
@@ -182,6 +183,7 @@ export class AppServices extends EventEmitter {
       ])
       this.logger.info('Polaris starting', { version: app.getVersion(), dataDir: this.paths.root })
       void this.syncShardGrants()
+      this.shardTimer = setInterval(() => void this.syncShardGrants(), 15_000)
 
       // Scan Java and detect hardware in parallel with latest release
       // Scan Java (needed for hardware detection) in parallel with latest release
@@ -233,20 +235,27 @@ export class AppServices extends EventEmitter {
     if (!account?.friendCode || !account.friendSecret) return
     const auth = { code: account.friendCode, secret: account.friendSecret }
     const grants = await this.shardGrants.pending(auth)
-    if (!grants?.length) return
+    if (grants === null) {
+      this.logger.warn('Could not read queued shard adjustments')
+      return
+    }
+    if (!grants.length) return
     const ackIds: string[] = []
+    let appliedCount = 0
     for (const grant of grants) {
       if (this.settingsStore.get().appliedShardGrants.includes(grant.id)) {
         ackIds.push(grant.id)
         continue
       }
-      await this.cosmetics.applyGrant(grant.id, grant.delta)
+      const applied = await this.cosmetics.applyGrant(grant.id, grant.delta)
+      if (applied !== 0) appliedCount += 1
       ackIds.push(grant.id)
     }
     const acknowledged = await this.shardGrants.ack(auth, ackIds)
     if (!acknowledged) {
       this.logger.warn('Could not acknowledge shard adjustments; they will retry next launch')
     }
+    if (appliedCount > 0) this.emit('shards-changed', { count: appliedCount })
   }
 
   private async handleGameExit(instanceId: string, code: number | null, playtimeMs: number): Promise<void> {

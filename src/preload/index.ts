@@ -81,7 +81,8 @@ const api: PolarisAPI & { platform: NodeJS.Platform } = {
   onGameState: (cb) => subscribe(EVENTS.gameState, cb),
   onAccountChanged: (cb) => subscribe(EVENTS.accountChanged, cb),
   onAccountError: (cb) => subscribe(EVENTS.accountError, cb),
-  onDeviceCode: (cb) => subscribe(EVENTS.deviceCode, cb)
+  onDeviceCode: (cb) => subscribe(EVENTS.deviceCode, cb),
+  onShardsChanged: (cb) => subscribe(EVENTS.shardsChanged, cb)
 }
 
 contextBridge.exposeInMainWorld('polaris', api)

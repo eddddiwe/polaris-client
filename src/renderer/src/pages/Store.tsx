@@ -31,6 +31,15 @@ export function StorePage(): JSX.Element {
     }
   }, [api, toast])
 
+  useEffect(() => {
+    return api.onShardsChanged(() => {
+      void api
+        .cosmetics()
+        .then(setSnapshot)
+        .catch((error) => toast(errorMessage(error), 'error'))
+    })
+  }, [api, toast])
+
   const unlock = async (item: CosmeticItem): Promise<void> => {
     setBusy(item.id)
     try {
@@ -104,9 +113,9 @@ export function StorePage(): JSX.Element {
             Profile badges and capes for the launcher. Every badge appears beside your name, so the client knows its own.
           </p>
         </div>
-        <div className="shard-balance" title="Earned from tracked playtime">
+        <div className="shard-balance" title="Earned from playtime and adjustments">
           <Icon name="gem" size={16} />
-          <strong>{snapshot.shards.toLocaleString()}</strong>
+          <strong aria-live="polite">{snapshot.shards.toLocaleString()}</strong>
           <span>shards</span>
         </div>
       </div>

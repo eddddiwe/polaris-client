@@ -70,5 +70,6 @@ export const EVENTS = {
   accountChanged: 'event:account-changed',
   accountError: 'event:account-error',
   deviceCode: 'event:device-code',
-  instanceChanged: 'event:instance-changed'
+  instanceChanged: 'event:instance-changed',
+  shardsChanged: 'event:shards-changed'
 } as const

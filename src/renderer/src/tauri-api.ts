@@ -101,5 +101,9 @@ export function createTauriApi(): PolarisAPI {
       const unlisten = (window as any).__TAURI__?.event?.listen('device-code', (e: any) => cb(e.payload))
       return () => { unlisten?.then((f: any) => f()) }
     },
+    onShardsChanged: (cb) => {
+      const unlisten = (window as any).__TAURI__?.event?.listen('shards-changed', () => cb())
+      return () => { unlisten?.then((f: any) => f()) }
+    },
   }
 }

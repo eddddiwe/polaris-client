@@ -1034,7 +1034,8 @@ export function createMockApi(): Window['polaris'] {
     onGameState: () => () => undefined,
     onAccountChanged: () => () => undefined,
     onAccountError: () => () => undefined,
-    onDeviceCode: () => () => undefined
+    onDeviceCode: () => () => undefined,
+    onShardsChanged: () => () => undefined
   }
 }
 
