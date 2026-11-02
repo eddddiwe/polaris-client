@@ -119,7 +119,7 @@
           <li><strong>Update and announcement checks.</strong> The launcher requests the current version. Cloudflare and GitHub process standard request metadata such as IP address, user agent, timestamp and requested URL. No account identifier is sent.</li>
           <li><strong>Friend codes.</strong> If you create or add a friend, the API stores your friend code, display name, optional Minecraft UUID, friend list and pending requests in Cloudflare KV. Your code is a public identifier, not a password: a per-account secret authenticates every read or change and is stored encrypted on your device. Knowing a code alone does not grant access. Removing a friend or responding to a request updates or deletes the relevant records.</li>
           <li><strong>Presence.</strong> If you enable presence sharing, the API stores your UUID, Minecraft name, current server address, friend code and a last-seen timestamp. The Friends page resolves those records only for people on your authenticated friend list, so it can show an accurate online badge. See the next section.</li>
-          <li><strong>Abuse prevention.</strong> When you use Friends, the API stores the last authenticated IP address for your friend-code profile for up to 30 days. It is used only to investigate abuse, is not shown to other players, and is not part of the friend or presence payload.</li>
+          <li><strong>Abuse and attack investigation.</strong> When your launcher registers or updates your friend profile — for example, when you open Friends — the API stores the most recent authenticated IP address for that profile for up to 30 days. It exists so we can investigate reported abuse and attacks, including DDoS attempts, and correlate an account with its last known network address. It is not an access log: only the latest address is kept and older values are overwritten. It is not shown to other players, is not part of the friend or presence payload, and is not used for advertising, analytics or profiling.</li>
         </ul>
         <p>
           The API does not run an analytics pipeline, does not log request bodies for advertising, and does
@@ -176,7 +176,7 @@
           <li>Local files remain until you delete them.</li>
           <li>Friend lists and pending requests update when you remove a friend; the public profile record tied to your code remains until you ask us to delete it.</li>
           <li>Presence records expire automatically after about two minutes.</li>
-          <li>The last authenticated IP for a friend-code profile expires after 30 days.</li>
+          <li>The most recent authenticated IP for a friend-code profile is overwritten on the next profile update and automatically expires after 30 days.</li>
           <li>Version-check requests are transient; we do not build a profile from them.</li>
           <li>Hosting logs are retained according to the hosting provider's policy.</li>
         </ul>
