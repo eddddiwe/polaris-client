@@ -16,6 +16,12 @@ Every change to product code, the Worker, build scripts, bundled mods, or packag
 
 Full rubric and reviewer brief: [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md).
 
+## UI and code reviewer
+
+Use the project `ui-reviewer` agent (or `/ui-review`) when the target is a launcher screen, in-game menu/HUD, component, style, or UI-facing state flow. It is read-only and returns severity-ranked `UI` and `Code` findings with exact locations and minimal fixes.
+
+This reviewer is **supplementary**. It does not replace the mandatory correctness/security gate for code changes, and it must not invent visual evidence when runtime rendering is unavailable.
+
 ## Security-sensitive areas
 
 Treat changes here as requiring the full security review:

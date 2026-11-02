@@ -44,6 +44,17 @@ Non-blocking notes
 
 Resolve blocking findings and rerun both reviewers.
 
+## 2b. UI-focused review
+
+For launcher screens, in-game menus/HUD, components, styles, or UI-facing state flows, run the project `ui-reviewer` agent or `/ui-review`. It is read-only and checks:
+
+- default, loading, empty, partial, error, offline, disabled, focus, hover and narrow-width states
+- clipping, overflow, hierarchy, contrast, touch targets, keyboard order and motion
+- the code behind the UI: stale state, races, IPC contracts, error handling and rendering cost
+- trust: no dark patterns, fake urgency, misleading badges or unsupported claims
+
+This pass is supplementary. It does not replace the correctness/security gate, and it must state when the UI was not rendered or visually verified.
+
 ## 3. Code arena
 
 Run the final diff through at least **two independent reviewer agents or models** that did not write the code. Give each the same diff and rubric. Ask for:
