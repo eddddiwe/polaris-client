@@ -217,7 +217,7 @@ is deliberately excluded so a built site (and its installer download) cannot be 
 the app.
 
 - Windows: `npm run dist:win` produces `dist/Polaris-Setup-<version>.exe` (per-user NSIS, no
-  administrator prompt, unsigned unless a certificate is configured). `dist:win:portable` retains
+  elevation prompt, unsigned unless a certificate is configured). `dist:win:portable` retains
   the old single-file portable target.
 - Linux: `npm run dist:linux` produces an AppImage. Debian packaging is not configured because it
   would require a real package homepage and maintainer email; AppImage is the supported CI path.

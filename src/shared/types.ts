@@ -210,6 +210,8 @@ export interface Settings {
   shards: number
   /** Total playtime already converted into shards. */
   shardsClaimedMs: number
+  /** Queued shard adjustments already applied locally, kept for idempotency. */
+  appliedShardGrants: string[]
 }
 
 export interface CosmeticItem {

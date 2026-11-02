@@ -65,7 +65,7 @@ npm.cmd run icons           # regenerate the PNG/ICO icon set from build/icon.sv
 
 ### Windows installer
 
-`npm.cmd run release:win` builds the NSIS installer, copies it to `site/public/downloads/Polaris-Setup.exe`, writes the SHA-256 manifest, and rebuilds `out/site`. The installer is per-user (no administrator prompt), unsigned, and registers an uninstaller in Windows Apps & features. Because it is unsigned, SmartScreen may ask you to confirm; verify the SHA-256 shown in `downloads/latest.json` first.
+`npm.cmd run release:win` builds the NSIS installer, copies it to `site/public/downloads/Polaris-Setup.exe`, writes the SHA-256 manifest, and rebuilds `out/site`. The installer is per-user (no elevation prompt), unsigned, and registers an uninstaller in Windows Apps & features. Because it is unsigned, SmartScreen may ask you to confirm; verify the SHA-256 shown in `downloads/latest.json` first.
 
 ### Linux builds
 
@@ -86,9 +86,9 @@ Without `POLARIS_HOME`, Polaris stores data in `%APPDATA%\Polaris` on Windows an
 
 Cosmetics are deliberately local-first:
 
-- Shards live in `settings.json` alongside owned items and the equipped badge/cape. There is no economy server, checkout, or way to buy shards in this build.
-- The store is a normal page with the same catalog and prices for every account; it is not a hidden admin screen.
-- The equipped badge/cape is stored in the local settings and appears next to the profile name in the launcher. Cross-player cape visibility in Minecraft requires shared infrastructure that is not part of 0.4.2; the `[P]` presence badge is available through PolarisConfig when both players enable presence sharing.
+- Shards live in `settings.json` alongside owned items and the equipped badge/cape. There is no checkout or purchase flow; queued shard adjustments apply locally at startup.
+- The store is a normal page with the same catalog and prices for every account; there is no privileged store mode.
+- The equipped badge/cape is stored in the local settings and appears next to the profile name in the launcher. Cross-player cape visibility in Minecraft requires shared infrastructure that is not part of 0.4.3; the `[P]` presence badge is available through PolarisConfig when both players enable presence sharing.
 
 Launcher appearance supports wallpaper presets, an animated aurora, direct GIF/WebP/MP4 wallpaper links, dim/blur tuning, accent colors and reduced-motion behavior. The in-game options panel is a careful writer, not a mod injector: it only edits whitelisted vanilla keys in `options.txt`, creates a timestamped backup before writing, and asks you to close the game first. In-game animated wallpapers are not faked.
 

@@ -72,6 +72,7 @@ import { PACKS, packById } from '../core/packs'
 import { detectHardware, makePlan, applyOptions, readGameUi, writeGameUi } from '../core/performance'
 import { CosmeticsService } from '../core/cosmetics'
 import { FriendStore } from '../core/friends'
+import { ShardGrantService } from '../core/shards'
 import { scanJava, inspectJava, downloadJava } from '../core/java'
 
 export class AppServices extends EventEmitter {
@@ -81,6 +82,7 @@ export class AppServices extends EventEmitter {
   readonly settingsStore = new SettingsStore(this.paths.settings, this.paths.root)
   readonly cosmetics = new CosmeticsService(this.settingsStore)
   readonly friends = new FriendStore(join(this.paths.root, 'friends.json'))
+  readonly shardGrants = new ShardGrantService()
   readonly accounts = new AccountStore(this.paths.accounts, new SafeStorageCipher())
   readonly instances: InstanceStore
   readonly downloader: Downloader
@@ -101,6 +103,9 @@ export class AppServices extends EventEmitter {
   ready: Promise<void>
   private initialized = false
   private updateInFlight: Promise<InstallUpdateResult> | null = null
+  private shardSync: Promise<void> | null = null
+  private shardSyncAccount: string | null = null
+  private shardSyncAgain = false
 
   constructor() {
     super()
@@ -176,6 +181,7 @@ export class AppServices extends EventEmitter {
         this.friends.load()
       ])
       this.logger.info('Polaris starting', { version: app.getVersion(), dataDir: this.paths.root })
+      void this.syncShardGrants()
 
       // Scan Java and detect hardware in parallel with latest release
       // Scan Java (needed for hardware detection) in parallel with latest release
@@ -194,6 +200,52 @@ export class AppServices extends EventEmitter {
       })
     } catch (error) {
       this.logger.error('Initialization failed', String(error))
+    }
+  }
+
+  /** Apply pending shard adjustments once, then acknowledge them. */
+  private syncShardGrants(): Promise<void> {
+    const account = this.accounts.activeStored()
+    if (!account?.friendCode || !account.friendSecret) return Promise.resolve()
+    if (this.shardSync) {
+      if (this.shardSyncAccount !== account.id) this.shardSyncAgain = true
+      return this.shardSync
+    }
+    const run = this.performShardSync()
+      .catch((error) => {
+        this.logger.warn('Could not apply queued shard adjustments', String(error))
+      })
+      .finally(() => {
+        this.shardSync = null
+        this.shardSyncAccount = null
+        if (this.shardSyncAgain) {
+          this.shardSyncAgain = false
+          void this.syncShardGrants()
+        }
+      })
+    this.shardSync = run
+    this.shardSyncAccount = account.id
+    return run
+  }
+
+  private async performShardSync(): Promise<void> {
+    const account = this.accounts.activeStored()
+    if (!account?.friendCode || !account.friendSecret) return
+    const auth = { code: account.friendCode, secret: account.friendSecret }
+    const grants = await this.shardGrants.pending(auth)
+    if (!grants?.length) return
+    const ackIds: string[] = []
+    for (const grant of grants) {
+      if (this.settingsStore.get().appliedShardGrants.includes(grant.id)) {
+        ackIds.push(grant.id)
+        continue
+      }
+      await this.cosmetics.applyGrant(grant.id, grant.delta)
+      ackIds.push(grant.id)
+    }
+    const acknowledged = await this.shardGrants.ack(auth, ackIds)
+    if (!acknowledged) {
+      this.logger.warn('Could not acknowledge shard adjustments; they will retry next launch')
     }
   }
 
@@ -565,6 +617,7 @@ export class AppServices extends EventEmitter {
 
   async setActiveAccount(id: string): Promise<AccountSnapshot> {
     await this.accounts.setActive(id)
+    void this.syncShardGrants()
     return this.accountSnapshot()
   }
 
@@ -577,7 +630,10 @@ export class AppServices extends EventEmitter {
     const clientId = this.settingsStore.get().msClientId || '09aa1d05-9369-4725-bdb8-a46e54149e71'
     return await this.auth.beginDeviceLogin(clientId, {
       onDeviceCode: (info) => this.emit('device-code', info),
-      onAccount: (account) => this.emit('account-changed', this.accountSnapshot()),
+      onAccount: (account) => {
+        void this.syncShardGrants()
+        this.emit('account-changed', this.accountSnapshot())
+      },
       onError: (message) => this.emit('account-error', message)
     })
   }

@@ -57,6 +57,19 @@ export class CosmeticsService {
     )
   }
 
+  /** Apply one queued shard adjustment exactly once. Returns the actual delta. */
+  async applyGrant(id: string, delta: number): Promise<number> {
+    const current = this.settings.get()
+    if (!id || current.appliedShardGrants.includes(id)) return 0
+    const next = Math.min(1_000_000_000, Math.max(0, Math.round(current.shards + delta)))
+    const applied = next - current.shards
+    await this.settings.update({
+      shards: next,
+      appliedShardGrants: [...current.appliedShardGrants, id].slice(-500)
+    })
+    return applied
+  }
+
   /** Convert unclaimed playtime into shards. Returns the amount granted. */
   async claim(totalPlaytimeMs: number): Promise<number> {
     const current = this.settings.get()

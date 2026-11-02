@@ -184,7 +184,8 @@ let settings: Settings = {
   equippedBadge: 'badge-aurora',
   equippedCape: 'cape-aurora',
   shards: 780,
-  shardsClaimedMs: 0
+  shardsClaimedMs: 0,
+  appliedShardGrants: []
 }
 
 let mockGameUi: GameUiOptions = {

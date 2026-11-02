@@ -33,7 +33,8 @@ export function defaultSettings(root: string): Settings {
     equippedBadge: DEFAULT_BADGE,
     equippedCape: DEFAULT_CAPE,
     shards: STARTER_SHARDS,
-    shardsClaimedMs: 0
+    shardsClaimedMs: 0,
+    appliedShardGrants: []
   }
 }
 
@@ -91,7 +92,10 @@ export function normalizeSettings(input: Settings, root: string): Settings {
     equippedBadge: badge?.kind === 'badge' && owned.includes(badge.id) ? badge.id : DEFAULT_BADGE,
     equippedCape: cape?.kind === 'cape' && owned.includes(cape.id) ? cape.id : DEFAULT_CAPE,
     shards: clamp(input.shards, 0, 1_000_000_000),
-    shardsClaimedMs: clamp(input.shardsClaimedMs, 0, Number.MAX_SAFE_INTEGER)
+    shardsClaimedMs: clamp(input.shardsClaimedMs, 0, Number.MAX_SAFE_INTEGER),
+    appliedShardGrants: Array.isArray(input.appliedShardGrants)
+      ? [...new Set(input.appliedShardGrants.filter((id) => typeof id === 'string'))].slice(-500)
+      : []
   }
 }
 

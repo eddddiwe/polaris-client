@@ -162,6 +162,34 @@ describe('Polaris Worker auth', () => {
     expect(strangerPresence.presence).toEqual({})
   })
 
+  it('returns and acknowledges authenticated shard grants', async () => {
+    const grantId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    await kv.put(
+      `shard:${ALICE}:${grantId}`,
+      JSON.stringify({ delta: 75, reason: 'test grant', createdAt: Date.now() })
+    )
+    const pending = await (await call('/v1/shards/pending', {
+      code: ALICE,
+      secret: ALICE_SECRET
+    })).json()
+    expect(pending.grants).toEqual([
+      expect.objectContaining({ id: grantId, delta: 75, reason: 'test grant' })
+    ])
+
+    const ack = await call('/v1/shards/ack', {
+      method: 'POST',
+      code: ALICE,
+      secret: ALICE_SECRET,
+      body: { ids: [grantId] }
+    })
+    expect(ack.status).toBe(200)
+    const empty = await (await call('/v1/shards/pending', {
+      code: ALICE,
+      secret: ALICE_SECRET
+    })).json()
+    expect(empty.grants).toEqual([])
+  })
+
   it('removes a friendship from both lists when authenticated', async () => {
     const remove = await call('/v1/friends/remove-mutual', {
       method: 'POST',

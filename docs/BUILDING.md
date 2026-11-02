@@ -43,7 +43,7 @@ dist/Polaris-Setup-0.3.1.exe.blockmap
 dist/win-unpacked/
 ```
 
-The installer is **per-user**: it does not need an administrator prompt, it lets the user choose
+The installer is **per-user**: it does not need an elevation prompt, it lets the user choose
 a folder, and it creates desktop and Start menu shortcuts. It is **unsigned** unless you supply a
 Windows code-signing certificate, so SmartScreen may warn. Do not tell users a build is signed
 when it is not.

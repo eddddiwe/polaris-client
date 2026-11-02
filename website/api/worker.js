@@ -16,11 +16,14 @@
 //   POST /v1/friends/respond          (authenticated)
 //   POST /v1/friends/remove-mutual    (authenticated)
 //   GET  /v1/friends/requests         (authenticated)
+//   GET  /v1/shards/pending           (authenticated; queued adjustments)
+//   POST /v1/shards/ack               (authenticated; acknowledge applied grants)
 
 const REPO = 'eddddiwe/polaris-client'
 const FRIEND_CODE_RE = /^POLARIS-[A-Z0-9]{4}-[A-Z0-9]{4}$/
 const SECRET_RE = /^[A-Za-z0-9_-]{32,128}$/
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const SHARD_ID_RE = /^[0-9a-f-]{36}$/i
 const MAX_FRIENDS = 200
 const MAX_PENDING = 100
 const REQUEST_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -423,6 +426,48 @@ export default {
       // Every remaining friends endpoint requires valid credentials.
       const auth = await authenticate(kv, request)
       if (!auth) return fail(401, 'Authentication required')
+
+      if (path === '/v1/shards/pending' && request.method === 'GET') {
+        limitOrThrow(request, 'shards-pending', 30, 60_000)
+        const prefix = `shard:${auth.code}:`
+        const listed = await kv.list({ prefix, limit: 100 })
+        const grants = []
+        for (const entry of listed.keys || []) {
+          const id = entry.name.slice(prefix.length)
+          if (!SHARD_ID_RE.test(id)) continue
+          const raw = await kv.get(entry.name)
+          if (!raw) continue
+          let value
+          try {
+            value = JSON.parse(raw)
+          } catch {
+            continue
+          }
+          const delta = Number(value?.delta)
+          if (!Number.isFinite(delta) || delta === 0) continue
+          grants.push({
+            id,
+            delta: Math.max(-1_000_000, Math.min(1_000_000, Math.round(delta))),
+            reason: cleanText(value?.reason, 120),
+            createdAt: Number(value?.createdAt) || 0
+          })
+        }
+        grants.sort((a, b) => a.createdAt - b.createdAt)
+        return json({ grants })
+      }
+
+      if (path === '/v1/shards/ack' && request.method === 'POST') {
+        limitOrThrow(request, 'shards-ack', 30, 60_000)
+        const body = await readJson(request)
+        const ids = Array.isArray(body.ids) ? body.ids : []
+        if (ids.length > 100) return fail(400, 'Too many grants')
+        for (const value of ids) {
+          const id = String(value || '')
+          if (!SHARD_ID_RE.test(id)) continue
+          await kv.delete(`shard:${auth.code}:${id}`)
+        }
+        return json({ ok: true })
+      }
 
       if (path === '/v1/friends/list' && request.method === 'GET') {
         limitOrThrow(request, 'friends-list', 120, 60_000)
