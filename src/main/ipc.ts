@@ -66,6 +66,7 @@ export function registerIpc(services: AppServices): void {
     } else {
       const stored = services.accounts.activeStored()
       if (stored?.friendCode) await services.friends.useAccount(stored.friendCode)
+      else await services.friends.clear()
     }
     return services.friends.list()
   })
@@ -79,9 +80,9 @@ export function registerIpc(services: AppServices): void {
       // removeMutual decide whether the server error must be shown.
       await services.friends.useAccount(account.code)
     }
-    await services.friends.removeMutual(account, friendCode)
-    await services.friends.syncFromServer(account)
-    return services.friends.list()
+    const result = await services.friends.removeMutual(account, friendCode)
+    if (result.synced) await services.friends.syncFromServer(account)
+    return { friends: services.friends.list(), synced: result.synced }
   })
   handle(IPC.friendsRequest, async (code: string) => {
     const account = activeFriendAccount()
@@ -107,12 +108,12 @@ export function registerIpc(services: AppServices): void {
   })
   handle(IPC.friendsPresence, async (uuids: string[]) => {
     const account = activeFriendAccount()
-    if (!account) return {}
+    if (!account) return null
     try {
       await registerFriendAccount(account)
     } catch {
       // Presence is optional; an offline check must not break the friend list.
-      return {}
+      return null
     }
     return services.friends.presence(account, uuids)
   })

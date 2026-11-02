@@ -45,6 +45,13 @@ export class FriendStore {
     await this.save()
   }
 
+  async clear(): Promise<void> {
+    if (!this.data.owner && this.data.friends.length === 0) return
+    // Drop the owner as well: the next account must establish a fresh scope.
+    this.data = { friends: [] }
+    await this.save()
+  }
+
   private headers(auth: FriendAuth): Record<string, string> {
     return {
       'Content-Type': 'application/json',
@@ -97,7 +104,8 @@ export class FriendStore {
     }
   }
 
-  async removeMutual(auth: FriendAuth, friendCode: string): Promise<void> {
+  async removeMutual(auth: FriendAuth, friendCode: string): Promise<{ synced: boolean }> {
+    let synced = false
     try {
       const res = await fetch(`${WORKER_BASE}/v1/friends/remove-mutual`, {
         method: 'POST',
@@ -109,6 +117,7 @@ export class FriendStore {
         const data = (await res.json().catch(() => null)) as { error?: string } | null
         throw new Error(data?.error || `Could not remove friend (${res.status})`)
       }
+      synced = true
     } catch (error) {
       // Offline removals are local-only. A server rejection must be shown,
       // otherwise the local and server graphs silently diverge.
@@ -118,6 +127,7 @@ export class FriendStore {
     }
     this.data.friends = this.data.friends.filter((f) => f.code !== friendCode)
     await this.save()
+    return { synced }
   }
 
   async sendRequest(auth: FriendAuth, friendCode: string): Promise<void> {
@@ -174,7 +184,7 @@ export class FriendStore {
   async presence(
     auth: FriendAuth,
     uuids: string[]
-  ): Promise<Record<string, { server: string; lastSeen: number }>> {
+  ): Promise<Record<string, { server: string; lastSeen: number }> | null> {
     const unique = Array.from(
       new Set(uuids.map((uuid) => uuid.trim().toLowerCase()).filter(Boolean))
     ).slice(0, 100)
@@ -184,10 +194,12 @@ export class FriendStore {
         `${WORKER_BASE}/v1/presence/friends?uuids=${encodeURIComponent(unique.join(','))}`,
         { headers: this.headers(auth), signal: AbortSignal.timeout(8000) }
       )
-      if (!res.ok) return {}
+      if (!res.ok) return null
       const data = (await res.json()) as { presence?: unknown }
+      if (!data.presence || typeof data.presence !== 'object' || Array.isArray(data.presence)) {
+        return null
+      }
       const presence: Record<string, { server: string; lastSeen: number }> = {}
-      if (!data.presence || typeof data.presence !== 'object') return presence
       for (const [uuid, value] of Object.entries(data.presence)) {
         if (!value || typeof value !== 'object') continue
         const entry = value as { server?: unknown; lastSeen?: unknown }
@@ -199,7 +211,7 @@ export class FriendStore {
       }
       return presence
     } catch {
-      return {}
+      return null
     }
   }
 

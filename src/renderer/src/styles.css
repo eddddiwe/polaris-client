@@ -7844,8 +7844,11 @@ input[type='range']:focus-visible::-webkit-slider-thumb {
 }
 
 .friend-info strong {
+  overflow: hidden;
   font-size: 13px;
   color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .friend-code-small {
