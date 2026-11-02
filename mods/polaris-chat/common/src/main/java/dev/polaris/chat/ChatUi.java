@@ -2,267 +2,361 @@ package dev.polaris.chat;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
-/** Version-independent chat screen layout, drawing and hit testing. */
+/**
+ * Chat screen styled like the bundled PolarisConfig menu: centred panel,
+ * header mark and version pill, dark sidebar, card rows, accent pills and a
+ * footer action bar.
+ */
 public final class ChatUi {
     public enum Action {
-        NONE, CLOSE, SELECT, SEND, REFRESH, RETRY
+        NONE, CLOSE, SELECT, SEND, REFRESH
     }
 
     public record Hit(Action action, String code) {
         public static final Hit NONE = new Hit(Action.NONE, null);
     }
 
-    private static final int BACKDROP = 0xE0060812;
-    private static final int PANEL = 0xF00B0D16;
-    private static final int PANEL_2 = 0xFF121522;
-    private static final int PANEL_3 = 0xFF171A29;
-    private static final int LINE = 0xFF2B2647;
+    record Row(String code, int x1, int y1, int x2, int y2) {
+    }
+
+    record Rect(int x, int y, int w, int h) {
+        boolean inside(int mx, int my) {
+            return mx >= x && mx < x + w && my >= y && my < y + h;
+        }
+
+        int centerX() {
+            return x + w / 2;
+        }
+
+        int centerY() {
+            return y + h / 2;
+        }
+    }
+
+    // PolarisConfig palette (same values as the shipped mod).
+    private static final int BACKDROP = 0xFF03040A;
+    private static final int PANEL = 0xFF0D0F18;
+    private static final int PANEL_HI = 0xFF161B2B;
+    private static final int SIDEBAR = 0xFF080A12;
+    private static final int CARD = 0x10FFFFFF;
+    private static final int CARD_HOVER = 0x1AFFFFFF;
+    private static final int HAIRLINE = 0x24FFFFFF;
     private static final int TEXT = 0xFFEEF0FA;
-    private static final int MUTED = 0xFF9AA3BE;
-    private static final int DIM = 0xFF6F7894;
+    private static final int MUTED = 0xFF8C95B1;
+    private static final int DIM = 0xFF8A93AD;
     private static final int ACCENT = 0xFFB4A0FF;
-    private static final int ACCENT_SOFT = 0xFF2A2447;
-    private static final int CYAN = 0xFF38E8FF;
+    private static final int ACCENT_SOFT = 0xFF38E8FF;
+    private static final int CYAN = 0xFF22D3EE;
     private static final int GOOD = 0xFF4ADE80;
     private static final int WARN = 0xFFFBBF24;
-    private static final int BAD = 0xFFF87171;
+    private static final int BAD = 0xFFFF6B81;
     private static final int DARK_TEXT = 0xFF07101A;
 
-    private static final int ROW_HEIGHT = 30;
-    private static final int LINE_HEIGHT = 11;
+    private static final String[] MARK = {
+            "...##...", "..####..", ".######.", "########",
+            ".######.", "..####..", ".##..##.", "........"
+    };
+    private static final String[] CHAT_ICON = {
+            "..####..", ".######.", "########", "########",
+            "########", ".######.", "..####..", "...##..."
+    };
 
-    private int listX;
-    private int listY;
-    private int listW;
-    private int listH;
-    private int messagesX;
-    private int messagesY;
-    private int messagesW;
-    private int messagesH;
-    private int composerX;
-    private int composerY;
-    private int composerW;
-    private int composerH;
-    private int closeX;
-    private int closeY;
-    private int closeW = 18;
-    private int closeH = 18;
-    private int refreshX;
-    private int refreshY;
-    private int refreshW;
-    private int refreshH;
-    private int sendX;
-    private int sendY;
-    private int sendW = 54;
-    private int sendH = 22;
-    private int olderX;
-    private int olderY;
-    private int olderW;
-    private int olderH;
-    private int newerX;
-    private int newerY;
-    private int newerW;
-    private int newerH;
+    private static final int BASE_WIDTH = 820;
+    private static final int BASE_HEIGHT = 520;
 
     private final List<Row> rows = new ArrayList<>();
-    private List<Line> cachedLines = List.of();
+    private List<Card> cachedCards = List.of();
     private String cachedCode;
     private int cachedCount = -1;
     private String cachedLastId = "";
     private int cachedWidth = -1;
+
+    private int panelX;
+    private int panelY;
+    private int panelW;
+    private int panelH;
+    private boolean compact;
+    private float scale = 1f;
+
+    private int sidebarX;
+    private int sidebarY;
+    private int sidebarW;
+    private int sidebarH;
+    private int contentX;
+    private int contentY;
+    private int contentW;
+    private int contentH;
+
+    private Rect closeButton = new Rect(0, 0, 0, 0);
+    private Rect refreshButton = new Rect(0, 0, 0, 0);
+    private Rect sendButton = new Rect(0, 0, 0, 0);
+    private Rect olderButton = new Rect(0, 0, 0, 0);
+    private Rect newerButton = new Rect(0, 0, 0, 0);
+    private Rect messagesBox = new Rect(0, 0, 0, 0);
+    private Rect sidebarBox = new Rect(0, 0, 0, 0);
+
     private int listOffset;
     private int maxListOffset;
     private int pageOffset;
     private int maxPage;
-    private int visibleLines;
 
-    private record Row(String code, int x1, int y1, int x2, int y2) {
-    }
-
-    private record Line(String text, int color) {
+    record Card(int top, int height, String name, int nameColor, String time, List<String> text) {
     }
 
     public void render(Paint paint, PolarisChat chat, ChatInput input, int width, int height,
                        int mouseX, int mouseY, long now) {
-        paint.fill(0, 0, width, height, BACKDROP);
+        // Minecraft's GUI scale already handles DPI. Clamp the panel to the
+        // logical screen instead of shrinking the text, like PolarisConfig.
+        scale = 1f;
+        panelW = Math.min(width - 12, BASE_WIDTH);
+        panelH = Math.min(height - 8, BASE_HEIGHT);
+        panelX = (width - panelW) / 2;
+        panelY = (height - panelH) / 2;
 
-        int margin = Math.max(14, Math.min(36, width / 40));
-        int panelX = margin;
-        int panelY = margin;
-        int panelW = width - margin * 2;
-        int panelH = height - margin * 2;
-        paint.fill(panelX, panelY, panelX + panelW, panelY + panelH, PANEL);
-        paint.fill(panelX, panelY, panelX + panelW, panelY + 1, LINE);
-        paint.fill(panelX, panelY + panelH - 1, panelX + panelW, panelY + panelH, LINE);
-        paint.fill(panelX, panelY, panelX + 1, panelY + panelH, LINE);
-        paint.fill(panelX + panelW - 1, panelY, panelX + panelW, panelY + panelH, LINE);
+        paint.fill(0, 0, width, height, withAlpha(BACKDROP, 216));
+        roundRect(paint, panelX - 2, panelY - 2, panelW + 4, panelH + 4, radius(14), withAlpha(ACCENT, 35));
+        roundRect(paint, panelX, panelY, panelW, panelH, radius(13), withAlpha(PANEL, 246));
+        roundRectOutline(paint, panelX, panelY, panelW, panelH, radius(13), withAlpha(ACCENT, 48));
 
-        int headerH = 42;
-        paint.fill(panelX + 14, panelY + 14, panelX + 26, panelY + 26, ACCENT);
-        paint.text("POLARIS CHAT", panelX + 32, panelY + 17, ACCENT);
+        compact = panelH < 320;
+        int headerH = size(compact ? 48 : 60);
+        int footerH = size(compact ? 32 : 48);
+        int sideW = Math.min(size(204), Math.max(size(132), panelW / 4));
+        sidebarX = panelX;
+        sidebarY = panelY + headerH;
+        sidebarW = sideW;
+        sidebarH = panelH - headerH - footerH;
+        contentX = panelX + sidebarW + size(18);
+        contentY = panelY + headerH + size(compact ? 6 : 14);
+        contentW = panelX + panelW - contentX - size(18);
+        contentH = panelH - headerH - footerH - size(28);
 
-        closeX = panelX + panelW - 28;
-        closeY = panelY + 12;
-        paint.text("X", closeX + 5, closeY + 4, MUTED);
-        refreshW = paint.width("Refresh");
-        refreshX = closeX - refreshW - 16;
-        refreshY = panelY + 12;
-        refreshH = 16;
-        paint.text("Refresh", refreshX, refreshY + 4, MUTED);
+        drawHeader(paint, chat, width, height, mouseX, mouseY, headerH);
+        drawSidebar(paint, chat, mouseX, mouseY);
+        drawFooter(paint, chat, mouseX, mouseY, footerH);
+        drawContent(paint, chat, input, mouseX, mouseY, now);
+    }
 
-        String status = chat.status();
-        String statusText = switch (status) {
-            case "live" -> "Live";
-            case "connecting" -> "Connecting";
-            case "unavailable" -> "Sign in";
-            default -> "Offline";
-        };
-        int statusColor = switch (status) {
-            case "live" -> GOOD;
-            case "connecting" -> WARN;
-            case "unavailable" -> BAD;
-            default -> DIM;
-        };
-        int statusW = paint.width(statusText);
-        int statusX = refreshX - statusW - 16;
-        paint.fill(statusX, panelY + 18, statusX + 6, panelY + 24, statusColor);
-        paint.text(statusText, statusX + 10, panelY + 17, statusColor);
+    // ------------------------------------------------------------------ header
 
-        int bodyY = panelY + headerH;
-        int bodyH = panelH - headerH;
+    private void drawHeader(Paint paint, PolarisChat chat, int width, int height, int mouseX, int mouseY,
+                            int headerH) {
+        int x = panelX + size(18);
+        int y = panelY + size(16);
+        drawIcon(paint, x, y + size(1), size(18), MARK, ACCENT);
 
-        listX = panelX + 12;
-        listY = bodyY;
-        listW = Math.max(180, Math.min(250, panelW / 3));
-        listH = bodyH - 12;
-        paint.fill(listX, listY, listX + listW, listY + listH, PANEL_3);
-        paint.text("FRIENDS", listX + 10, listY + 9, DIM);
-        if (!chat.friends().isEmpty()) {
-            paint.text(String.valueOf(chat.friends().size()), listX + listW - 24, listY + 9, DIM);
+        int titleX = x + size(28);
+        paint.text("Polaris Chat", titleX, y + size(2), TEXT);
+        int titleW = paint.width("Polaris Chat");
+
+        String version = "v1.0.0";
+        int pillH = size(13);
+        int pillW = paint.width(version) + size(12);
+        int pillX = titleX + titleW + size(9);
+        int pillY = y - size(1);
+        pill(paint, pillX, pillY, pillW, pillH, withAlpha(0xFFFFFF, 16));
+        pillOutline(paint, pillX, pillY, pillW, pillH, withAlpha(ACCENT, 58));
+        paint.centered(version, pillX + pillW / 2, pillY + size(3), ACCENT_SOFT);
+
+        String key = "F9";
+        String label = "CHAT KEY";
+        int keyW = Math.max(paint.width(key), paint.width(label)) + size(18);
+        int keyH = size(28);
+        int keyX = panelX + panelW - size(18) - keyW;
+        paint.text(fit(paint, "Friend messages - 30-day history",
+                keyX - titleX - size(10)), titleX, y + size(17), DIM);
+        int keyY = panelY + size(14);
+        boolean keyHover = mouseX >= keyX && mouseX < keyX + keyW && mouseY >= keyY && mouseY < keyY + keyH;
+        pill(paint, keyX, keyY, keyW, keyH, withAlpha(0xFFFFFF, keyHover ? 24 : 12));
+        pillOutline(paint, keyX, keyY, keyW, keyH, withAlpha(ACCENT, keyHover ? 100 : 50));
+        paint.centered(label, keyX + keyW / 2, keyY + size(4), DIM);
+        paint.centered(key, keyX + keyW / 2, keyY + size(14), TEXT);
+
+        fadeLine(paint, panelX + size(18), panelY + headerH - 1, panelW - size(36), size(1),
+                withAlpha(ACCENT, 90));
+    }
+
+    // ----------------------------------------------------------------- sidebar
+
+    private void drawSidebar(Paint paint, PolarisChat chat, int mouseX, int mouseY) {
+        roundRect(paint, sidebarX, sidebarY, sidebarW, sidebarH, radius(12), withAlpha(SIDEBAR, 236));
+        // Soft gradient divider on the sidebar edge, like PolarisConfig.
+        int segments = 14;
+        for (int i = 0; i < segments; i++) {
+            float t = (float) i / (segments - 1);
+            float a = (float) Math.sin(Math.PI * t) * 0.55f;
+            int top = sidebarY + Math.round((float) sidebarH * i / segments);
+            int h = Math.max(1, sidebarH / segments + 1);
+            paint.fill(sidebarX + sidebarW - 1, top, sidebarX + sidebarW, top + h,
+                    withAlpha(0xFF8B5CF6, Math.round(120 * a)));
         }
-        paint.fill(listX + 8, listY + 22, listX + listW - 8, listY + 23, LINE);
+
+        paint.text("CHATS", sidebarX + size(18), sidebarY + size(12), DIM);
+
+        sidebarBox = new Rect(sidebarX + size(8), sidebarY + size(26),
+                sidebarW - size(16), sidebarH - size(26) - size(compact ? 50 : 58));
 
         rows.clear();
-        int rowTop = listY + 26;
-        int visibleRows = Math.max(1, (listH - 30) / ROW_HEIGHT);
-        maxListOffset = Math.max(0, chat.friends().size() - visibleRows);
-        listOffset = clamp(listOffset, 0, maxListOffset);
+        int rowH = size(32);
+        int rowX = sidebarX + size(10);
+        int rowW = sidebarW - size(20);
+        int rowTop = sidebarY + size(28);
+        int visible = Math.max(1, sidebarBox.h / rowH);
         List<Friend> friends = chat.friends();
+        maxListOffset = Math.max(0, friends.size() - visible);
+        listOffset = clamp(listOffset, 0, maxListOffset);
+
         if (friends.isEmpty()) {
-            paint.text("No friends yet.", listX + 10, rowTop + 4, DIM);
-            paint.text("Add them in the launcher.", listX + 10, rowTop + 16, DIM);
+            paint.text("No friends yet.", rowX + size(4), rowTop + size(6), DIM);
+            paint.text("Add them in the launcher.", rowX + size(4), rowTop + size(19), DIM);
         } else {
-            for (int i = 0; i < visibleRows; i++) {
+            for (int i = 0; i < visible; i++) {
                 int index = i + listOffset;
                 if (index >= friends.size()) break;
                 Friend friend = friends.get(index);
-                int y = rowTop + i * ROW_HEIGHT;
+                int y = rowTop + i * rowH;
                 boolean active = friend.code().equals(chat.selected());
-                boolean hover = mouseX >= listX + 6 && mouseX <= listX + listW - 6
-                        && mouseY >= y && mouseY < y + ROW_HEIGHT - 2;
-                int rowColor = active ? ACCENT_SOFT : hover ? PANEL_2 : PANEL_3;
-                paint.fill(listX + 6, y, listX + listW - 6, y + ROW_HEIGHT - 2, rowColor);
-                int nameColor = active ? TEXT : MUTED;
-                paint.text(fit(paint, friend.name(), listW - 56), listX + 12, y + 6, nameColor);
-                int count = chat.unread(friend.code());
-                if (count > 0) {
-                    String label = count > 99 ? "99+" : String.valueOf(count);
-                    paint.text(label, listX + listW - 18 - paint.width(label), y + 6, CYAN);
+                boolean hover = mouseX >= rowX && mouseX < rowX + rowW && mouseY >= y && mouseY < y + rowH - size(3);
+                float t = active ? 1f : hover ? 0.55f : 0f;
+                if (t > 0f) {
+                    roundRect(paint, rowX, y, rowW, rowH - size(3), radius(9),
+                            active ? withAlpha(mix(ACCENT, PANEL, 0.8f), 225) : withAlpha(0xFFFFFF, 13));
+                    if (active) {
+                        roundRect(paint, rowX + size(3), y + size(9), size(3), rowH - size(21),
+                                size(1), ACCENT);
+                        roundRectOutline(paint, rowX + size(2), y + size(8), size(5), rowH - size(19),
+                                size(2), withAlpha(ACCENT, 60));
+                    }
                 }
-                paint.text(fit(paint, friend.code(), listW - 24), listX + 12, y + 17, DIM);
-                rows.add(new Row(friend.code(), listX + 6, y, listX + listW - 6, y + ROW_HEIGHT - 2));
-            }
-            if (maxListOffset > 0) {
-                paint.text("scroll", listX + listW - 46, listY + listH - 12, DIM);
+                int iconColor = active ? ACCENT : mix(DIM, TEXT, 0.35f + 0.45f * t);
+                drawIcon(paint, rowX + size(10), y + (rowH - size(8)) / 2 - size(2), size(8), CHAT_ICON, iconColor);
+                int nameColor = active ? TEXT : mix(MUTED, TEXT, t);
+                int unread = chat.unread(friend.code());
+                int textW = rowW - size(16) - (unread > 0 ? size(28) : 0);
+                boolean showCode = sidebarW >= size(180);
+                int nameY = showCode ? y + size(7) : y + size(11);
+                paint.text(fit(paint, friend.name(), textW), rowX + size(24), nameY, nameColor);
+                if (showCode) {
+                    paint.text(fit(paint, friend.code(), rowW - size(16)),
+                            rowX + size(24), y + size(18), DIM);
+                }
+
+                if (unread > 0) {
+                    String badge = unread > 99 ? "99+" : String.valueOf(unread);
+                    int badgeW = paint.width(badge) + size(8);
+                    int badgeH = size(12);
+                    int badgeX = rowX + rowW - badgeW - size(7);
+                    int badgeY = y + (rowH - size(3) - badgeH) / 2;
+                    pill(paint, badgeX, badgeY, badgeW, badgeH, withAlpha(ACCENT_SOFT, 210));
+                    paint.centered(badge, badgeX + badgeW / 2, badgeY + size(3), DARK_TEXT);
+                }
+                rows.add(new Row(friend.code(), rowX, y, rowX + rowW, y + rowH - size(3)));
             }
         }
 
-        int threadX = listX + listW + 12;
-        int threadW = panelX + panelW - 12 - threadX;
-        String selected = chat.selected();
-        Friend selectedFriend = null;
-        for (Friend friend : friends) {
-            if (friend.code().equals(selected)) selectedFriend = friend;
-        }
+        int footerH = size(compact ? 18 : 20);
+        int footerX = sidebarX + size(12);
+        int footerY = sidebarY + sidebarH - size(compact ? 44 : 52);
+        int footerW = sidebarW - size(24);
+        pill(paint, footerX, footerY, footerW, footerH, withAlpha(0xFFFFFF, 12));
+        pillOutline(paint, footerX, footerY, footerW, footerH, withAlpha(0xFF8B5CF6, 46));
+        circle(paint, footerX + size(10), footerY + footerH / 2, size(4), withAlpha(ACCENT, 220));
+        paint.text("Polaris Client", footerX + size(20), footerY + size(6), MUTED);
+        paint.text("In-game chat", footerX + size(2), footerY + footerH + size(6), DIM);
+    }
 
-        paint.fill(listX + listW, bodyY, listX + listW + 1, bodyY + listH, LINE);
+    // ----------------------------------------------------------------- content
 
-        composerH = 30;
-        composerY = panelY + panelH - 26 - composerH;
-        composerX = threadX + 4;
-        composerW = threadW - 8 - sendW - 8;
-        messagesX = threadX + 6;
-        messagesY = bodyY + 34;
-        messagesW = threadW - 16;
-        messagesH = composerY - messagesY - 22;
-        visibleLines = Math.max(1, messagesH / LINE_HEIGHT);
-
-        if (selectedFriend == null) {
-            paint.centered("Select a friend", threadX + threadW / 2, bodyY + 40, MUTED);
-            paint.centered("Your chats stay between the two of you.", threadX + threadW / 2, bodyY + 54, DIM);
-            drawStatusNote(paint, chat, threadX, bodyY, threadW);
+    private void drawContent(Paint paint, PolarisChat chat, ChatInput input, int mouseX, int mouseY, long now) {
+        String status = chat.status();
+        if ("unavailable".equals(status)) {
+            paint.centered("Chat is unavailable", contentX + contentW / 2, contentY + size(42), WARN);
+            paint.centered("Launch Minecraft from Polaris with a Microsoft account.",
+                    contentX + contentW / 2, contentY + size(58), DIM);
             return;
         }
 
-        paint.text(selectedFriend.name(), threadX + 4, bodyY + 8, TEXT);
-        paint.text(selectedFriend.code(), threadX + 4, bodyY + 20, DIM);
+        String selected = chat.selected();
+        Friend friend = null;
+        for (Friend item : chat.friends()) {
+            if (item.code().equals(selected)) friend = item;
+        }
+        if (friend == null) {
+            paint.centered("Select a conversation", contentX + contentW / 2, contentY + size(42), MUTED);
+            paint.centered("Choose a friend on the left to start chatting.",
+                    contentX + contentW / 2, contentY + size(58), DIM);
+            return;
+        }
 
-        int threadRight = threadX + threadW;
-        String older = "Older";
-        String newer = "Newer";
-        olderW = paint.width(older);
-        newerW = paint.width(newer);
-        olderX = threadRight - olderW - 4;
-        olderY = bodyY + 8;
-        olderH = 10;
-        newerX = olderX - newerW - 12;
-        newerY = bodyY + 8;
-        newerH = 10;
-        if (pageOffset < maxPage) paint.text(older, olderX, olderY, ACCENT);
-        if (pageOffset > 0) paint.text(newer, newerX, newerY, ACCENT);
+        paint.text(friend.name(), contentX, contentY + size(2), TEXT);
+        int codeW = paint.width(friend.code()) + size(12);
+        pill(paint, contentX, contentY + size(14), codeW, size(13), withAlpha(0xFFFFFF, 10));
+        pillOutline(paint, contentX, contentY + size(14), codeW, size(13), withAlpha(ACCENT, 40));
+        paint.text(friend.code(), contentX + size(6), contentY + size(17), DIM);
 
-        List<Line> lines = buildLines(paint, chat, selected, messagesW);
-        maxPage = Math.max(0, lines.size() - visibleLines);
+        int olderW = paint.width("Older") + size(16);
+        int newerW = paint.width("Newer") + size(16);
+        int navY = contentY + size(2);
+        int navH = size(16);
+        olderButton = new Rect(contentX + contentW - olderW, navY, olderW, navH);
+        newerButton = new Rect(olderButton.x() - newerW - size(6), navY, newerW, navH);
+        if (pageOffset < maxPage) {
+            pill(paint, olderButton.x(), olderButton.y(), olderButton.w(), olderButton.h(),
+                    withAlpha(0xFFFFFF, 10));
+            pillOutline(paint, olderButton.x(), olderButton.y(), olderButton.w(), olderButton.h(), HAIRLINE);
+            paint.centered("Older", olderButton.centerX(), olderButton.y() + size(4), ACCENT);
+        }
+        if (pageOffset > 0) {
+            pill(paint, newerButton.x(), newerButton.y(), newerButton.w(), newerButton.h(),
+                    withAlpha(0xFFFFFF, 10));
+            pillOutline(paint, newerButton.x(), newerButton.y(), newerButton.w(), newerButton.h(), HAIRLINE);
+            paint.centered("Newer", newerButton.centerX(), newerButton.y() + size(4), ACCENT);
+        }
+
+        int composerH = size(compact ? 24 : 30);
+        int composerY = panelY + panelH - size(compact ? 32 : 48) - size(compact ? 8 : 18) - composerH;
+        int composerW = contentW - size(62);
+        int messagesY = contentY + size(compact ? 24 : 34);
+        int messagesH = composerY - messagesY - size(compact ? 4 : 10);
+        messagesBox = new Rect(contentX, messagesY, contentW, messagesH);
+
+        List<Card> cards = buildCards(paint, chat, selected, contentW);
+        int total = cards.isEmpty() ? 0 : cards.get(cards.size() - 1).top() + cards.get(cards.size() - 1).height();
+        maxPage = Math.max(0, total - messagesH);
         pageOffset = clamp(pageOffset, 0, maxPage);
-        int end = Math.max(0, lines.size() - pageOffset);
-        int start = Math.max(0, end - visibleLines);
-        int y = messagesY;
-        if (lines.isEmpty()) {
-            if (chat.isLoading(selected)) {
-                paint.text("Loading messages...", messagesX, messagesY + 4, DIM);
-            } else {
-                paint.text("No messages yet. Say hello.", messagesX, messagesY + 4, DIM);
-            }
+        int windowTop = total - pageOffset - messagesH;
+        int windowBottom = total - pageOffset;
+
+        if (chat.isLoading(selected) && cards.isEmpty()) {
+            paint.text("Loading messages...", contentX, messagesY + size(4), DIM);
+        } else if (cards.isEmpty()) {
+            paint.text("No messages yet. Say hello.", contentX, messagesY + size(4), DIM);
         } else {
-            for (int i = start; i < end; i++) {
-                Line line = lines.get(i);
-                paint.text(fit(paint, line.text(), messagesW), messagesX, y, line.color());
-                y += LINE_HEIGHT;
+            for (Card card : cards) {
+                if (card.top() < windowTop || card.top() + card.height() > windowBottom) continue;
+                drawCard(paint, card, contentX, messagesY + card.top() - windowTop, contentW);
             }
         }
 
+        int hintY = composerY - size(14);
         String typing = chat.typingName(selected);
-        int hintY = composerY - 14;
         if (typing != null) {
-            paint.text(typing + " is typing...", messagesX, hintY, CYAN);
+            paint.text(typing + " is typing...", contentX, hintY, ACCENT_SOFT);
         } else if (!chat.error().isEmpty()) {
-            paint.text(fit(paint, chat.error(), messagesW), messagesX, hintY, BAD);
+            paint.text(fit(paint, chat.error(), contentW), contentX, hintY, BAD);
         }
 
-        paint.fill(composerX, composerY, composerX + composerW, composerY + composerH, PANEL_2);
-        paint.fill(composerX, composerY, composerX + composerW, composerY + 1, LINE);
-        paint.fill(composerX, composerY + composerH - 1, composerX + composerW, composerY + composerH, LINE);
+        roundRect(paint, contentX, composerY, composerW, composerH, radius(9), CARD);
+        roundRectOutline(paint, contentX, composerY, composerW, composerH, radius(9), HAIRLINE);
+        int textX = contentX + size(8);
+        int textY = composerY + size(compact ? 8 : 10);
+        int textW = composerW - size(16);
         String draft = input.text();
-        String placeholder = "Message " + selectedFriend.name() + "...";
-        int textX = composerX + 8;
-        int textY = composerY + 10;
-        int textW = composerW - 16;
         if (draft.isEmpty()) {
-            paint.text(fit(paint, placeholder, textW), textX, textY, DIM);
+            paint.text(fit(paint, "Message " + friend.name() + "...", textW), textX, textY, DIM);
         } else {
-            String shown = fitTail(paint, draft, textW - 6);
+            String shown = fitTail(paint, draft, textW - size(6));
             paint.text(shown, textX, textY, TEXT);
             if (now % 1000 < 550) {
                 int caret = textX + paint.width(shown) + 1;
@@ -270,37 +364,125 @@ public final class ChatUi {
             }
         }
 
-        sendX = composerX + composerW + 8;
-        sendY = composerY + 4;
+        int sendH = size(compact ? 18 : 22);
+        sendButton = new Rect(contentX + composerW + size(8), composerY + (composerH - sendH) / 2, size(54), sendH);
         boolean canSend = !draft.trim().isEmpty();
-        paint.fill(sendX, sendY, sendX + sendW, sendY + sendH, canSend ? ACCENT : PANEL_3);
-        paint.centered("Send", sendX + sendW / 2, sendY + 7, canSend ? DARK_TEXT : DIM);
-        paint.text("Enter to send - Esc to close", messagesX, composerY + composerH + 6, DIM);
+        pill(paint, sendButton.x(), sendButton.y(), sendButton.w(), sendButton.h(),
+                canSend ? ACCENT : withAlpha(0xFFFFFF, 10));
+        if (!canSend) {
+            pillOutline(paint, sendButton.x(), sendButton.y(), sendButton.w(), sendButton.h(), HAIRLINE);
+        }
+        paint.centered("Send", sendButton.centerX(), sendButton.y() + size(compact ? 5 : 7), canSend ? DARK_TEXT : DIM);
+        paint.text("Enter to send - Esc to close", contentX, composerY + composerH + size(compact ? 4 : 6), DIM);
         if (draft.length() > 700) {
             String count = draft.length() + "/" + ChatCodes.MAX_TEXT;
-            paint.text(count, composerX + composerW - paint.width(count), composerY + composerH + 6,
-                    draft.length() >= ChatCodes.MAX_TEXT ? BAD : DIM);
+            paint.text(count, contentX + contentW - paint.width(count),
+                    composerY + composerH + size(compact ? 4 : 6), draft.length() >= ChatCodes.MAX_TEXT ? BAD : DIM);
         }
     }
 
+    private void drawCard(Paint paint, Card card, int x, int y, int width) {
+        roundRect(paint, x, y, width, card.height(), radius(8), CARD);
+        roundRectOutline(paint, x, y, width, card.height(), radius(8), HAIRLINE);
+        paint.text(card.name(), x + size(8), y + size(3), card.nameColor());
+        if (!card.time().isEmpty()) {
+            paint.text(card.time(), x + width - size(8) - paint.width(card.time()), y + size(3), DIM);
+        }
+        int textY = y + size(12);
+        for (String line : card.text()) {
+            paint.text(fit(paint, line, width - size(16)), x + size(8), textY, TEXT);
+            textY += size(8);
+        }
+    }
+
+    private List<Card> buildCards(Paint paint, PolarisChat chat, String code, int width) {
+        List<ChatMessage> messages = chat.thread(code);
+        String lastId = messages.isEmpty() ? "" : messages.get(messages.size() - 1).id();
+        if (code.equals(cachedCode) && messages.size() == cachedCount
+                && lastId.equals(cachedLastId) && width == cachedWidth) {
+            return cachedCards;
+        }
+
+        List<Card> cards = new ArrayList<>();
+        int top = 0;
+        for (ChatMessage message : messages) {
+            boolean mine = message.from().equals(chat.myCode());
+            String name = mine ? "You" : message.fromName();
+            int nameColor = mine ? ACCENT_SOFT : ACCENT;
+            List<String> wrapped = wrap(paint, message.text(), width - size(16));
+            int height = size(12) + Math.max(1, wrapped.size()) * size(8) + size(2);
+            cards.add(new Card(top, height, name, nameColor, clock(message.createdAt()), wrapped));
+            top += height + size(3);
+        }
+        cachedCode = code;
+        cachedCount = messages.size();
+        cachedLastId = lastId;
+        cachedWidth = width;
+        cachedCards = List.copyOf(cards);
+        return cards;
+    }
+
+    // ------------------------------------------------------------------ footer
+
+    private void drawFooter(Paint paint, PolarisChat chat, int mouseX, int mouseY, int footerH) {
+        int y = panelY + panelH - footerH;
+        paint.fill(panelX + size(18), y, panelX + panelW - size(18), y + 1, HAIRLINE);
+
+        String status = chat.status();
+        String label = switch (status) {
+            case "live" -> "Live";
+            case "connecting" -> "Connecting";
+            case "unavailable" -> "Sign in";
+            default -> "Offline";
+        };
+        int color = switch (status) {
+            case "live" -> GOOD;
+            case "connecting" -> WARN;
+            case "unavailable" -> BAD;
+            default -> DIM;
+        };
+        int textY = y + size(20);
+        circle(paint, panelX + size(22), textY + size(3), size(6), withAlpha(color, 230));
+        paint.text(label, panelX + size(30), textY, color);
+        if (!chat.error().isEmpty()) {
+            int errorX = panelX + size(30) + paint.width(label) + size(12);
+            paint.text(fit(paint, chat.error(), panelX + panelW - errorX - size(190)), errorX, textY, BAD);
+        }
+
+        int buttonH = size(24);
+        int buttonY = y + (footerH - buttonH) / 2;
+        int closeW = size(58);
+        closeButton = new Rect(panelX + panelW - size(18) - closeW, buttonY, closeW, buttonH);
+        pill(paint, closeButton.x(), closeButton.y(), closeButton.w(), closeButton.h(), ACCENT);
+        paint.centered("Close", closeButton.centerX(), closeButton.y() + size(8), DARK_TEXT);
+
+        int refreshW = paint.width("Refresh") + size(16);
+        refreshButton = new Rect(closeButton.x() - refreshW - size(8), buttonY, refreshW, buttonH);
+        pill(paint, refreshButton.x(), refreshButton.y(), refreshButton.w(), refreshButton.h(),
+                withAlpha(0xFFFFFF, 10));
+        pillOutline(paint, refreshButton.x(), refreshButton.y(), refreshButton.w(), refreshButton.h(), HAIRLINE);
+        paint.centered("Refresh", refreshButton.centerX(), refreshButton.y() + size(8), MUTED);
+    }
+
+    // ------------------------------------------------------------------- input
+
     public Hit click(int mouseX, int mouseY, int button, PolarisChat chat, ChatInput input) {
         if (button != 0) return Hit.NONE;
-        if (inside(mouseX, mouseY, closeX, closeY, closeW, closeH)) return new Hit(Action.CLOSE, null);
-        if (inside(mouseX, mouseY, refreshX, refreshY, refreshW, refreshH)) return new Hit(Action.REFRESH, null);
-        if (inside(mouseX, mouseY, sendX, sendY, sendW, sendH)
-                && chat.selected() != null && !input.text().trim().isEmpty()) {
+        if (closeButton.inside(mouseX, mouseY)) return new Hit(Action.CLOSE, null);
+        if (refreshButton.inside(mouseX, mouseY)) return new Hit(Action.REFRESH, null);
+        if (sendButton.inside(mouseX, mouseY) && chat.selected() != null && !input.text().trim().isEmpty()) {
             return new Hit(Action.SEND, null);
         }
-        if (inside(mouseX, mouseY, olderX, olderY, olderW, olderH) && pageOffset < maxPage) {
-            pageOffset = clamp(pageOffset + visibleLines, 0, maxPage);
+        if (olderButton.inside(mouseX, mouseY) && pageOffset < maxPage) {
+            pageOffset = clamp(pageOffset + messagesBox.h, 0, maxPage);
             return Hit.NONE;
         }
-        if (inside(mouseX, mouseY, newerX, newerY, newerW, newerH) && pageOffset > 0) {
-            pageOffset = clamp(pageOffset - visibleLines, 0, maxPage);
+        if (newerButton.inside(mouseX, mouseY) && pageOffset > 0) {
+            pageOffset = clamp(pageOffset - messagesBox.h, 0, maxPage);
             return Hit.NONE;
         }
         for (Row row : rows) {
-            if (inside(mouseX, mouseY, row.x1(), row.y1(), row.x2() - row.x1(), row.y2() - row.y1())) {
+            if (mouseX >= row.x1() && mouseX < row.x2() && mouseY >= row.y1() && mouseY < row.y2()) {
                 pageOffset = 0;
                 return new Hit(Action.SELECT, row.code());
             }
@@ -310,46 +492,128 @@ public final class ChatUi {
 
     public void scroll(int mouseX, int mouseY, double amount) {
         if (amount == 0) return;
-        if (inside(mouseX, mouseY, listX, listY, listW, listH)) {
+        if (sidebarBox.inside(mouseX, mouseY)) {
             listOffset = clamp(listOffset - (int) Math.signum(amount), 0, maxListOffset);
-        } else if (inside(mouseX, mouseY, messagesX, messagesY, messagesW, messagesH)) {
-            pageOffset = clamp(pageOffset + (int) Math.round(amount * 3), 0, maxPage);
+        } else if (messagesBox.inside(mouseX, mouseY)) {
+            pageOffset = clamp(pageOffset + (int) Math.round(amount * 40), 0, maxPage);
         }
     }
 
-    private void drawStatusNote(Paint paint, PolarisChat chat, int x, int y, int width) {
-        String status = chat.status();
-        if ("unavailable".equals(status)) {
-            paint.centered("Chat is unavailable.", x + width / 2, y + 78, WARN);
-            paint.centered("Launch Minecraft from Polaris with a Microsoft account.", x + width / 2, y + 92, DIM);
-        } else if ("offline".equals(status)) {
-            paint.centered(chat.error().isEmpty() ? "Polaris chat is offline." : chat.error(),
-                    x + width / 2, y + 78, MUTED);
+    // ------------------------------------------------------------------ helpers
+
+    List<Row> friendRows() {
+        return List.copyOf(rows);
+    }
+
+    Rect sendBox() {
+        return sendButton;
+    }
+
+    Rect closeBox() {
+        return closeButton;
+    }
+
+    private int size(float value) {
+        return Math.max(1, Math.round(value * scale));
+    }
+
+    private int radius(int value) {
+        return Math.max(1, Math.round(value * scale));
+    }
+
+    private static int withAlpha(int color, int alpha) {
+        return (color & 0x00FFFFFF) | ((clamp(alpha, 0, 255)) << 24);
+    }
+
+    private static int mix(int a, int b, float t) {
+        float clamped = Math.max(0f, Math.min(1f, t));
+        int aa = (a >>> 24) & 0xFF;
+        int ar = (a >> 16) & 0xFF;
+        int ag = (a >> 8) & 0xFF;
+        int ab = a & 0xFF;
+        int ba = (b >>> 24) & 0xFF;
+        int br = (b >> 16) & 0xFF;
+        int bg = (b >> 8) & 0xFF;
+        int bb = b & 0xFF;
+        int alpha = Math.round(aa + (ba - aa) * clamped);
+        int red = Math.round(ar + (br - ar) * clamped);
+        int green = Math.round(ag + (bg - ag) * clamped);
+        int blue = Math.round(ab + (bb - ab) * clamped);
+        return (alpha << 24) | (red << 16) | (green << 8) | blue;
+    }
+
+    private static void roundRect(Paint paint, int x, int y, int w, int h, int r, int color) {
+        if (w <= 0 || h <= 0) return;
+        r = Math.min(r, Math.min(w / 2, h / 2));
+        if (r <= 0) {
+            paint.fill(x, y, x + w, y + h, color);
+            return;
+        }
+        paint.fill(x + r, y + r, x + w - r, y + h - r, color);
+        for (int i = 0; i < r; i++) {
+            int dy = r - i - 1;
+            int inset = r - (int) Math.round(Math.sqrt((double) r * r - (double) dy * dy));
+            paint.fill(x + inset, y + i, x + w - inset, y + i + 1, color);
+            paint.fill(x + inset, y + h - 1 - i, x + w - inset, y + h - i, color);
         }
     }
 
-    private List<Line> buildLines(Paint paint, PolarisChat chat, String selected, int maxWidth) {
-        List<ChatMessage> messages = chat.thread(selected);
-        String lastId = messages.isEmpty() ? "" : messages.get(messages.size() - 1).id();
-        if (selected.equals(cachedCode) && messages.size() == cachedCount
-                && lastId.equals(cachedLastId) && maxWidth == cachedWidth) {
-            return cachedLines;
+    private static void roundRectOutline(Paint paint, int x, int y, int w, int h, int r, int color) {
+        if (w <= 0 || h <= 0) return;
+        r = Math.min(r, Math.min(w / 2, h / 2));
+        if (r <= 0) {
+            paint.fill(x, y, x + w, y + 1, color);
+            paint.fill(x, y + h - 1, x + w, y + h, color);
+            paint.fill(x, y, x + 1, y + h, color);
+            paint.fill(x + w - 1, y, x + w, y + h, color);
+            return;
         }
-        List<Line> lines = new ArrayList<>();
-        for (ChatMessage message : messages) {
-            boolean mine = message.from().equals(chat.myCode());
-            String prefix = mine ? "You: " : message.fromName() + ": ";
-            int color = mine ? 0xFFD8D0FF : TEXT;
-            List<String> wrapped = wrap(paint, prefix + message.text(), maxWidth);
-            for (String line : wrapped) lines.add(new Line(line, color));
-            lines.add(new Line("", color));
+        paint.fill(x + r, y, x + w - r, y + 1, color);
+        paint.fill(x + r, y + h - 1, x + w - r, y + h, color);
+        paint.fill(x, y + r, x + 1, y + h - r, color);
+        paint.fill(x + w - 1, y + r, x + w, y + h - r, color);
+        for (int i = 0; i < r; i++) {
+            int dy = r - i - 1;
+            int inset = r - (int) Math.round(Math.sqrt((double) r * r - (double) dy * dy));
+            paint.fill(x + inset, y + i, x + inset + 1, y + i + 1, color);
+            paint.fill(x + w - inset - 1, y + i, x + w - inset, y + i + 1, color);
+            paint.fill(x + inset, y + h - 1 - i, x + inset + 1, y + h - i, color);
+            paint.fill(x + w - inset - 1, y + h - 1 - i, x + w - inset, y + h - i, color);
         }
-        cachedCode = selected;
-        cachedCount = messages.size();
-        cachedLastId = lastId;
-        cachedWidth = maxWidth;
-        cachedLines = List.copyOf(lines);
-        return cachedLines;
+    }
+
+    private static void pill(Paint paint, int x, int y, int w, int h, int color) {
+        roundRect(paint, x, y, w, h, h / 2, color);
+    }
+
+    private static void pillOutline(Paint paint, int x, int y, int w, int h, int color) {
+        roundRectOutline(paint, x, y, w, h, h / 2, color);
+    }
+
+    private static void circle(Paint paint, int cx, int cy, int size, int color) {
+        roundRect(paint, cx - size / 2, cy - size / 2, size, size, size / 2, color);
+    }
+
+    private static void fadeLine(Paint paint, int x, int y, int width, int height, int color) {
+        int segments = 24;
+        for (int i = 0; i < segments; i++) {
+            float t = (float) i / (segments - 1);
+            float a = (float) Math.sin(Math.PI * t);
+            int segX = x + Math.round((float) width * i / segments);
+            int segW = Math.max(1, width / segments + 1);
+            paint.fill(segX, y, segX + segW, y + height, withAlpha(color, Math.round((color >>> 24) * a)));
+        }
+    }
+
+    private static void drawIcon(Paint paint, int x, int y, int size, String[] pattern, int color) {
+        int pixel = Math.max(1, size / 8);
+        for (int row = 0; row < pattern.length; row++) {
+            String line = pattern[row];
+            for (int col = 0; col < line.length(); col++) {
+                if (line.charAt(col) != '#') continue;
+                paint.fill(x + col * pixel, y + row * pixel, x + (col + 1) * pixel, y + (row + 1) * pixel, color);
+            }
+        }
     }
 
     private static List<String> wrap(Paint paint, String text, int maxWidth) {
@@ -379,6 +643,7 @@ public final class ChatUi {
             }
             out.add(current);
         }
+        if (out.isEmpty()) out.add("");
         return out;
     }
 
@@ -397,15 +662,14 @@ public final class ChatUi {
         return text.substring(start);
     }
 
-    private static boolean inside(int mx, int my, int x, int y, int w, int h) {
-        return mx >= x && mx < x + w && my >= y && my < y + h;
+    private static String clock(long timestamp) {
+        if (timestamp <= 0) return "";
+        java.time.Instant instant = java.time.Instant.ofEpochMilli(timestamp);
+        java.time.ZonedDateTime time = instant.atZone(java.time.ZoneId.systemDefault());
+        return String.format("%02d:%02d", time.getHour(), time.getMinute());
     }
 
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
-    }
-
-    public static String lower(String value) {
-        return value == null ? "" : value.toLowerCase(Locale.ROOT);
     }
 }
