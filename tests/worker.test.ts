@@ -4,12 +4,14 @@ import worker from '../website/api/worker.js'
 
 class FakeKV {
   readonly values = new Map<string, string>()
+  readonly puts: { key: string; options?: { expirationTtl?: number } }[] = []
 
   async get(key: string): Promise<string | null> {
     return this.values.get(key) ?? null
   }
 
-  async put(key: string, value: string): Promise<void> {
+  async put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void> {
+    this.puts.push({ key, options })
     this.values.set(key, value)
   }
 
@@ -85,6 +87,17 @@ describe('Polaris Worker auth', () => {
     const right = await call('/v1/friends/list', { code: ALICE, secret: ALICE_SECRET })
     expect(right.status).toBe(200)
     expect(await right.json()).toEqual({ friends: [] })
+  })
+
+  it('stores only the last authenticated IP for a profile', async () => {
+    await register(ALICE, ALICE_SECRET, 'Alice', ALICE_UUID)
+    const raw = kv.values.get(`ip:${ALICE}`)
+    expect(raw).toBeTruthy()
+    const record = JSON.parse(String(raw))
+    expect(record.ip).toMatch(/^203\.0\.113\.\d+$/)
+    expect(record.at).toBeGreaterThan(0)
+    const write = [...kv.puts].reverse().find((entry) => entry.key === `ip:${ALICE}`)
+    expect(write?.options?.expirationTtl).toBe(30 * 24 * 60 * 60)
   })
 
   it('does not grant browser CORS and never accepts a code in the query string', async () => {

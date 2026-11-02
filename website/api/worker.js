@@ -29,6 +29,7 @@ const MAX_PENDING = 100
 const REQUEST_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const PRESENCE_TTL_SECONDS = 120
 const PRESENCE_FRESH_MS = 90_000
+const IP_TTL_SECONDS = 30 * 24 * 60 * 60
 const MAX_BODY_BYTES = 4096
 
 /** Per-isolate fixed-window limiter. Cloudflare's edge also rate-limits abuse. */
@@ -63,6 +64,15 @@ function normalizeUuid(value) {
   if (/^[0-9a-f]{32}$/.test(raw)) {
     return raw.replace(/^(\w{8})(\w{4})(\w{4})(\w{4})(\w{12})$/, '$1-$2-$3-$4-$5')
   }
+  return ''
+}
+
+function clientIp(request) {
+  const raw = String(request.headers.get('CF-Connecting-IP') || '').trim()
+  if (!raw || raw.length > 64) return ''
+  const octet = '(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)'
+  if (new RegExp(`^(${octet}\\.){3}${octet}$`).test(raw)) return raw
+  if (/^[0-9a-fA-F:.]{3,64}$/.test(raw) && raw.includes(':')) return raw
   return ''
 }
 
@@ -420,6 +430,12 @@ export default {
             createdAt: Number(existing?.createdAt) || Date.now()
           })
         )
+        const ip = clientIp(request)
+        if (ip) {
+          await kv.put(`ip:${code}`, JSON.stringify({ ip, at: Date.now() }), {
+            expirationTtl: IP_TTL_SECONDS
+          })
+        }
         return json({ ok: true, code })
       }
 
