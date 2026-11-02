@@ -2,6 +2,15 @@ import { createHash } from 'node:crypto'
 import type { Account } from '../shared/types'
 import { readJson, writeJson } from './fsutil'
 
+export const ENCRYPTED_PREFIX = 'enc:v1:'
+const PLAINTEXT_PREFIX = 'plain:'
+
+/** Encrypts account tokens at rest. Implemented with Electron safeStorage in main. */
+export interface TokenCipher {
+  encrypt(value: string): Promise<string>
+  decrypt(value: string): Promise<string>
+}
+
 export interface StoredAccount extends Account {
   accessToken: string
   refreshToken?: string
@@ -17,8 +26,13 @@ interface AccountFile {
 
 export class AccountStore {
   private data: AccountFile = { activeId: null, accounts: [] }
+  /** Encrypted values kept if the OS keychain cannot decrypt them yet. */
+  private readonly originalTokens = new Map<string, { access?: string; refresh?: string }>()
 
-  constructor(private readonly path: string) {}
+  constructor(
+    private readonly path: string,
+    private readonly cipher?: TokenCipher
+  ) {}
 
   async load(): Promise<void> {
     const loaded = await readJson<AccountFile | null>(this.path, null)
@@ -26,6 +40,18 @@ export class AccountStore {
     const usedCodes = this.data.accounts.map((a) => a.friendCode).filter((c) => c)
     for (const account of this.data.accounts) {
       account.active = account.id === this.data.activeId
+      if (account.type === 'microsoft') {
+        if (account.accessToken.startsWith(ENCRYPTED_PREFIX)) {
+          this.originalTokens.set(account.id, {
+            access: account.accessToken,
+            refresh: account.refreshToken?.startsWith(ENCRYPTED_PREFIX)
+              ? account.refreshToken
+              : undefined
+          })
+        }
+        account.accessToken = await this.decode(account.accessToken)
+        if (account.refreshToken) account.refreshToken = await this.decode(account.refreshToken)
+      }
       // Only generate friend code for Microsoft accounts, not offline accounts
       if (!account.friendCode && account.type === 'microsoft') {
         let code = generateFriendCode()
@@ -43,7 +69,50 @@ export class AccountStore {
   }
 
   async save(): Promise<void> {
-    await writeJson(this.path, this.data)
+    const accounts: StoredAccount[] = []
+    for (const account of this.data.accounts) {
+      const copy: StoredAccount = { ...account }
+      if (account.type === 'microsoft') {
+        const original = this.originalTokens.get(account.id)
+        copy.accessToken =
+          account.accessToken || !original?.access
+            ? await this.encode(account.accessToken)
+            : original.access
+        if (account.refreshToken || original?.refresh) {
+          copy.refreshToken =
+            account.refreshToken || !original?.refresh
+              ? await this.encode(account.refreshToken ?? '')
+              : original.refresh
+        }
+      }
+      accounts.push(copy)
+    }
+    await writeJson(this.path, { activeId: this.data.activeId, accounts } satisfies AccountFile)
+  }
+
+  private async encode(value: string): Promise<string> {
+    if (!value) return value
+    if (value.startsWith(ENCRYPTED_PREFIX) || value.startsWith(PLAINTEXT_PREFIX)) return value
+    if (!this.cipher) return `${PLAINTEXT_PREFIX}${value}`
+    try {
+      return await this.cipher.encrypt(value)
+    } catch {
+      // OS keychain unavailable: keep the account usable, never crash login.
+      return `${PLAINTEXT_PREFIX}${value}`
+    }
+  }
+
+  private async decode(value: string): Promise<string> {
+    if (!value) return value
+    if (value.startsWith(PLAINTEXT_PREFIX)) return value.slice(PLAINTEXT_PREFIX.length)
+    if (!value.startsWith(ENCRYPTED_PREFIX)) return value
+    if (!this.cipher) return ''
+    try {
+      return await this.cipher.decrypt(value)
+    } catch {
+      // Keychain changed or the file was copied to another machine.
+      return ''
+    }
   }
 
   list(): Account[] {
@@ -57,6 +126,7 @@ export class AccountStore {
       active: id === this.data.activeId
     }))
   }
+
 
   stored(id: string): StoredAccount | undefined {
     return this.data.accounts.find((account) => account.id === id)

@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
 import { rename, rm, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -39,6 +39,7 @@ export type ProgressFn = (progress: DownloadProgress) => void
 
 export class Downloader {
   private active = 0
+  private readonly fileDownloads = new Map<string, Promise<number>>()
 
   constructor(
     private readonly concurrency: number,
@@ -55,7 +56,13 @@ export class Downloader {
     return await response.text()
   }
 
-  private async request(url: string, init?: RequestInit, retries = 3, timeoutMs = 60_000): Promise<Response> {
+  private async request(
+    url: string,
+    init?: RequestInit,
+    retries = 3,
+    timeoutMs = 60_000,
+    allowStatuses: number[] = []
+  ): Promise<Response> {
     let lastError: unknown
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
@@ -72,7 +79,9 @@ export class Downloader {
           await delay(Math.min(30, retryAfter) * 1000)
           continue
         }
-        if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`)
+        if (!response.ok && !allowStatuses.includes(response.status)) {
+          throw new Error(`HTTP ${response.status} for ${url}`)
+        }
         return response
       } catch (error) {
         lastError = error
@@ -126,41 +135,121 @@ export class Downloader {
    * Download a single file, following redirects. Used for the installer,
    * which GitHub serves through a redirect to its release-asset CDN.
    *
-   * Each attempt writes to a unique `.part` file so two update checks can
-   * never delete each other's download, and the final rename is retried
-   * because antivirus scanners briefly lock freshly written executables.
+   * A stable `.part` file lets an interrupted download resume with an HTTP
+   * Range request. Concurrent calls for the same destination share one
+   * promise, so they cannot truncate each other's partial file. Final rename
+   * is retried because antivirus scanners briefly lock fresh executables.
    */
-  async downloadFile(
+  downloadFile(
     url: string,
     dest: string,
     options: DownloadFileOptions | number = {}
   ): Promise<number> {
+    const key = dest.toLowerCase()
+    const existing = this.fileDownloads.get(key)
+    if (existing) return existing
+    const run = this.downloadFileResumable(url, dest, options).finally(() => {
+      this.fileDownloads.delete(key)
+    })
+    this.fileDownloads.set(key, run)
+    return run
+  }
+
+  private async downloadFileResumable(
+    url: string,
+    dest: string,
+    options: DownloadFileOptions | number
+  ): Promise<number> {
     const opts = typeof options === 'number' ? { timeoutMs: options } : options
     const timeoutMs = opts.timeoutMs ?? 10 * 60_000
-    const response = await this.request(url, undefined, 3, timeoutMs)
-    if (!response.body) throw new Error('Empty response body')
     await ensureDir(dirname(dest))
-    const tmp = `${dest}.${process.pid}-${randomUUID()}.part`
-    try {
-      await pipeline(Readable.fromWeb(response.body as never), createWriteStream(tmp))
-      const written = (await stat(tmp)).size
-      const declared = Number(response.headers.get('content-length') ?? 0)
-      const expected = opts.expectedSize && opts.expectedSize > 0 ? opts.expectedSize : declared
-      if (expected > 0 && written !== expected) {
-        throw new Error(`Incomplete download: expected ${expected} bytes, received ${written}`)
+    const partial = `${dest}.part`
+
+    let offset = (await stat(partial).catch(() => null))?.size ?? 0
+    if (opts.expectedSize && opts.expectedSize > 0) {
+      if (offset === opts.expectedSize) {
+        return await this.finalizeDownload(partial, dest, opts)
       }
-      if (opts.sha256) {
-        const digest = await hashFile(tmp, 'sha256')
-        if (digest.toLowerCase() !== opts.sha256.toLowerCase()) {
-          throw new Error('Downloaded installer failed its SHA-256 check')
-        }
+      if (offset > opts.expectedSize) {
+        await rm(partial, { force: true })
+        offset = 0
       }
-      await replaceFile(tmp, dest)
-      return written
-    } catch (error) {
-      await rm(tmp, { force: true }).catch(() => undefined)
-      throw error
     }
+
+    let response = await this.request(
+      url,
+      offset > 0 ? { headers: { Range: `bytes=${offset}-` } } : undefined,
+      3,
+      timeoutMs,
+      [416]
+    )
+    if (offset > 0 && response.status === 206) {
+      this.logger.info('Resuming download', { url, offset })
+    }
+
+    if (response.status === 416) {
+      await rm(partial, { force: true })
+      offset = 0
+      response = await this.request(url, undefined, 3, timeoutMs)
+    }
+
+    if (!response.body) throw new Error('Empty response body')
+
+    const contentRange = response.headers.get('content-range') ?? ''
+    const resumed =
+      offset > 0 &&
+      response.status === 206 &&
+      (!contentRange || contentRange.startsWith(`bytes ${offset}-`))
+
+    if (offset > 0 && !resumed) {
+      // The server ignored the range and sent the whole file again.
+      await rm(partial, { force: true })
+      offset = 0
+    }
+
+    const declared = Number(response.headers.get('content-length') ?? 0)
+    const expected =
+      opts.expectedSize && opts.expectedSize > 0
+        ? opts.expectedSize
+        : declared > 0
+          ? resumed
+            ? offset + declared
+            : declared
+          : 0
+
+    await pipeline(
+      Readable.fromWeb(response.body as never),
+      createWriteStream(partial, { flags: resumed ? 'a' : 'w' })
+    )
+
+    const written = (await stat(partial)).size
+    if (expected > 0 && written !== expected) {
+      // A short file may be resumed; an oversized one cannot be trusted.
+      if (written > expected) await rm(partial, { force: true })
+      throw new Error(`Incomplete download: expected ${expected} bytes, received ${written}`)
+    }
+
+    return await this.finalizeDownload(partial, dest, opts)
+  }
+
+  private async finalizeDownload(
+    partial: string,
+    dest: string,
+    opts: { expectedSize?: number; sha256?: string }
+  ): Promise<number> {
+    const written = (await stat(partial)).size
+    if (opts.expectedSize && opts.expectedSize > 0 && written !== opts.expectedSize) {
+      throw new Error(`Incomplete download: expected ${opts.expectedSize} bytes, received ${written}`)
+    }
+    if (opts.sha256) {
+      const digest = await hashFile(partial, 'sha256')
+      if (digest.toLowerCase() !== opts.sha256.toLowerCase()) {
+        await rm(partial, { force: true })
+        throw new Error('Downloaded installer failed its SHA-256 check')
+      }
+    }
+    await replaceFile(partial, dest)
+    return written
   }
 
   private async downloadOne(item: DownloadItem): Promise<'downloaded' | 'reused'> {

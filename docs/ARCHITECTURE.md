@@ -191,8 +191,9 @@ section above for the new-instance flow and the Fabric-only boundary.
   <https://aka.ms/AppRegInfo>. Polaris never imports another launcher's client ID or tokens;
   those are application-bound credentials, not portable login data.
 
-Tokens are currently stored as plain JSON in the user's data directory. Production hardening
-should move refresh tokens into Electron `safeStorage` or the Windows Credential Manager.
+Tokens are encrypted with Electron `safeStorage` and the OS credential store
+where available. Systems without an encryption backend fall back to a marked
+plaintext value so login still works.
 
 ## Renderer
 

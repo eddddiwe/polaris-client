@@ -2,7 +2,10 @@
 // Deploy: wrangler deploy
 // Endpoints:
 //   GET  /v1/version            -> { version, url, sha256, minVersion, changelog }
-//   GET  /v1/announcements      -> { announcements: [...] }
+//   GET  /v1/announcements      -> { announcements: [...], minVersion, killSwitch }
+//   POST /v1/presence           -> publish { uuid, name, server } for 120s
+//   GET  /v1/presence?server=   -> public presence for one server
+//   GET  /v1/presence/friends?uuids= -> presence for up to 100 UUIDs
 //   POST /v1/friends/register   -> register a friend code { code, name }
 //   POST /v1/friends/add        -> add confirmed friend { myCode, friendCode }
 //   POST /v1/friends/remove     -> remove friend { myCode, friendCode }
@@ -13,7 +16,16 @@
 //   GET  /v1/friends/requests?code= -> list pending requests { requests: [{ code, name, createdAt }] }
 
 const REPO = 'eddddiwe/polaris-client'
-const CURRENT_VERSION = '0.4.0'
+const CURRENT_VERSION = '0.4.1'
+
+function normalizeUuid(value) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(raw)) return raw
+  if (/^[0-9a-f]{32}$/.test(raw)) {
+    return raw.replace(/^(\w{8})(\w{4})(\w{4})(\w{4})(\w{12})$/, '$1-$2-$3-$4-$5')
+  }
+  return ''
+}
 
 async function resolveFriendUuid(kv, code, info) {
   if (!info || info.uuid) return info
@@ -43,6 +55,7 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url)
     const path = url.pathname
+    const minVersion = env.MIN_VERSION || CURRENT_VERSION
 
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
@@ -73,7 +86,7 @@ export default {
           url: asset?.browser_download_url || directUrl,
           sha256: digest,
           size: Number(asset?.size) || 0,
-          minVersion: '0.3.0',
+          minVersion,
           changelog: gh.body || '',
           publishedAt: gh.published_at || new Date().toISOString(),
         }), { headers: corsHeaders })
@@ -83,7 +96,7 @@ export default {
           url: `https://github.com/${REPO}/releases/download/v${CURRENT_VERSION}/Polaris-Setup-${CURRENT_VERSION}.exe`,
           sha256: '',
           size: 0,
-          minVersion: '0.3.0',
+          minVersion,
           changelog: '',
           publishedAt: new Date().toISOString(),
         }), { headers: corsHeaders })
@@ -94,7 +107,7 @@ export default {
     if (path === '/v1/announcements' || path === '/announcements') {
       return new Response(JSON.stringify({
         announcements: [],
-        minVersion: '0.3.0',
+        minVersion,
         killSwitch: false,
       }), { headers: corsHeaders })
     }
@@ -106,13 +119,15 @@ export default {
       if (request.method === 'POST') {
         try {
           const body = await request.json()
-          const uuid = String(body.uuid || '').trim()
+          const uuid = normalizeUuid(body.uuid)
           const name = String(body.name || '').trim() || uuid
           const server = String(body.server || '').trim().toLowerCase()
           if (!uuid || !server) return new Response(JSON.stringify({ ok: false, error: 'uuid and server required' }), { status: 400, headers: corsHeaders })
           if (server.length > 200) return new Response(JSON.stringify({ ok: false, error: 'server too long' }), { status: 400, headers: corsHeaders })
-          const key = `presence:${encodeURIComponent(server)}:${uuid}`
-          await kv.put(key, JSON.stringify({ uuid, name, server, lastSeen: Date.now() }), { expirationTtl: 120 })
+          const record = JSON.stringify({ uuid, name, server, lastSeen: Date.now() })
+          await kv.put(`presence:${encodeURIComponent(server)}:${uuid}`, record, { expirationTtl: 120 })
+          // Secondary index so friends can resolve presence by UUID without scanning servers.
+          await kv.put(`presenceUuid:${uuid}`, record, { expirationTtl: 120 })
           return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders })
         } catch (e) {
           return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 400, headers: corsHeaders })
@@ -141,6 +156,36 @@ export default {
         } catch (e) {
           return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 400, headers: corsHeaders })
         }
+      }
+    }
+
+    // Friends-only presence lookup: UUIDs come from the friend list.
+    if (path === '/v1/presence/friends' && request.method === 'GET') {
+      if (!kv) return new Response(JSON.stringify({ ok: false, error: 'KV not configured' }), { status: 500, headers: corsHeaders })
+      try {
+        const uuids = String(url.searchParams.get('uuids') || '')
+          .split(',')
+          .map(normalizeUuid)
+          .filter(Boolean)
+        if (uuids.length > 100) {
+          return new Response(JSON.stringify({ ok: false, error: 'too many uuids' }), { status: 400, headers: corsHeaders })
+        }
+        const presence = {}
+        const now = Date.now()
+        await Promise.all(uuids.map(async (uuid) => {
+          const raw = await kv.get(`presenceUuid:${uuid}`)
+          if (!raw) return
+          const record = JSON.parse(raw)
+          if (now - Number(record.lastSeen || 0) > 90000) return
+          presence[uuid] = {
+            server: record.server,
+            lastSeen: record.lastSeen,
+            name: record.name,
+          }
+        }))
+        return new Response(JSON.stringify({ presence }), { headers: corsHeaders })
+      } catch (e) {
+        return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 400, headers: corsHeaders })
       }
     }
 

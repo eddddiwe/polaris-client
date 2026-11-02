@@ -691,6 +691,7 @@ export function createMockApi(): Window['polaris'] {
     openRootFolder: async () => undefined,
     openInstanceFolder: async () => undefined,
     openLogsFolder: async (_id) => undefined,
+    openCrashReport: async (_id, _name) => undefined,
     listCrashReports: async (_id) => [],
     disableAllMods: async (_id) => ({ disabled: 0 }),
     versions: async (includeSnapshots) => (includeSnapshots ? versions : versions.filter((v) => v.type === 'release')),
@@ -1001,6 +1002,7 @@ export function createMockApi(): Window['polaris'] {
     friendsRemove: async () => [],
     friendsRemoveMutual: async () => [],
     friendsGetRequests: async () => [],
+    friendsPresence: async () => ({}),
     friendsRequest: async (code, name) => [{ code: code.toUpperCase(), name: name || code, createdAt: Date.now() }],
     friendsRespond: async (myCode, friendCode, action) => {
       if (action === 'accept') return [{ code: friendCode, name: friendCode, createdAt: Date.now() }]

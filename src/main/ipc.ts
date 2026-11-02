@@ -1,5 +1,5 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { join } from 'node:path'
+import { basename, join, resolve, sep } from 'node:path'
 import { readdir, rename } from 'node:fs/promises'
 import { IPC } from '../shared/ipc'
 
@@ -80,6 +80,7 @@ export function registerIpc(services: AppServices): void {
     if (!account) return []
     return services.friends.getRequests(account.code)
   })
+  handle(IPC.friendsPresence, async (uuids: string[]) => services.friends.presence(uuids))
 
   ipcMain.handle(IPC.windowAction, (event, action: 'minimize' | 'maximize' | 'close' | 'show') => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -114,6 +115,19 @@ export function registerIpc(services: AppServices): void {
   handle(IPC.openLogs, async (id: string) => {
     await services.instances.get(id)
     await shell.openPath(join(services.paths.instances, id, 'logs'))
+  })
+
+  handle(IPC.openCrashReport, async (id: string, name: string) => {
+    await services.instances.get(id)
+    const dir = resolve(services.paths.instances, id, 'crash-reports')
+    const safe = basename(name)
+    if (safe !== name || !safe.toLowerCase().endsWith('.txt')) {
+      throw new Error('Invalid crash report name')
+    }
+    const target = resolve(dir, safe)
+    if (!target.startsWith(dir + sep)) throw new Error('Invalid crash report path')
+    const error = await shell.openPath(target)
+    if (error) throw new Error(error)
   })
 
   handle(IPC.listCrashReports, async (id: string) => {

@@ -18,7 +18,7 @@
         <a class="brand" href="index.html" aria-label="Polaris home">
           <img class="brand-mark" src="assets/polaris.svg" alt="" width="34" height="34" />
           <span class="brand-name">Polaris</span>
-          <span class="brand-version">0.4.0</span>
+          <span class="brand-version">0.4.1</span>
         </a>
         <nav class="legal-nav" aria-label="Legal">
           <a href="index.html">Home</a>
@@ -84,7 +84,7 @@
           </thead>
           <tbody>
             <tr><td>Settings</td><td><code>settings.json</code></td><td>Java path, appearance, wallpaper, update and privacy preferences.</td></tr>
-            <tr><td>Accounts</td><td><code>accounts.json</code></td><td>Minecraft profile, UUID, friend code, access token and refresh token. Stored as plain JSON protected by your OS account permissions; Polaris does not add a second layer of encryption at rest.</td></tr>
+            <tr><td>Accounts</td><td><code>accounts.json</code></td><td>Minecraft profile, UUID, friend code, access token and refresh token. Tokens are encrypted with the OS credential store (DPAPI, Keychain or libsecret) where available; systems without an encryption backend fall back to a marked plaintext value so login still works.</td></tr>
             <tr><td>Friends cache</td><td><code>friends.json</code></td><td>A local copy of your friend list so the Friends page can render offline.</td></tr>
             <tr><td>Instances</td><td><code>instances/</code></td><td>Minecraft files, mods, saves, logs, options and per-instance PolarisConfig settings.</td></tr>
             <tr><td>Logs</td><td><code>logs/</code></td><td>Launcher diagnostics. Logs are not uploaded automatically.</td></tr>
@@ -178,10 +178,11 @@
 
         <h2 id="security">9. Security</h2>
         <p>
-          Network requests use HTTPS. Tokens are stored in a local JSON file protected by your operating
-          system account permissions; Polaris does not encrypt that file separately, so use full-disk
-          encryption and a locked OS account if you need protection at rest. No system is perfectly secure,
-          and we cannot guarantee that a compromise will never occur.
+          Network requests use HTTPS. Account tokens are encrypted with Electron <code>safeStorage</code> and
+          the operating system credential store where available. On systems without an encryption backend,
+          Polaris falls back to a clearly marked plaintext value protected by your OS account permissions,
+          so use full-disk encryption and a locked OS account if you need protection at rest. No system is
+          perfectly secure, and we cannot guarantee that a compromise will never occur.
         </p>
 
         <h2 id="children">10. Children</h2>

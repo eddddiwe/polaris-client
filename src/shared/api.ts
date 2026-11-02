@@ -49,6 +49,7 @@ export interface PolarisAPI {
   openRootFolder(): Promise<void>
   openInstanceFolder(id: string): Promise<void>
   openLogsFolder(id: string): Promise<void>
+  openCrashReport(id: string, name: string): Promise<void>
   listCrashReports(id: string): Promise<{ name: string; path: string; size: number; modified: number }[]>
   disableAllMods(id: string): Promise<{ disabled: number }>
 
@@ -127,6 +128,7 @@ export interface PolarisAPI {
   friendsRequest(code: string, name: string): Promise<Array<{ code: string; name: string; uuid?: string; createdAt: number }>>
   friendsRespond(myCode: string, friendCode: string, action: 'accept' | 'decline'): Promise<Array<{ code: string; name: string; uuid?: string; createdAt: number }>>
   friendsGetRequests(myCode: string): Promise<Array<{ code: string; name: string; uuid?: string; createdAt: number }>>
+  friendsPresence(uuids: string[]): Promise<Record<string, { server: string; lastSeen: number }>>
   checkForUpdates(): Promise<UpdateInfo>
   installUpdate(): Promise<InstallUpdateResult>
   importMrpack(): Promise<InstanceSummary>

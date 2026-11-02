@@ -5,6 +5,7 @@ export const IPC = {
   openRoot: 'app:openRoot',
   openInstanceFolder: 'app:openInstanceFolder',
   openLogs: 'app:openLogs',
+  openCrashReport: 'crash:open',
   listCrashReports: 'crash:list',
   disableAllMods: 'mods:disableAll',
   versionsList: 'versions:list',
@@ -59,7 +60,8 @@ export const IPC = {
   friendsRemoveMutual: 'friends:remove-mutual',
   friendsRequest: 'friends:request',
   friendsRespond: 'friends:respond',
-  friendsGetRequests: 'friends:getRequests'
+  friendsGetRequests: 'friends:getRequests',
+  friendsPresence: 'friends:presence'
 } as const
 
 export const EVENTS = {

@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { copyFile, readdir, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { CreateInstanceInput, InstanceConfig, InstanceSummary } from '../shared/types'
-import { assertSafeSegment, dirSize, ensureDir, isSafeSegment, pathExists, readJson, writeJson } from './fsutil'
+import { assertSafeSegment, dirSize, ensureDir, hashFile, isSafeSegment, pathExists, readJson, writeJson } from './fsutil'
 import { ensureServersDat } from './nbt'
 import type { Paths } from './paths'
 import type { Settings } from '../shared/types'
@@ -11,6 +11,9 @@ const POLARIS_CONFIG_INTERMEDIARY = 'polaris-config-1.2.0.jar'
 const POLARIS_CONFIG_MODERN = 'polaris-config-1.2.0-modern.jar'
 const POLARIS_CONFIG_OFFICIAL = 'polaris-config-1.2.0-official.jar'
 const POLARIS_CONFIG_PATTERN = /^polaris-config-.*\.jar$/i
+
+/** Cache source-jar hashes; the same bundled jar is compared for every instance. */
+const polarisConfigHashes = new Map<string, { size: number; mtimeMs: number; hash: string }>()
 
 function polarisConfigFile(mcVersion: string): string {
   const [major = 0, minor = 0, patch = 0] = mcVersion.split('.').map(Number)
@@ -168,7 +171,24 @@ export class InstanceStore {
         stat(source),
         stat(dest).catch(() => null)
       ])
-      if (!destStat || destStat.size !== sourceStat.size) {
+      let matches = false
+      if (destStat && destStat.size === sourceStat.size) {
+        const cached = polarisConfigHashes.get(source)
+        let sourceHash =
+          cached && cached.size === sourceStat.size && cached.mtimeMs === sourceStat.mtimeMs
+            ? cached.hash
+            : ''
+        if (!sourceHash) {
+          sourceHash = await hashFile(source, 'sha256')
+          polarisConfigHashes.set(source, {
+            size: sourceStat.size,
+            mtimeMs: sourceStat.mtimeMs,
+            hash: sourceHash
+          })
+        }
+        matches = sourceHash === (await hashFile(dest, 'sha256'))
+      }
+      if (!matches) {
         await copyFile(source, dest)
       }
       for (const name of existing) {

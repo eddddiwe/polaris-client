@@ -297,8 +297,8 @@ export function SettingsPage(): JSX.Element {
               onChange={(value) => void setSetting({ showSnapshots: value })}
             />
             <ToggleRow
-              title="Auto-update instance mods"
-              body="Check installed Modrinth projects for compatible updates when an instance is opened."
+              title="Check for mod updates automatically"
+              body="Show available Modrinth updates when an instance is opened. Nothing is installed until you confirm."
               checked={boot.settings.autoUpdateMods}
               onChange={(value) => void setSetting({ autoUpdateMods: value })}
             />

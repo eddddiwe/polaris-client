@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import os from 'node:os'
 import { spawn } from 'node:child_process'
-import { join, dirname, resolve, basename, extname } from 'node:path'
+import { join, dirname, resolve } from 'node:path'
 import { stat, writeFile } from 'node:fs/promises'
 import { app, shell } from 'electron'
 import type {
@@ -51,6 +51,7 @@ import { AssetManager } from '../core/assets'
 import { FabricMeta } from '../core/fabric'
 import { Installer } from '../core/install'
 import { AccountStore, offlineAccount, type StoredAccount } from '../core/accounts'
+import { SafeStorageCipher } from './safeStorageCipher'
 import { AuthService } from '../core/auth'
 import { SettingsStore } from '../core/settings'
 import { InstanceStore } from '../core/instances'
@@ -74,7 +75,7 @@ export class AppServices extends EventEmitter {
   readonly settingsStore = new SettingsStore(this.paths.settings, this.paths.root)
   readonly cosmetics = new CosmeticsService(this.settingsStore)
   readonly friends = new FriendStore(join(this.paths.root, 'friends.json'))
-  readonly accounts = new AccountStore(this.paths.accounts)
+  readonly accounts = new AccountStore(this.paths.accounts, new SafeStorageCipher())
   readonly instances: InstanceStore
   readonly downloader: Downloader
   readonly mojang: MojangMeta
@@ -762,16 +763,15 @@ export class AppServices extends EventEmitter {
       return canonical
     }
 
-    const stem = basename(name, extname(name))
-    const target = join(dir, `${stem}-${Date.now()}${extname(name) || '.exe'}`)
-    const written = await this.downloader.downloadFile(info.downloadUrl, target, {
+    // Stable destination lets the downloader resume an interrupted installer.
+    const written = await this.downloader.downloadFile(info.downloadUrl, canonical, {
       expectedSize: info.downloadSize,
       sha256: info.downloadSha256
     })
     if (written < 1_000_000) {
       throw new Error(`Downloaded installer is unexpectedly small (${written} bytes)`)
     }
-    return target
+    return canonical
   }
 
   private async installerIsUsable(path: string, info: UpdateInfo): Promise<boolean> {
@@ -919,7 +919,7 @@ Write-Log 'helper finished'
     // Try Modrinth format first (modrinth.index.json)
     const modrinthEntry = zip.getEntry('modrinth.index.json')
     if (modrinthEntry) {
-      const plan = parseMrpackIndex(zip.readAsText(modrinthEntry), '1.21.1')
+      const plan = parseMrpackIndex(zip.readAsText(modrinthEntry))
       const config = await this.instances.create(
         {
           name: plan.name || 'Imported Modpack',
@@ -959,11 +959,15 @@ Write-Log 'helper finished'
     const manifest = JSON.parse(zip.readAsText(manifestEntry))
     const modCount = manifest.mods ? manifest.mods.length : 0
     const modNames = manifest.mods?.map((m: any) => m.name).join(', ') || 'unknown'
+    const mcVersion = String(manifest.mc_version || '').trim()
+    if (!mcVersion) {
+      throw new Error('This modpack manifest does not declare a Minecraft version')
+    }
 
     const config = await this.instances.create(
       {
         name: manifest.name || 'Imported Modpack',
-        mcVersion: manifest.mc_version || '1.20.1',
+        mcVersion,
         loader: (manifest.loaders?.[0] || 'fabric') as LoaderType,
         kind: 'game',
         packs: []

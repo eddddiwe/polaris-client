@@ -168,6 +168,34 @@ export class FriendStore {
     }
   }
 
+  async presence(uuids: string[]): Promise<Record<string, { server: string; lastSeen: number }>> {
+    const unique = Array.from(new Set(
+      uuids.map((uuid) => uuid.trim().toLowerCase()).filter(Boolean)
+    )).slice(0, 100)
+    if (!unique.length) return {}
+    try {
+      const res = await fetch(
+        `${WORKER_BASE}/v1/presence/friends?uuids=${encodeURIComponent(unique.join(','))}`,
+        { signal: AbortSignal.timeout(8000) }
+      )
+      if (!res.ok) return {}
+      const data = await res.json()
+      const presence: Record<string, { server: string; lastSeen: number }> = {}
+      for (const [uuid, value] of Object.entries(data.presence ?? {})) {
+        if (!value || typeof value !== 'object') continue
+        const entry = value as { server?: unknown; lastSeen?: unknown }
+        const server = String(entry.server ?? '').trim()
+        const lastSeen = Number(entry.lastSeen ?? 0)
+        if (server && Number.isFinite(lastSeen) && lastSeen > 0) {
+          presence[uuid] = { server, lastSeen }
+        }
+      }
+      return presence
+    } catch {
+      return {}
+    }
+  }
+
   has(code: string): boolean {
     return this.data.friends.some((f) => f.code === code.trim().toUpperCase())
   }

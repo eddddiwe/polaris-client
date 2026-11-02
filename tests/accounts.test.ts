@@ -1,0 +1,95 @@
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { AccountStore, type StoredAccount, type TokenCipher } from '../src/core/accounts'
+
+class FakeCipher implements TokenCipher {
+  async encrypt(value: string): Promise<string> {
+    return `enc:v1:${Buffer.from(value, 'utf8').toString('base64')}`
+  }
+
+  async decrypt(value: string): Promise<string> {
+    return Buffer.from(value.slice('enc:v1:'.length), 'base64').toString('utf8')
+  }
+}
+
+function microsoftAccount(): StoredAccount {
+  return {
+    id: 'microsoft:abc',
+    type: 'microsoft',
+    name: 'Tester',
+    uuid: '00000000-0000-0000-0000-000000000001',
+    friendCode: 'POLARIS-TEST-CODE',
+    active: true,
+    accessToken: 'access-token',
+    refreshToken: 'refresh-token',
+    expiresAt: Date.now() + 3_600_000
+  }
+}
+
+describe('AccountStore token encryption', () => {
+  it('encrypts tokens on disk and decrypts them when loaded', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'polaris-accounts-'))
+    try {
+      const path = join(dir, 'accounts.json')
+      const store = new AccountStore(path, new FakeCipher())
+      await store.add(microsoftAccount())
+
+      const raw = JSON.parse(await readFile(path, 'utf8'))
+      expect(raw.accounts[0].accessToken).toMatch(/^enc:v1:/)
+      expect(raw.accounts[0].refreshToken).toMatch(/^enc:v1:/)
+
+      const reloaded = new AccountStore(path, new FakeCipher())
+      await reloaded.load()
+      expect(reloaded.stored('microsoft:abc')?.accessToken).toBe('access-token')
+      expect(reloaded.stored('microsoft:abc')?.refreshToken).toBe('refresh-token')
+      expect(reloaded.list()[0]).not.toHaveProperty('accessToken')
+      expect(reloaded.list()[0]).not.toHaveProperty('refreshToken')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('migrates legacy plaintext tokens on load', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'polaris-accounts-'))
+    try {
+      const path = join(dir, 'accounts.json')
+      await writeFile(
+        path,
+        JSON.stringify({
+          activeId: 'microsoft:abc',
+          accounts: [microsoftAccount()]
+        }),
+        'utf8'
+      )
+
+      const store = new AccountStore(path, new FakeCipher())
+      await store.load()
+      expect(store.stored('microsoft:abc')?.accessToken).toBe('access-token')
+
+      const raw = JSON.parse(await readFile(path, 'utf8'))
+      expect(raw.accounts[0].accessToken).toMatch(/^enc:v1:/)
+      expect(raw.accounts[0].refreshToken).toMatch(/^enc:v1:/)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps accounts usable when no cipher is available', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'polaris-accounts-'))
+    try {
+      const path = join(dir, 'accounts.json')
+      const store = new AccountStore(path)
+      await store.add(microsoftAccount())
+      const raw = JSON.parse(await readFile(path, 'utf8'))
+      expect(raw.accounts[0].accessToken).toBe('plain:access-token')
+
+      const reloaded = new AccountStore(path)
+      await reloaded.load()
+      expect(reloaded.stored('microsoft:abc')?.accessToken).toBe('access-token')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+})

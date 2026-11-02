@@ -200,16 +200,15 @@ export default function App(): JSX.Element {
       if (!gameRunning && boot.settings.autoUpdateMods && !autoUpdated.current.has(activeInstanceId)) {
         autoUpdated.current.add(activeInstanceId)
         try {
-          const result = await api.updateMods(activeInstanceId)
-          if (!cancelled && result.updates.length > 0) {
+          const found = await api.modUpdates(activeInstanceId)
+          if (!cancelled && found.length > 0) {
             toast(
-              `Updated ${result.updates.length} mod${result.updates.length === 1 ? '' : 's'} for this instance`,
-              'success'
+              `${found.length} mod update${found.length === 1 ? '' : 's'} available. Open this instance to review and confirm.`,
+              'info'
             )
-            void refresh()
           }
         } catch (error) {
-          if (!cancelled) toast(`Automatic mod update failed: ${errorMessage(error)}`, 'error')
+          if (!cancelled) toast(`Mod update check failed: ${errorMessage(error)}`, 'error')
         }
       }
       try {

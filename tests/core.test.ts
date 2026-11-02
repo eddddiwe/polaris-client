@@ -463,6 +463,9 @@ describe('mrpack parsing', () => {
     expect(() =>
       parseMrpackIndex(manifest({ dependencies: { minecraft: '1.21.10', forge: '47.2.0' } }))
     ).toThrow(/Fabric/)
+    expect(() =>
+      parseMrpackIndex(manifest({ dependencies: { 'fabric-loader': '0.16.9' } }))
+    ).toThrow(/does not declare a Minecraft version/)
     expect(() => parseMrpackIndex(manifest({ formatVersion: 2 }))).toThrow(/format version/)
     expect(() => parseMrpackIndex('{oops')).toThrow(/valid JSON/)
   })

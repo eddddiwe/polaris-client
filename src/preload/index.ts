@@ -16,6 +16,7 @@ const api: PolarisAPI & { platform: NodeJS.Platform } = {
   openRootFolder: () => ipcRenderer.invoke(IPC.openRoot),
   openInstanceFolder: (id) => ipcRenderer.invoke(IPC.openInstanceFolder, id),
   openLogsFolder: (id) => ipcRenderer.invoke(IPC.openLogs, id),
+  openCrashReport: (id, name) => ipcRenderer.invoke(IPC.openCrashReport, id, name),
   listCrashReports: (id) => ipcRenderer.invoke(IPC.listCrashReports, id),
   disableAllMods: (id) => ipcRenderer.invoke(IPC.disableAllMods, id),
   versions: (includeSnapshots) => ipcRenderer.invoke(IPC.versionsList, includeSnapshots),
@@ -72,6 +73,7 @@ const api: PolarisAPI & { platform: NodeJS.Platform } = {
   friendsRespond: (myCode: string, friendCode: string, action: 'accept' | 'decline') =>
     ipcRenderer.invoke(IPC.friendsRespond, myCode, friendCode, action),
   friendsGetRequests: (myCode: string) => ipcRenderer.invoke(IPC.friendsGetRequests, myCode),
+  friendsPresence: (uuids: string[]) => ipcRenderer.invoke(IPC.friendsPresence, uuids),
   checkForUpdates: () => ipcRenderer.invoke(IPC.checkForUpdates),
   installUpdate: () => ipcRenderer.invoke(IPC.installUpdate),
   importMrpack: () => ipcRenderer.invoke(IPC.importMrpack),

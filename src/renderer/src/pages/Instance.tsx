@@ -578,6 +578,34 @@ function ModsTab({ navigate }: { navigate: (page: 'discover') => void }): JSX.El
   }
 
   const applyUpdates = async (projectId?: string): Promise<void> => {
+    let candidates = updates ?? []
+    if (!candidates.length) {
+      try {
+        candidates = await api.modUpdates(instance.id)
+        setUpdates(candidates)
+      } catch (error) {
+        toast(errorMessage(error), 'error')
+        return
+      }
+    }
+    const selected = projectId
+      ? candidates.filter((entry) => entry.projectId === projectId)
+      : candidates
+    if (!selected.length) {
+      toast('Everything is already up to date')
+      return
+    }
+    const lines = selected.slice(0, 10).map(
+      (entry) => `• ${entry.name}: ${entry.currentVersionNumber} → ${entry.newVersionNumber}`
+    )
+    if (selected.length > 10) lines.push(`…and ${selected.length - 10} more`)
+    const confirmed = await confirm({
+      title: selected.length === 1 ? 'Update mod?' : `Update ${selected.length} mods?`,
+      message: `${lines.join('\n')}\n\nPolaris will download these versions and replace the current jars.`,
+      confirmLabel: selected.length === 1 ? 'Update mod' : 'Update mods'
+    })
+    if (!confirmed) return
+
     setUpdating(projectId ?? 'all')
     try {
       const result = await api.updateMods(instance.id, projectId ? [projectId] : undefined)
@@ -1271,7 +1299,7 @@ function LogsTab(): JSX.Element {
               <div key={crash.name} className="crash-item">
                 <span className="crash-name">{crash.name}</span>
                 <span className="crash-size">{Math.round(crash.size / 1024)}KB</span>
-                <button className="btn btn-ghost btn-sm" onClick={() => void api.openExternal(`file://${crash.path}`)}>
+                <button className="btn btn-ghost btn-sm" onClick={() => void api.openCrashReport(detail.instance.id, crash.name)}>
                   <Icon name="folder" size={12} /> Open
                 </button>
               </div>

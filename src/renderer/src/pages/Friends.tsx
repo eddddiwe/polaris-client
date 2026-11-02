@@ -16,6 +16,7 @@ export function FriendsPage(): JSX.Element {
   const [copied, setCopied] = useState(false)
   const [pendingRequests, setPendingRequests] = useState<Array<{ code: string; name: string; uuid?: string; createdAt: number }>>([])
   const [requestsLoading, setRequestsLoading] = useState(false)
+  const [presence, setPresence] = useState<Record<string, { server: string; lastSeen: number }>>({})
   const pollBusy = useRef(false)
 
   const active = boot.accounts.find((account) => account.id === boot.activeAccountId)
@@ -25,6 +26,8 @@ export function FriendsPage(): JSX.Element {
     try {
       const list = await api.friendsList()
       setFriends(list)
+      const uuids = list.map((friend) => friend.uuid).filter((uuid): uuid is string => Boolean(uuid))
+      setPresence(uuids.length ? await api.friendsPresence(uuids) : {})
     } catch (error) {
       if (!silent) toast(errorMessage(error), 'error')
     } finally {
@@ -66,7 +69,7 @@ export function FriendsPage(): JSX.Element {
         pollBusy.current = false
       })
     }
-    const timer = window.setInterval(poll, 4000)
+    const timer = window.setInterval(poll, 15000)
     const onFocus = (): void => poll()
     const onVisibility = (): void => {
       if (document.visibilityState === 'visible') poll()
@@ -162,7 +165,7 @@ export function FriendsPage(): JSX.Element {
         <div>
           <span className="eyebrow">Social</span>
           <h1>Friends</h1>
-          <p className="page-sub">Add friends by their Polaris friend code. Pending requests appear below.</p>
+          <p className="page-sub">Add friends by their Polaris friend code. Online status comes from presence sharing, which is off by default.</p>
         </div>
         <button className="btn btn-primary btn-sm" onClick={() => setAddOpen(true)}>
           <Icon name="plus" size={14} /> Add friend
@@ -248,8 +251,17 @@ export function FriendsPage(): JSX.Element {
                   {friend.code && (
                     <span className="friend-code-small muted">({friend.code})</span>
                   )}
+                  {friend.uuid && presence[friend.uuid.toLowerCase()] && (
+                    <span className="friend-server">
+                      Playing on {presence[friend.uuid.toLowerCase()].server}
+                    </span>
+                  )}
                 </div>
-                <span className="badge badge-violet">Online</span>
+                {friend.uuid && presence[friend.uuid.toLowerCase()] ? (
+                  <span className="badge badge-online">Online</span>
+                ) : (
+                  <span className="badge badge-offline">Offline</span>
+                )}
                 <button className="icon-btn" aria-label={`Remove ${friend.name}`} onClick={() => void removeFriend(friend.code)}>
                   <Icon name="trash" size={14} />
                 </button>
