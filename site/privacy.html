@@ -18,7 +18,7 @@
         <a class="brand" href="index.html" aria-label="Polaris home">
           <img class="brand-mark" src="assets/polaris.svg" alt="" width="34" height="34" />
           <span class="brand-name">Polaris</span>
-          <span class="brand-version">0.4.1</span>
+          <span class="brand-version">0.4.2</span>
         </a>
         <nav class="legal-nav" aria-label="Legal">
           <a href="index.html">Home</a>
@@ -102,9 +102,11 @@
           Microsoft sign-in uses the OAuth device-code flow with an Azure public-client ID that you supply.
           Polaris sends the device-code and token requests to
           <code>login.microsoftonline.com</code>, then exchanges the Microsoft token for Xbox Live and
-          Minecraft Services tokens. The resulting tokens are stored locally in <code>accounts.json</code>.
-          Microsoft, Xbox and Minecraft process that traffic under their own privacy statements. Offline
-          accounts need no network at all.
+          Minecraft Services tokens. The resulting tokens are encrypted with the operating system
+          credential store and stored locally in <code>accounts.json</code>; on systems without an
+          encryption backend the legacy token fallback is clearly marked plaintext. Microsoft, Xbox and
+          Minecraft process that traffic under their own privacy statements. Offline accounts need no
+          network at all.
         </p>
 
         <h2 id="polaris-api">4. The Polaris API</h2>
@@ -115,8 +117,8 @@
         </p>
         <ul>
           <li><strong>Update and announcement checks.</strong> The launcher requests the current version. Cloudflare and GitHub process standard request metadata such as IP address, user agent, timestamp and requested URL. No account identifier is sent.</li>
-          <li><strong>Friend codes.</strong> If you create or add a friend, the API stores your friend code, display name, optional Minecraft UUID, friend list and pending requests in Cloudflare KV. People who know your code can resolve that record. Removing a friend or responding to a request updates or deletes the relevant records.</li>
-          <li><strong>Presence.</strong> If you enable presence sharing, the API stores your UUID, Minecraft name, current server address and a last-seen timestamp. The Friends page resolves those records by UUID so it can show an accurate online badge. See the next section.</li>
+          <li><strong>Friend codes.</strong> If you create or add a friend, the API stores your friend code, display name, optional Minecraft UUID, friend list and pending requests in Cloudflare KV. Your code is a public identifier, not a password: a per-account secret authenticates every read or change and is stored encrypted on your device. Knowing a code alone does not grant access. Removing a friend or responding to a request updates or deletes the relevant records.</li>
+          <li><strong>Presence.</strong> If you enable presence sharing, the API stores your UUID, Minecraft name, current server address, friend code and a last-seen timestamp. The Friends page resolves those records only for people on your authenticated friend list, so it can show an accurate online badge. See the next section.</li>
         </ul>
         <p>
           The API does not run an analytics pipeline, does not log request bodies for advertising, and does
@@ -128,15 +130,17 @@
         <p>
           Presence is the feature behind Polaris user badges. When it is on, the bundled PolarisConfig mod
           sends your UUID, Minecraft name and current server address to the API roughly every 20 seconds
-          while you are connected to a multiplayer server. Other Polaris users on the same server can read
-          that list to show a <code>[P]</code> marker. Entries expire automatically after about two minutes.
+          while you are connected to a multiplayer server. Other signed-in Polaris clients can read the
+          per-server list to show a <code>[P]</code> marker; friend presence lookups are restricted to your
+          authenticated friend list. Entries expire automatically after about two minutes.
         </p>
         <p>
           <strong>Presence is off by default as of 0.4.0.</strong> You can enable or disable it at any time
           under <strong>Right Shift → General → Share presence &amp; show badges</strong>. Disabling it stops
           new posts immediately; the last entry expires within two minutes. Presence is not sent in
-          singleplayer. The server-side list is readable by anyone who knows the server address, and the
-          UUID lookup is readable by anyone who knows the UUID, so treat it as public while it is enabled.
+          singleplayer. The per-server list is available to authenticated Polaris clients, while UUID
+          lookups return only friends, so treat the server list as visible to other Polaris users while
+          presence is enabled.
         </p>
 
         <h2 id="website">6. This website</h2>
@@ -159,7 +163,6 @@
             <tr><td>Modrinth</td><td>Searching, installing or updating mods and packs</td><td>Search queries, project and version requests</td></tr>
             <tr><td>GitHub</td><td>Update checks and downloads</td><td>Release metadata requests; downloads if you install from GitHub</td></tr>
             <tr><td>Cloudflare</td><td>All Polaris API calls</td><td>Request metadata and the API records described above</td></tr>
-            <tr><td>PlayerDB</td><td>Resolving a friend's skin from a name</td><td>The friend's Minecraft name</td></tr>
           </tbody>
         </table>
         <p>
@@ -170,7 +173,7 @@
         <h2 id="retention">8. Retention and deletion</h2>
         <ul>
           <li>Local files remain until you delete them.</li>
-          <li>Friend records remain in Cloudflare KV until you remove the friend or ask us to delete them.</li>
+          <li>Friend lists and pending requests update when you remove a friend; the public profile record tied to your code remains until you ask us to delete it.</li>
           <li>Presence records expire automatically after about two minutes.</li>
           <li>Version-check requests are transient; we do not build a profile from them.</li>
           <li>Hosting logs are retained according to the hosting provider's policy.</li>
@@ -180,9 +183,11 @@
         <p>
           Network requests use HTTPS. Account tokens are encrypted with Electron <code>safeStorage</code> and
           the operating system credential store where available. On systems without an encryption backend,
-          Polaris falls back to a clearly marked plaintext value protected by your OS account permissions,
-          so use full-disk encryption and a locked OS account if you need protection at rest. No system is
-          perfectly secure, and we cannot guarantee that a compromise will never occur.
+          legacy tokens use a clearly marked plaintext value protected by your OS account permissions, so
+          use full-disk encryption and a locked OS account if you need protection at rest. Friend API
+          secrets never use that fallback: if encryption is unavailable, friends and presence stay
+          disabled. No system is perfectly secure, and we cannot guarantee that a compromise will never
+          occur.
         </p>
 
         <h2 id="children">10. Children</h2>

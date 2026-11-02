@@ -42,6 +42,7 @@ import {
   safeOverridePath
 } from '../src/core/modpacks'
 import { evaluatePackMod } from '../src/core/mods'
+import { assertSafeZip, readZipEntry } from '../src/core/zipSafe'
 import { PACKS, packsFor } from '../src/shared/packs'
 
 const windows: RuleContext = {
@@ -434,16 +435,13 @@ describe('mrpack parsing', () => {
         {
           path: 'mods/optional.jar',
           downloads: ['https://example.test/optional.jar'],
+          hashes: { sha512: 'b'.repeat(128) },
           env: { client: 'optional' }
         },
         {
           path: 'mods/server-only.jar',
           downloads: ['https://example.test/server.jar'],
           env: { client: 'unsupported' }
-        },
-        {
-          path: '../escape.jar',
-          downloads: ['https://example.test/escape.jar']
         }
       ],
       ...overrides
@@ -457,6 +455,47 @@ describe('mrpack parsing', () => {
     expect(plan.files.map((file) => file.path)).toEqual(['mods/required.jar', 'mods/optional.jar'])
     expect(plan.files[0]).toMatchObject({ optional: false, sha1: 'a'.repeat(40), size: 42 })
     expect(plan.files[1].optional).toBe(true)
+  })
+
+  it('rejects files without an integrity hash or over plain HTTP', () => {
+    expect(() =>
+      parseMrpackIndex(
+        manifest({
+          files: [
+            {
+              path: 'mods/unverified.jar',
+              downloads: ['https://example.test/unverified.jar']
+            }
+          ]
+        })
+      )
+    ).toThrow(/checksum/)
+    expect(() =>
+      parseMrpackIndex(
+        manifest({
+          files: [
+            {
+              path: 'mods/insecure.jar',
+              downloads: ['http://example.test/insecure.jar'],
+              hashes: { sha1: 'a'.repeat(40) }
+            }
+          ]
+        })
+      )
+    ).toThrow(/HTTPS/)
+    expect(() =>
+      parseMrpackIndex(
+        manifest({
+          files: [
+            {
+              path: '../escape.jar',
+              downloads: ['https://example.test/escape.jar'],
+              hashes: { sha1: 'a'.repeat(40) }
+            }
+          ]
+        })
+      )
+    ).toThrow(/unsafe file path/)
   })
 
   it('rejects unsupported loaders and format versions', () => {
@@ -485,6 +524,33 @@ describe('mrpack parsing', () => {
     expect(normalizeArchivePath('mods/../../escape.jar')).toBeNull()
     expect(normalizeArchivePath('C:/Windows/system32/x.jar')).toBeNull()
     expect(normalizeArchivePath('mods/')).toBeNull()
+  })
+
+  it('enforces zip limits on the bytes actually decompressed', () => {
+    const fakeEntry = {
+      header: { size: 0 },
+      getData: () => Buffer.alloc(64)
+    }
+    expect(() => readZipEntry(fakeEntry as never, 32, 'entry.bin')).toThrow(/too large/)
+  })
+
+  it('rejects empty and traversal segments in zip entries', () => {
+    const zip = (name: string): never =>
+      ({
+        getEntries: () => [
+          { entryName: name, isDirectory: false, header: { size: 1 } }
+        ]
+      }) as never
+    expect(() => assertSafeZip(zip('mods//evil.jar'), 'archive', {
+      maxEntries: 10,
+      maxEntryBytes: 10,
+      maxTotalBytes: 10
+    })).toThrow(/unsafe path/)
+    expect(() => assertSafeZip(zip('mods/../evil.jar'), 'archive', {
+      maxEntries: 10,
+      maxEntryBytes: 10,
+      maxTotalBytes: 10
+    })).toThrow(/unsafe path/)
   })
 
   it('resolves override entries inside the instance only', () => {

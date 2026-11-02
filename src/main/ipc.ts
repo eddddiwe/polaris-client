@@ -23,64 +23,99 @@ export function registerIpc(services: AppServices): void {
   handle(IPC.bootstrap, async () => services.bootstrap())
   handle(IPC.settingsSnapshot, async () => services.settingsStore.get())
 
-  const activeFriendAccount = (): { code: string; name: string; uuid: string } | null => {
+  const activeFriendAccount = (): {
+    code: string
+    secret: string
+    name: string
+    uuid: string
+  } | null => {
     const account = services.accounts.activeStored()
-    return account?.friendCode ? { code: account.friendCode, name: account.name, uuid: account.uuid } : null
+    return account?.friendCode && account.friendSecret
+      ? {
+          code: account.friendCode,
+          secret: account.friendSecret,
+          name: account.name,
+          uuid: account.uuid
+        }
+      : null
+  }
+
+  const registerFriendAccount = async (account: {
+    code: string
+    secret: string
+    name: string
+    uuid: string
+  }): Promise<void> => {
+    if (!(await services.friends.register(account, account.name, account.uuid))) {
+      throw new Error('Could not authenticate with the Polaris API. Check your connection and try again.')
+    }
+    await services.friends.useAccount(account.code)
   }
 
   handle(IPC.friendsList, async () => {
     const account = activeFriendAccount()
     if (account) {
-      // Keep the display name on the worker in sync so friends see a name,
-      // not just a raw code. Fire-and-forget so an offline worker does not
-      // delay the friends list.
-      void services.friends.registerCode(account.code, account.name, account.uuid)
-      await services.friends.syncFromServer(account.code)
+      try {
+        await registerFriendAccount(account)
+        await services.friends.syncFromServer(account)
+      } catch {
+        // Offline (or the API rejected the session): show only this
+        // account's cache, never another account's friends.
+        await services.friends.useAccount(account.code)
+      }
+    } else {
+      const stored = services.accounts.activeStored()
+      if (stored?.friendCode) await services.friends.useAccount(stored.friendCode)
     }
-    return services.friends.list()
-  })
-  handle(IPC.friendsAdd, async (code: string, name: string) => {
-    const account = activeFriendAccount()
-    if (!account) throw new Error('Sign in to add friends.')
-    await services.friends.registerCode(account.code, account.name, account.uuid)
-    await services.friends.add(account.code, code, name)
-    await services.friends.syncFromServer(account.code)
-    return services.friends.list()
-  })
-  handle(IPC.friendsRemove, async (code: string) => {
-    const account = activeFriendAccount()
-    await services.friends.remove(account?.code ?? '', code)
     return services.friends.list()
   })
   handle(IPC.friendsRemoveMutual, async (friendCode: string) => {
     const account = activeFriendAccount()
     if (!account) throw new Error('Sign in to remove friends.')
-    await services.friends.removeMutual(account.code, friendCode)
-    await services.friends.syncFromServer(account.code)
+    try {
+      await registerFriendAccount(account)
+    } catch {
+      // Offline removal is supported. Use this account's cache, then let
+      // removeMutual decide whether the server error must be shown.
+      await services.friends.useAccount(account.code)
+    }
+    await services.friends.removeMutual(account, friendCode)
+    await services.friends.syncFromServer(account)
     return services.friends.list()
   })
   handle(IPC.friendsRequest, async (code: string) => {
     const account = activeFriendAccount()
     if (!account) throw new Error('Sign in to send friend request.')
-    await services.friends.registerCode(account.code, account.name, account.uuid)
-    await services.friends.sendRequest(account.code, code)
-    await services.friends.syncFromServer(account.code)
-    return services.friends.getRequests(account.code)
+    await registerFriendAccount(account)
+    await services.friends.sendRequest(account, code)
+    await services.friends.syncFromServer(account)
+    return services.friends.getRequests(account)
   })
-  handle(IPC.friendsRespond, async (_myCode: string, friendCode: string, action: 'accept' | 'decline') => {
+  handle(IPC.friendsRespond, async (friendCode: string, action: 'accept' | 'decline') => {
     const account = activeFriendAccount()
     if (!account) throw new Error('Sign in to respond to friend request.')
-    await services.friends.registerCode(account.code, account.name, account.uuid)
-    await services.friends.respondRequest(account.code, friendCode, action)
-    await services.friends.syncFromServer(account.code)
-    return services.friends.getRequests(account.code)
+    await registerFriendAccount(account)
+    await services.friends.respondRequest(account, friendCode, action)
+    await services.friends.syncFromServer(account)
+    return services.friends.getRequests(account)
   })
   handle(IPC.friendsGetRequests, async () => {
     const account = activeFriendAccount()
     if (!account) return []
-    return services.friends.getRequests(account.code)
+    await registerFriendAccount(account)
+    return services.friends.getRequests(account)
   })
-  handle(IPC.friendsPresence, async (uuids: string[]) => services.friends.presence(uuids))
+  handle(IPC.friendsPresence, async (uuids: string[]) => {
+    const account = activeFriendAccount()
+    if (!account) return {}
+    try {
+      await registerFriendAccount(account)
+    } catch {
+      // Presence is optional; an offline check must not break the friend list.
+      return {}
+    }
+    return services.friends.presence(account, uuids)
+  })
 
   ipcMain.handle(IPC.windowAction, (event, action: 'minimize' | 'maximize' | 'close' | 'show') => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -131,6 +166,7 @@ export function registerIpc(services: AppServices): void {
   })
 
   handle(IPC.listCrashReports, async (id: string) => {
+    await services.instances.get(id)
     const crashDir = join(services.paths.instances, id, 'crash-reports')
     try {
       const files = await readdir(crashDir)

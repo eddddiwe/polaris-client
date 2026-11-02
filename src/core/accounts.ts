@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import type { Account } from '../shared/types'
 import { readJson, writeJson } from './fsutil'
 
@@ -17,6 +17,11 @@ export interface StoredAccount extends Account {
   expiresAt?: number
   clientId?: string
   xuid?: string
+  /**
+   * Per-account API credential. It never crosses the IPC boundary and is
+   * encrypted at rest with the same safeStorage cipher as the tokens.
+   */
+  friendSecret?: string
 }
 
 interface AccountFile {
@@ -27,7 +32,10 @@ interface AccountFile {
 export class AccountStore {
   private data: AccountFile = { activeId: null, accounts: [] }
   /** Encrypted values kept if the OS keychain cannot decrypt them yet. */
-  private readonly originalTokens = new Map<string, { access?: string; refresh?: string }>()
+  private readonly originalTokens = new Map<
+    string,
+    { access?: string; refresh?: string; friendSecret?: string }
+  >()
 
   constructor(
     private readonly path: string,
@@ -41,16 +49,23 @@ export class AccountStore {
     for (const account of this.data.accounts) {
       account.active = account.id === this.data.activeId
       if (account.type === 'microsoft') {
-        if (account.accessToken.startsWith(ENCRYPTED_PREFIX)) {
-          this.originalTokens.set(account.id, {
-            access: account.accessToken,
-            refresh: account.refreshToken?.startsWith(ENCRYPTED_PREFIX)
-              ? account.refreshToken
-              : undefined
-          })
-        }
+        // Track each encrypted field independently. A partially migrated
+        // account must not lose its friend secret just because another token
+        // was stored in plaintext.
+        const original: { access?: string; refresh?: string; friendSecret?: string } = {}
+        if (account.accessToken.startsWith(ENCRYPTED_PREFIX)) original.access = account.accessToken
+        if (account.refreshToken?.startsWith(ENCRYPTED_PREFIX)) original.refresh = account.refreshToken
+        if (account.friendSecret?.startsWith(ENCRYPTED_PREFIX)) original.friendSecret = account.friendSecret
+        if (Object.keys(original).length > 0) this.originalTokens.set(account.id, original)
+
         account.accessToken = await this.decode(account.accessToken)
         if (account.refreshToken) account.refreshToken = await this.decode(account.refreshToken)
+        const hadStoredSecret = Boolean(account.friendSecret)
+        if (hadStoredSecret) account.friendSecret = await this.decode(account.friendSecret as string)
+        // A legacy account has no secret yet. If a stored secret failed to
+        // decrypt, keep the encrypted original instead of silently rotating
+        // the account's API credential.
+        if (!account.friendSecret && !hadStoredSecret) account.friendSecret = generateFriendSecret()
       }
       // Only generate friend code for Microsoft accounts, not offline accounts
       if (!account.friendCode && account.type === 'microsoft') {
@@ -84,6 +99,23 @@ export class AccountStore {
               ? await this.encode(account.refreshToken ?? '')
               : original.refresh
         }
+        if (account.friendSecret) {
+          const encodedSecret = await this.encodeSecret(account.friendSecret)
+          if (encodedSecret) {
+            copy.friendSecret = encodedSecret
+          } else if (original?.friendSecret) {
+            // Encryption is temporarily unavailable. Keep the previous
+            // ciphertext rather than writing a plaintext bearer credential.
+            copy.friendSecret = original.friendSecret
+            account.friendSecret = undefined
+          } else {
+            // Fail closed: no API credential is better than a plaintext one.
+            delete copy.friendSecret
+            account.friendSecret = undefined
+          }
+        } else if (original?.friendSecret) {
+          copy.friendSecret = original.friendSecret
+        }
       }
       accounts.push(copy)
     }
@@ -99,6 +131,22 @@ export class AccountStore {
     } catch {
       // OS keychain unavailable: keep the account usable, never crash login.
       return `${PLAINTEXT_PREFIX}${value}`
+    }
+  }
+
+  /**
+   * Friend secrets are bearer credentials for the social API. Unlike legacy
+   * tokens, they must never be written as plaintext: if the OS keychain is
+   * unavailable, friends/presence stay disabled for this session.
+   */
+  private async encodeSecret(value: string): Promise<string | undefined> {
+    if (!value) return undefined
+    if (value.startsWith(ENCRYPTED_PREFIX)) return value
+    if (!this.cipher) return undefined
+    try {
+      return await this.cipher.encrypt(value)
+    } catch {
+      return undefined
     }
   }
 
@@ -165,13 +213,20 @@ export class AccountStore {
 }
 
 export function generateFriendCode(): string {
+  // 32 symbols is a power of two, so masking a random byte is unbiased.
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
   const group = (): string => {
+    const bytes = randomBytes(4)
     let out = ''
-    for (let i = 0; i < 4; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)]
+    for (let i = 0; i < 4; i++) out += alphabet[bytes[i] & 31]
     return out
   }
   return `POLARIS-${group()}-${group()}`
+}
+
+/** 256-bit per-account credential for authenticated friend/presence calls. */
+export function generateFriendSecret(): string {
+  return randomBytes(32).toString('base64url')
 }
 
 export function offlineUuid(name: string): string {

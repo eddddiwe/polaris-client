@@ -998,13 +998,11 @@ export function createMockApi(): Window['polaris'] {
     downloadJava: async () => java,
     settingsSnapshot: async () => settings,
     friendsList: async () => [],
-    friendsAdd: async (code, name) => [{ code: code.toUpperCase(), name: name || code, addedAt: Date.now() }],
-    friendsRemove: async () => [],
     friendsRemoveMutual: async () => [],
     friendsGetRequests: async () => [],
     friendsPresence: async () => ({}),
-    friendsRequest: async (code, name) => [{ code: code.toUpperCase(), name: name || code, createdAt: Date.now() }],
-    friendsRespond: async (myCode, friendCode, action) => {
+    friendsRequest: async (code) => [{ code: code.toUpperCase(), name: code, createdAt: Date.now() }],
+    friendsRespond: async (friendCode, action) => {
       if (action === 'accept') return [{ code: friendCode, name: friendCode, createdAt: Date.now() }]
       return []
     },

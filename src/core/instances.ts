@@ -7,9 +7,9 @@ import { ensureServersDat } from './nbt'
 import type { Paths } from './paths'
 import type { Settings } from '../shared/types'
 
-const POLARIS_CONFIG_INTERMEDIARY = 'polaris-config-1.2.0.jar'
-const POLARIS_CONFIG_MODERN = 'polaris-config-1.2.0-modern.jar'
-const POLARIS_CONFIG_OFFICIAL = 'polaris-config-1.2.0-official.jar'
+const POLARIS_CONFIG_INTERMEDIARY = 'polaris-config-1.2.1.jar'
+const POLARIS_CONFIG_MODERN = 'polaris-config-1.2.1-modern.jar'
+const POLARIS_CONFIG_OFFICIAL = 'polaris-config-1.2.1-official.jar'
 const POLARIS_CONFIG_PATTERN = /^polaris-config-.*\.jar$/i
 
 /** Cache source-jar hashes; the same bundled jar is compared for every instance. */

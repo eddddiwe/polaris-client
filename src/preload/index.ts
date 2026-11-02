@@ -66,13 +66,11 @@ const api: PolarisAPI & { platform: NodeJS.Platform } = {
   downloadJava: (major: number) => ipcRenderer.invoke(IPC.settingsDownloadJava, major),
   settingsSnapshot: () => ipcRenderer.invoke(IPC.settingsSnapshot),
   friendsList: () => ipcRenderer.invoke(IPC.friendsList),
-  friendsAdd: (code: string, name: string) => ipcRenderer.invoke(IPC.friendsAdd, code, name),
-  friendsRemove: (code: string) => ipcRenderer.invoke(IPC.friendsRemove, code),
   friendsRemoveMutual: (friendCode: string) => ipcRenderer.invoke(IPC.friendsRemoveMutual, friendCode),
-  friendsRequest: (code: string, name: string) => ipcRenderer.invoke(IPC.friendsRequest, code, name),
-  friendsRespond: (myCode: string, friendCode: string, action: 'accept' | 'decline') =>
-    ipcRenderer.invoke(IPC.friendsRespond, myCode, friendCode, action),
-  friendsGetRequests: (myCode: string) => ipcRenderer.invoke(IPC.friendsGetRequests, myCode),
+  friendsRequest: (code: string) => ipcRenderer.invoke(IPC.friendsRequest, code),
+  friendsRespond: (friendCode: string, action: 'accept' | 'decline') =>
+    ipcRenderer.invoke(IPC.friendsRespond, friendCode, action),
+  friendsGetRequests: () => ipcRenderer.invoke(IPC.friendsGetRequests),
   friendsPresence: (uuids: string[]) => ipcRenderer.invoke(IPC.friendsPresence, uuids),
   checkForUpdates: () => ipcRenderer.invoke(IPC.checkForUpdates),
   installUpdate: () => ipcRenderer.invoke(IPC.installUpdate),

@@ -1,11 +1,16 @@
 import { execFile } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { ensureDir } from './fsutil'
-import { access, readdir } from 'node:fs/promises'
-import { constants } from 'node:fs'
+import { access, readdir, rm, stat } from 'node:fs/promises'
+import { createWriteStream, constants } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, delimiter, join } from 'node:path'
+import { Readable, Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import type { JavaInfo } from '../shared/types'
+import { assertPublicHttpsUrl } from './http'
+import { assertSafeZip, JAVA_ZIP_LIMITS } from './zipSafe'
 
 const execFileAsync = promisify(execFile)
 const isWindows = process.platform === 'win32'
@@ -287,6 +292,17 @@ export function requiredJavaMajor(mcVersion: string): number {
   return 8
 }
 
+interface AdoptiumAsset {
+  binary?: {
+    package?: {
+      checksum?: string
+      name?: string
+      size?: number
+      link?: string
+    }
+  }
+}
+
 export async function downloadJava(
   major: number,
   destination: string,
@@ -294,66 +310,88 @@ export async function downloadJava(
 ): Promise<string> {
   const os = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux'
   const arch = process.arch === 'arm64' ? 'aarch64' : 'x64'
-  const url = `https://api.adoptium.net/v3/binary/latest/${major}/ga/${os}/${arch}/jdk/hotspot/normal/eclipse`
+  const metadataUrl = `https://api.adoptium.net/v3/assets/latest/${major}/hotspot?architecture=${arch}&image_type=jdk&os=${os}&vendor=eclipse`
 
   onProgress?.({ stage: 'downloading', percent: 0, message: 'Fetching Java runtime...' })
 
-  // Download the zip
-  const response = await fetch(url, { redirect: 'follow' })
-  if (!response.ok) throw new Error(`Failed to download Java: ${response.status}`)
-
-  const totalSize = Number(response.headers.get('content-length') ?? 0)
-  const chunks: Uint8Array[] = []
-  const reader = response.body?.getReader()
-  let downloaded = 0
-
-  if (reader) {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      if (value) {
-        chunks.push(value)
-        downloaded += value.length
-        if (totalSize > 0) {
-          onProgress?.({ stage: 'downloading', percent: Math.round((downloaded / totalSize) * 80), message: `Downloading... ${Math.round(downloaded / 1024 / 1024)}MB / ${Math.round(totalSize / 1024 / 1024)}MB` })
-        }
-      }
-    }
+  const metadataResponse = await fetch(metadataUrl, { signal: AbortSignal.timeout(15_000) })
+  if (!metadataResponse.ok) throw new Error(`Failed to query Java metadata: ${metadataResponse.status}`)
+  const assets = (await metadataResponse.json()) as AdoptiumAsset[]
+  const pkg = assets?.[0]?.binary?.package
+  const link = String(pkg?.link || '')
+  const checksum = String(pkg?.checksum || '').toLowerCase()
+  const expectedSize = Number(pkg?.size) || 0
+  if (!link || !/^[0-9a-f]{64}$/.test(checksum) || expectedSize < 1_000_000) {
+    throw new Error('Java release metadata is missing a SHA-256 or size')
   }
+  if (expectedSize > 512 * 1024 * 1024) throw new Error('Java runtime archive is unexpectedly large')
+  await assertPublicHttpsUrl(link)
 
-  const buffer = Buffer.concat(chunks.map(c => Buffer.from(c)))
-  onProgress?.({ stage: 'extracting', percent: 85, message: 'Extracting Java runtime...' })
+  const response = await fetch(link, { redirect: 'follow', signal: AbortSignal.timeout(10 * 60_000) })
+  if (!response.ok) throw new Error(`Failed to download Java: ${response.status}`)
+  if (!response.body) throw new Error('Empty Java download response')
 
-  // Save zip to temp
   const tempZip = join(destination, `java-${major}.zip`)
   await ensureDir(destination)
-  const { writeFile } = await import('node:fs/promises')
-  await writeFile(tempZip, buffer)
+  const hash = createHash('sha256')
+  let downloaded = 0
+  const verifier = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      downloaded += chunk.length
+      if (downloaded > expectedSize) {
+        callback(new Error('Java download exceeded its published size'))
+        return
+      }
+      hash.update(chunk)
+      if (downloaded % (1024 * 1024) < chunk.length) {
+        onProgress?.({
+          stage: 'downloading',
+          percent: Math.min(80, Math.round((downloaded / expectedSize) * 80)),
+          message: `Downloading... ${Math.round(downloaded / 1024 / 1024)}MB / ${Math.round(expectedSize / 1024 / 1024)}MB`
+        })
+      }
+      callback(null, chunk)
+    }
+  })
 
-  // Extract
-  const AdmZip = (await import('adm-zip')).default
-  const zip = new AdmZip(tempZip)
-  const entries = zip.getEntries()
-  let extracted = 0
-  const total = entries.length
-
-  for (const entry of entries) {
-    if (entry.isDirectory) continue
-    const targetPath = join(destination, entry.entryName)
-    await ensureDir(join(targetPath, '..'))
-    zip.extractEntryTo(entry, destination, true, true)
-    extracted++
-    onProgress?.({ stage: 'extracting', percent: 85 + Math.round((extracted / total) * 15), message: `Extracting... ${extracted}/${total}` })
+  try {
+    await pipeline(Readable.fromWeb(response.body as never), verifier, createWriteStream(tempZip))
+    if (downloaded !== expectedSize) {
+      throw new Error(`Incomplete Java download: expected ${expectedSize} bytes, received ${downloaded}`)
+    }
+    if (hash.digest('hex') !== checksum) {
+      throw new Error('Java runtime failed its SHA-256 verification')
+    }
+  } catch (error) {
+    await rm(tempZip, { force: true }).catch(() => undefined)
+    throw error
   }
 
-  // Clean up zip
-  const { rm } = await import('node:fs/promises')
-  await rm(tempZip, { force: true })
+  onProgress?.({ stage: 'extracting', percent: 85, message: 'Extracting Java runtime...' })
+  try {
+    const archive = await stat(tempZip)
+    if (archive.size > 512 * 1024 * 1024) throw new Error('Java runtime archive is too large')
+    const AdmZip = (await import('adm-zip')).default
+    const zip = new AdmZip(tempZip)
+    const entries = assertSafeZip(zip, 'Java runtime archive', JAVA_ZIP_LIMITS)
+    let extracted = 0
+    const total = entries.filter((entry) => !entry.isDirectory).length
+    for (const entry of entries) {
+      if (entry.isDirectory) continue
+      zip.extractEntryTo(entry, destination, true, true)
+      extracted++
+      onProgress?.({
+        stage: 'extracting',
+        percent: 85 + Math.round((extracted / Math.max(1, total)) * 15),
+        message: `Extracting... ${extracted}/${total}`
+      })
+    }
+  } finally {
+    await rm(tempZip, { force: true }).catch(() => undefined)
+  }
 
-  // Find the Java home (the extracted folder)
-  const { readdir } = await import('node:fs/promises')
-  const entries2 = await readdir(destination)
-  const javaHome = entries2.find(e => /jdk|jre|java/i.test(e))
+  const entries = await readdir(destination)
+  const javaHome = entries.find((entry) => /jdk|jre|java/i.test(entry))
   const javaPath = javaHome ? join(destination, javaHome) : destination
 
   onProgress?.({ stage: 'done', percent: 100, message: 'Java runtime installed' })

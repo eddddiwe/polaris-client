@@ -14,13 +14,13 @@ Modrinth discovery, local cosmetics, and a customization layer for both the laun
 - **Launcher discipline** — optionally minimize the launcher and lower its process priority while Minecraft runs, pause launcher animations, and hard-link official launcher caches to save bandwidth and disk.
 - **Accounts** — offline accounts work out of the box. Microsoft sign-in uses the device-code flow with an Azure public-client ID that you supply, so Polaris never ships or borrows an OAuth client.
 - **Polaris identity** — an original four-point star mark used by the app icon, title bar, renderer and showcase site. `build/icon.svg` is the source; `npm run icons` regenerates the PNG and ICO.
-- **Clean-room UI** — Electron 33, React 19 and TypeScript with a context-isolated preload bridge.
+- **Clean-room UI** — Electron 45, React 19 and TypeScript with a context-isolated preload bridge.
 
 ![Polaris Client home screen](site/assets/screenshots/home.jpg)
 
 ## Status
 
-Polaris is at **0.4.1**. Installation, Fabric mod loading, launching, log capture, mod install/remove/toggle, curated packs, update checks, `.mrpack` modpack planning, dedicated server launch, performance plans, `options.txt` writes, the local cosmetics store, launcher appearance, the in-game PolarisConfig menu and the HUD are implemented. Core logic is covered by unit tests. Game installation and Fabric loading have been exercised against live Minecraft 26.3; modpack and server flows should be treated as new.
+Polaris is at **0.4.2**. Installation, Fabric mod loading, launching, log capture, mod install/remove/toggle, curated packs, update checks, `.mrpack` modpack planning, dedicated server launch, performance plans, `options.txt` writes, the local cosmetics store, launcher appearance, the in-game PolarisConfig menu and the HUD are implemented. Core logic is covered by unit tests. Game installation and Fabric loading have been exercised against live Minecraft 26.3; modpack and server flows should be treated as new.
 
 Known gaps:
 
@@ -55,7 +55,7 @@ npm.cmd run test            # unit tests
 npm.cmd run typecheck
 npm.cmd run build           # production bundles into out/
 npm.cmd run dist            # current platform: installer on Windows, AppImage on Linux
-npm.cmd run dist:win        # unsigned NSIS installer: dist/Polaris-Setup-0.4.1.exe
+npm.cmd run dist:win        # unsigned NSIS installer: dist/Polaris-Setup-0.4.2.exe
 npm.cmd run dist:win:portable
 npm.cmd run dist:linux      # Linux AppImage (run on Linux or WSL2)
 npm.cmd run icons           # regenerate the PNG/ICO icon set from build/icon.svg
@@ -88,7 +88,7 @@ Cosmetics are deliberately local-first:
 
 - Shards live in `settings.json` alongside owned items and the equipped badge/cape. There is no economy server, checkout, or way to buy shards in this build.
 - The store is a normal page with the same catalog and prices for every account; it is not a hidden admin screen.
-- The equipped badge/cape is stored in the local settings and appears next to the profile name in the launcher. Cross-player cape visibility in Minecraft requires shared infrastructure that is not part of 0.4.1; the `[P]` presence badge is available through PolarisConfig when both players enable presence sharing.
+- The equipped badge/cape is stored in the local settings and appears next to the profile name in the launcher. Cross-player cape visibility in Minecraft requires shared infrastructure that is not part of 0.4.2; the `[P]` presence badge is available through PolarisConfig when both players enable presence sharing.
 
 Launcher appearance supports wallpaper presets, an animated aurora, direct GIF/WebP/MP4 wallpaper links, dim/blur tuning, accent colors and reduced-motion behavior. The in-game options panel is a careful writer, not a mod injector: it only edits whitelisted vanilla keys in `options.txt`, creates a timestamped backup before writing, and asks you to close the game first. In-game animated wallpapers are not faked.
 

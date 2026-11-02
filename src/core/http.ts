@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
 import { rename, rm, stat } from 'node:fs/promises'
+import { lookup } from 'node:dns/promises'
+import { isIP } from 'node:net'
 import { dirname, join } from 'node:path'
-import { Readable } from 'node:stream'
+import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { copyOrLink, ensureDir, hashFile, pathExists } from './fsutil'
 import { Logger } from './logger'
@@ -13,10 +15,15 @@ export interface DownloadItem {
   url: string
   dest: string
   sha1?: string
+  sha512?: string
   size?: number
   mirror?: string
   label?: string
   optional?: boolean
+  /** Reject non-HTTPS, loopback, private, link-local and metadata hosts. */
+  strictSource?: boolean
+  /** Hard streaming limit, even if the server omits or lies about length. */
+  maxBytes?: number
 }
 
 export interface DownloadProgress {
@@ -61,28 +68,43 @@ export class Downloader {
     init?: RequestInit,
     retries = 3,
     timeoutMs = 60_000,
-    allowStatuses: number[] = []
+    allowStatuses: number[] = [],
+    strictSource = false
   ): Promise<Response> {
     let lastError: unknown
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        const response = await fetch(url, {
-          ...init,
-          headers: {
-            'User-Agent': USER_AGENT,
-            ...(init?.headers ?? {})
-          },
-          signal: AbortSignal.timeout(timeoutMs)
-        })
-        if (response.status === 429) {
-          const retryAfter = Number(response.headers.get('retry-after') ?? '2')
-          await delay(Math.min(30, retryAfter) * 1000)
-          continue
+        let current = url
+        for (let hop = 0; hop < 6; hop++) {
+          if (strictSource) await assertPublicHttpsUrl(current)
+          const response = await fetch(current, {
+            ...init,
+            headers: {
+              'User-Agent': USER_AGENT,
+              ...(init?.headers ?? {})
+            },
+            redirect: strictSource ? 'manual' : 'follow',
+            signal: AbortSignal.timeout(timeoutMs)
+          })
+          if (strictSource && [301, 302, 303, 307, 308].includes(response.status)) {
+            const location = response.headers.get('location')
+            if (!location) throw new Error(`Redirect without a Location header: ${current}`)
+            const next = new URL(location, current)
+            if (next.protocol !== 'https:') throw new Error('Refusing a non-HTTPS redirect')
+            current = next.toString()
+            continue
+          }
+          if (response.status === 429) {
+            const retryAfter = Number(response.headers.get('retry-after') ?? '2')
+            await delay(Math.min(30, retryAfter) * 1000)
+            break
+          }
+          if (!response.ok && !allowStatuses.includes(response.status)) {
+            throw new Error(`HTTP ${response.status} for ${current}`)
+          }
+          return response
         }
-        if (!response.ok && !allowStatuses.includes(response.status)) {
-          throw new Error(`HTTP ${response.status} for ${url}`)
-        }
-        return response
+        if (attempt === retries) throw new Error('Too many redirects')
       } catch (error) {
         lastError = error
         if (attempt < retries) await delay(400 * attempt)
@@ -253,31 +275,54 @@ export class Downloader {
   }
 
   private async downloadOne(item: DownloadItem): Promise<'downloaded' | 'reused'> {
-    if (await this.isValid(item.dest, item.sha1)) return 'reused'
+    if (await this.isValid(item.dest, item.sha1, item.sha512)) return 'reused'
 
-    if (item.mirror && (await this.isValid(item.mirror, item.sha1))) {
+    if (item.mirror && (await this.isValid(item.mirror, item.sha1, item.sha512))) {
       await ensureDir(dirname(item.dest))
       await copyOrLink(item.mirror, item.dest)
       return 'reused'
     }
 
+    const tmp = `${item.dest}.part`
     try {
-      const response = await this.request(item.url, undefined, 3)
+      const response = await this.request(
+        item.url,
+        undefined,
+        3,
+        60_000,
+        [],
+        Boolean(item.strictSource)
+      )
       await ensureDir(dirname(item.dest))
-      const tmp = `${item.dest}.part`
       if (!response.body) throw new Error('Empty response body')
-      await pipeline(Readable.fromWeb(response.body as never), createWriteStream(tmp))
+      const source = Readable.fromWeb(response.body as never)
+      const sink = createWriteStream(tmp)
+      if (item.maxBytes && item.maxBytes > 0) {
+        await pipeline(source, byteLimit(item.maxBytes, item.label ?? item.url), sink)
+      } else {
+        await pipeline(source, sink)
+      }
+      const written = (await stat(tmp)).size
+      if (item.size && written !== item.size) {
+        throw new Error(`Incomplete download: expected ${item.size} bytes, received ${written}`)
+      }
       if (item.sha1) {
         const digest = await hashFile(tmp, 'sha1')
         if (digest.toLowerCase() !== item.sha1.toLowerCase()) {
-          await rm(tmp, { force: true })
           throw new Error(`Checksum mismatch for ${item.label ?? item.url}`)
+        }
+      }
+      if (item.sha512) {
+        const digest = await hashFile(tmp, 'sha512')
+        if (digest.toLowerCase() !== item.sha512.toLowerCase()) {
+          throw new Error(`SHA-512 mismatch for ${item.label ?? item.url}`)
         }
       }
       await rm(item.dest, { force: true })
       await rename(tmp, item.dest)
       return 'downloaded'
     } catch (error) {
+      await rm(tmp, { force: true }).catch(() => undefined)
       if (item.optional) {
         this.logger.warn(`Optional download failed: ${item.url}`, String(error))
         return 'reused'
@@ -286,13 +331,22 @@ export class Downloader {
     }
   }
 
-  private async isValid(path: string, sha1?: string): Promise<boolean> {
+  private async isValid(path: string, sha1?: string, sha512?: string): Promise<boolean> {
     if (!(await pathExists(path))) return false
     try {
       const s = await stat(path)
-      // Fast path: skip expensive SHA1 hash verification on subsequent launches.
-      // Files are verified on first download; on re-launch, existence + non-zero size is sufficient.
-      return s.size > 0
+      if (s.size <= 0) return false
+      // Re-verify on every reuse. A same-user process can modify the cache,
+      // and a corrupted jar must never be loaded just because it exists.
+      if (sha1) {
+        const digest = await hashFile(path, 'sha1')
+        if (digest.toLowerCase() !== sha1.toLowerCase()) return false
+      }
+      if (sha512) {
+        const digest = await hashFile(path, 'sha512')
+        if (digest.toLowerCase() !== sha512.toLowerCase()) return false
+      }
+      return true
     } catch {
       return false
     }
@@ -314,9 +368,104 @@ export function dedupeByDest(items: DownloadItem[]): DownloadItem[] {
   for (const item of items) {
     const key = item.dest.toLowerCase()
     const existing = seen.get(key)
-    if (!existing || (!existing.sha1 && item.sha1)) seen.set(key, item)
+    const existingStrength = Number(Boolean(existing?.sha512)) * 2 + Number(Boolean(existing?.sha1))
+    const nextStrength = Number(Boolean(item.sha512)) * 2 + Number(Boolean(item.sha1))
+    if (!existing || nextStrength > existingStrength) seen.set(key, item)
   }
   return [...seen.values()]
+}
+
+function byteLimit(maxBytes: number, label: string): Transform {
+  let total = 0
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      total += chunk.length
+      if (total > maxBytes) {
+        callback(new Error(`Download exceeded ${maxBytes} bytes: ${label}`))
+        return
+      }
+      callback(null, chunk)
+    }
+  })
+}
+
+/**
+ * Require a public HTTPS URL. This blocks loopback, private, link-local,
+ * carrier-grade NAT and cloud metadata endpoints before a request is made.
+ * Redirect targets are checked again by Downloader.request.
+ */
+export async function assertPublicHttpsUrl(value: string): Promise<void> {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error('Invalid download URL')
+  }
+  if (url.protocol !== 'https:') throw new Error('Downloads must use HTTPS')
+  if (url.username || url.password) throw new Error('Download URL must not contain credentials')
+  const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase()
+  if (
+    !host ||
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal') ||
+    host.endsWith('.home.arpa') ||
+    host === 'metadata.google.internal'
+  ) {
+    throw new Error('Download host is not public')
+  }
+  if (isIP(host)) {
+    if (isPrivateAddress(host)) throw new Error('Download host is private or reserved')
+    return
+  }
+  const records = await lookup(host, { all: true, verbatim: true })
+  if (!records.length || records.some((record) => isPrivateAddress(record.address))) {
+    throw new Error('Download host resolves to a private or reserved address')
+  }
+}
+
+export function isPrivateAddress(address: string): boolean {
+  const version = isIP(address)
+  if (version === 4) {
+    const parts = address.split('.').map(Number)
+    if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+      return true
+    }
+    const [a, b] = parts
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      (a === 192 && b === 0) ||
+      (a === 192 && b === 0 && parts[2] === 2) ||
+      (a === 198 && b === 51 && parts[2] === 100) ||
+      (a === 203 && b === 0 && parts[2] === 113) ||
+      a >= 224
+    )
+  }
+  if (version === 6) {
+    const normalized = address.toLowerCase()
+    if (
+      normalized === '::' ||
+      normalized === '::1' ||
+      normalized.startsWith('fc') ||
+      normalized.startsWith('fd') ||
+      /^fe[89ab]/.test(normalized) ||
+      normalized.startsWith('ff')
+    ) {
+      return true
+    }
+    const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)
+    if (mapped) return isPrivateAddress(mapped[1])
+    return false
+  }
+  return true
 }
 
 export function delay(ms: number): Promise<void> {

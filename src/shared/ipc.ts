@@ -55,8 +55,6 @@ export const IPC = {
   installUpdate: 'app:installUpdate',
   importMrpack: 'app:importMrpack',
   friendsList: 'friends:list',
-  friendsAdd: 'friends:add',
-  friendsRemove: 'friends:remove',
   friendsRemoveMutual: 'friends:remove-mutual',
   friendsRequest: 'friends:request',
   friendsRespond: 'friends:respond',

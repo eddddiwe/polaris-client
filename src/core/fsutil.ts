@@ -67,8 +67,18 @@ export async function moveIntoPlace(tmp: string, dest: string): Promise<void> {
 }
 
 export async function safeFilename(name: string, fallback = 'mod.jar'): Promise<string> {
-  const clean = name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').trim()
-  return clean.length > 0 ? clean : fallback
+  const clean = name
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+    .trim()
+    .replace(/[.\s]+$/g, '')
+  if (!clean || clean === '.' || clean === '..') return fallback
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(clean)) return fallback
+  if (clean.length > 180) {
+    const dot = clean.lastIndexOf('.')
+    const ext = dot > 0 && clean.length - dot <= 12 ? clean.slice(dot) : ''
+    return clean.slice(0, 180 - ext.length) + ext
+  }
+  return clean
 }
 
 export function assertSafeSegment(value: string, label: string): string {

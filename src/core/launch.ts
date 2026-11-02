@@ -114,11 +114,16 @@ export class LaunchService {
 
       const account = await this.auth.refreshIfNeeded(stored)
       const args = this.buildArguments(instance, settings, installed.version, installed.classpath, installed.assetIndexId, nativesDir, account, java, jvmTuning)
+      const gameEnv: NodeJS.ProcessEnv = { ...process.env, POLARIS_CLIENT: '1' }
+      if (account.friendCode && account.friendSecret) {
+        gameEnv.POLARIS_FRIEND_CODE = account.friendCode
+        gameEnv.POLARIS_FRIEND_SECRET = account.friendSecret
+      }
 
       this.setState({ status: 'running', message: `Running on Java ${java.major}`, startedAt: Date.now() })
       const child = spawn(java.path, args, {
         cwd: instanceDir,
-        env: { ...process.env, POLARIS_CLIENT: '1' },
+        env: gameEnv,
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: false
       })

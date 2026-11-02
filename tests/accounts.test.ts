@@ -24,6 +24,7 @@ function microsoftAccount(): StoredAccount {
     active: true,
     accessToken: 'access-token',
     refreshToken: 'refresh-token',
+    friendSecret: 'friend-secret',
     expiresAt: Date.now() + 3_600_000
   }
 }
@@ -39,13 +40,16 @@ describe('AccountStore token encryption', () => {
       const raw = JSON.parse(await readFile(path, 'utf8'))
       expect(raw.accounts[0].accessToken).toMatch(/^enc:v1:/)
       expect(raw.accounts[0].refreshToken).toMatch(/^enc:v1:/)
+      expect(raw.accounts[0].friendSecret).toMatch(/^enc:v1:/)
 
       const reloaded = new AccountStore(path, new FakeCipher())
       await reloaded.load()
       expect(reloaded.stored('microsoft:abc')?.accessToken).toBe('access-token')
       expect(reloaded.stored('microsoft:abc')?.refreshToken).toBe('refresh-token')
+      expect(reloaded.stored('microsoft:abc')?.friendSecret).toBe('friend-secret')
       expect(reloaded.list()[0]).not.toHaveProperty('accessToken')
       expect(reloaded.list()[0]).not.toHaveProperty('refreshToken')
+      expect(reloaded.list()[0]).not.toHaveProperty('friendSecret')
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
@@ -71,6 +75,26 @@ describe('AccountStore token encryption', () => {
       const raw = JSON.parse(await readFile(path, 'utf8'))
       expect(raw.accounts[0].accessToken).toMatch(/^enc:v1:/)
       expect(raw.accounts[0].refreshToken).toMatch(/^enc:v1:/)
+      expect(raw.accounts[0].friendSecret).toMatch(/^enc:v1:/)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('never writes the friend secret in plaintext when encryption fails', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'polaris-accounts-'))
+    try {
+      const path = join(dir, 'accounts.json')
+      const store = new AccountStore(path, {
+        encrypt: async () => {
+          throw new Error('keychain unavailable')
+        },
+        decrypt: async () => ''
+      })
+      await store.add(microsoftAccount())
+      const raw = JSON.parse(await readFile(path, 'utf8'))
+      expect(raw.accounts[0].friendSecret).toBeUndefined()
+      expect(JSON.stringify(raw)).not.toContain('friend-secret')
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
@@ -84,10 +108,12 @@ describe('AccountStore token encryption', () => {
       await store.add(microsoftAccount())
       const raw = JSON.parse(await readFile(path, 'utf8'))
       expect(raw.accounts[0].accessToken).toBe('plain:access-token')
+      expect(raw.accounts[0].friendSecret).toBeUndefined()
 
       const reloaded = new AccountStore(path)
       await reloaded.load()
       expect(reloaded.stored('microsoft:abc')?.accessToken).toBe('access-token')
+      expect(reloaded.stored('microsoft:abc')?.friendSecret).toBeUndefined()
     } finally {
       await rm(dir, { recursive: true, force: true })
     }

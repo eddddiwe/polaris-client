@@ -11,7 +11,6 @@ export function FriendsPage(): JSX.Element {
   const [loading, setLoading] = useState(true)
   const [addOpen, setAddOpen] = useState(false)
   const [code, setCode] = useState('')
-  const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [pendingRequests, setPendingRequests] = useState<Array<{ code: string; name: string; uuid?: string; createdAt: number }>>([])
@@ -42,7 +41,7 @@ export function FriendsPage(): JSX.Element {
     }
     if (!silent) setRequestsLoading(true)
     try {
-      const requests = await api.friendsGetRequests(myCode)
+      const requests = await api.friendsGetRequests()
       setPendingRequests(requests)
     } catch {
       if (!silent) setPendingRequests([])
@@ -94,7 +93,7 @@ export function FriendsPage(): JSX.Element {
     }
   }
 
-  const sendRequest = async (friendCode: string, friendName: string): Promise<void> => {
+  const sendRequest = async (): Promise<void> => {
     const c = code.trim().toUpperCase()
     if (!c) {
       toast('Enter a friend code', 'error')
@@ -102,9 +101,8 @@ export function FriendsPage(): JSX.Element {
     }
     setBusy(true)
     try {
-      await api.friendsRequest(c, friendName || c)
+      await api.friendsRequest(c)
       setCode('')
-      setName('')
       setAddOpen(false)
       toast('Friend request sent', 'success')
       void loadRequests()
@@ -118,7 +116,7 @@ export function FriendsPage(): JSX.Element {
   const respondRequest = async (friendCode: string, action: 'accept' | 'decline'): Promise<void> => {
     if (!myCode) return
     try {
-      await api.friendsRespond(myCode, friendCode, action)
+      await api.friendsRespond(friendCode, action)
       await refresh()
       void loadRequests()
       const actionText = action === 'accept' ? 'accepted' : 'declined'
@@ -283,20 +281,11 @@ export function FriendsPage(): JSX.Element {
               autoFocus
             />
           </div>
-          <div className="field">
-            <label htmlFor="friend-name">Name (optional)</label>
-            <input
-              id="friend-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Their name"
-            />
-          </div>
           <div className="modal-actions">
             <button className="btn btn-ghost" onClick={() => setAddOpen(false)} disabled={busy}>
               Cancel
             </button>
-            <button className="btn btn-primary" onClick={() => void sendRequest(code, name)} disabled={busy || !code.trim()}>
+            <button className="btn btn-primary" onClick={() => void sendRequest()} disabled={busy || !code.trim()}>
               {busy ? <span className="spinner spinner-sm" /> : <Icon name="plus" size={14} />} Send request
             </button>
           </div>

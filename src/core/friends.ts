@@ -3,14 +3,22 @@ import { join } from 'node:path'
 import type { Friend } from '../shared/types'
 
 const WORKER_BASE = 'https://polaris-api.joykelows17.workers.dev'
+const FRIEND_CODE = /^POLARIS-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/
+
+export interface FriendAuth {
+  code: string
+  secret: string
+}
 
 interface FriendFile {
+  owner?: string
   friends: Friend[]
 }
 
 export class FriendStore {
   private data: FriendFile = { friends: [] }
-  private registered = new Set<string>()
+  /** Code + secret pairs already registered successfully in this process. */
+  private readonly registered = new Set<string>()
 
   constructor(private readonly path: string) {}
 
@@ -27,161 +35,160 @@ export class FriendStore {
     return [...this.data.friends].sort((a, b) => a.name.localeCompare(b.name))
   }
 
-  async syncFromServer(myCode: string): Promise<void> {
+  /**
+   * Keep the local cache scoped to one account. Without this, signing out and
+   * signing in offline would show the previous account's friend list.
+   */
+  async useAccount(code: string): Promise<void> {
+    if (this.data.owner === code) return
+    this.data = { owner: code, friends: [] }
+    await this.save()
+  }
+
+  private headers(auth: FriendAuth): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      'X-Polaris-Code': auth.code,
+      'X-Polaris-Secret': auth.secret
+    }
+  }
+
+  async syncFromServer(auth: FriendAuth): Promise<void> {
     try {
-      const res = await fetch(`${WORKER_BASE}/v1/friends/list?code=${encodeURIComponent(myCode)}`, { signal: AbortSignal.timeout(8000) })
+      const res = await fetch(`${WORKER_BASE}/v1/friends/list`, {
+        headers: this.headers(auth),
+        signal: AbortSignal.timeout(8000)
+      })
       if (!res.ok) return
-      const data = await res.json()
-      if (Array.isArray(data.friends)) {
-        this.data.friends = data.friends.map((f: any) => ({
-          code: String(f.code).toUpperCase(),
-          name: String(f.name || f.code),
+      const data = (await res.json()) as { friends?: unknown }
+      if (!Array.isArray(data.friends)) return
+      this.data.owner = auth.code
+      this.data.friends = data.friends.map((value) => {
+        const f = value as { code?: unknown; name?: unknown; uuid?: unknown; addedAt?: unknown }
+        return {
+          code: String(f.code ?? '').toUpperCase(),
+          name: String(f.name || f.code || ''),
           uuid: f.uuid ? String(f.uuid) : undefined,
-          addedAt: f.addedAt ?? Date.now()
-        }))
-        await this.save()
-      }
+          addedAt: Number(f.addedAt) || Date.now()
+        }
+      })
+      await this.save()
     } catch {
       // offline: keep local cache
     }
   }
 
-  async registerCode(code: string, name: string, uuid?: string): Promise<void> {
-    if (this.registered.has(code)) return
+  /** Bind the code to this account's secret. Idempotent while the secret matches. */
+  async register(auth: FriendAuth, name: string, uuid?: string): Promise<boolean> {
+    if (!FRIEND_CODE.test(auth.code) || !auth.secret) return false
+    const key = `${auth.code}:${auth.secret}`
+    if (this.registered.has(key)) return true
     try {
       const res = await fetch(`${WORKER_BASE}/v1/friends/register`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, name, uuid }),
+        headers: this.headers(auth),
+        body: JSON.stringify({ name, uuid }),
         signal: AbortSignal.timeout(8000)
       })
-      if (res.ok) this.registered.add(code)
+      if (res.ok) this.registered.add(key)
+      return res.ok
     } catch {
-      // best-effort
+      return false
     }
   }
 
-  async add(myCode: string, code: string, name: string): Promise<Friend> {
-    const cleanCode = code.trim().toUpperCase()
-    const cleanName = name.trim() || cleanCode
-    const existing = this.data.friends.find((f) => f.code === cleanCode)
-    if (!existing) {
-      this.data.friends.push({ code: cleanCode, name: cleanName, addedAt: Date.now() })
-    } else {
-      existing.name = cleanName
-    }
-    await this.save()
-    // sync to backend (best-effort)
-    try {
-      await fetch(`${WORKER_BASE}/v1/friends/add`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ myCode, friendCode: cleanCode }),
-        signal: AbortSignal.timeout(8000)
-      })
-    } catch {
-      // offline: local only
-    }
-    return this.data.friends.find((f) => f.code === cleanCode)!
-  }
-
-  async remove(myCode: string, code: string): Promise<void> {
-    const cleanCode = code.trim().toUpperCase()
-    this.data.friends = this.data.friends.filter((f) => f.code !== cleanCode)
-    await this.save()
-    try {
-      await fetch(`${WORKER_BASE}/v1/friends/remove`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ myCode, friendCode: cleanCode }),
-        signal: AbortSignal.timeout(8000)
-      })
-    } catch {
-      // offline: local only
-    }
-  }
-
-  async removeMutual(myCode: string, friendCode: string): Promise<void> {
+  async removeMutual(auth: FriendAuth, friendCode: string): Promise<void> {
     try {
       const res = await fetch(`${WORKER_BASE}/v1/friends/remove-mutual`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ myCode, friendCode }),
+        headers: this.headers(auth),
+        body: JSON.stringify({ friendCode }),
         signal: AbortSignal.timeout(8000)
       })
       if (!res.ok) {
-        // Server-side error (format validation, self-removal, KV not configured)
-        // Still try local removal to keep UI consistent
-        this.data.friends = this.data.friends.filter((f) => f.code !== friendCode)
-        await this.save()
-        return
+        const data = (await res.json().catch(() => null)) as { error?: string } | null
+        throw new Error(data?.error || `Could not remove friend (${res.status})`)
       }
-      // Success: also clean up local list
-      this.data.friends = this.data.friends.filter((f) => f.code !== friendCode)
-      await this.save()
-    } catch {
-      // offline: local only - remove from local list only
-      this.data.friends = this.data.friends.filter((f) => f.code !== friendCode)
-      await this.save()
+    } catch (error) {
+      // Offline removals are local-only. A server rejection must be shown,
+      // otherwise the local and server graphs silently diverge.
+      if (error instanceof Error && !/fetch|network|timed? ?out|failed to fetch/i.test(error.message)) {
+        throw error
+      }
     }
+    this.data.friends = this.data.friends.filter((f) => f.code !== friendCode)
+    await this.save()
   }
 
-  async sendRequest(myCode: string, friendCode: string): Promise<void> {
+  async sendRequest(auth: FriendAuth, friendCode: string): Promise<void> {
     const res = await fetch(`${WORKER_BASE}/v1/friends/request`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ myCode, friendCode }),
+      headers: this.headers(auth),
+      body: JSON.stringify({ friendCode }),
       signal: AbortSignal.timeout(8000)
     })
     if (!res.ok) {
-      const data = await res.json().catch(() => null)
+      const data = (await res.json().catch(() => null)) as { error?: string } | null
       throw new Error(data?.error || `Could not send friend request (${res.status})`)
     }
   }
 
-  async respondRequest(myCode: string, friendCode: string, action: 'accept' | 'decline'): Promise<void> {
+  async respondRequest(auth: FriendAuth, friendCode: string, action: 'accept' | 'decline'): Promise<void> {
     const res = await fetch(`${WORKER_BASE}/v1/friends/respond`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ myCode, friendCode, action }),
+      headers: this.headers(auth),
+      body: JSON.stringify({ friendCode, action }),
       signal: AbortSignal.timeout(8000)
     })
     if (!res.ok) {
-      const data = await res.json().catch(() => null)
+      const data = (await res.json().catch(() => null)) as { error?: string } | null
       throw new Error(data?.error || `Could not respond to friend request (${res.status})`)
     }
   }
 
-  async getRequests(myCode: string): Promise<Array<{ code: string; name: string; uuid?: string; createdAt: number }>> {
+  async getRequests(
+    auth: FriendAuth
+  ): Promise<Array<{ code: string; name: string; uuid?: string; createdAt: number }>> {
     try {
-      const res = await fetch(`${WORKER_BASE}/v1/friends/requests?code=${encodeURIComponent(myCode)}`, { signal: AbortSignal.timeout(8000) })
+      const res = await fetch(`${WORKER_BASE}/v1/friends/requests`, {
+        headers: this.headers(auth),
+        signal: AbortSignal.timeout(8000)
+      })
       if (!res.ok) return []
-      const data = await res.json()
-      return (data.requests || []).map((r: any) => ({
-        code: String(r.code).toUpperCase(),
-        name: String(r.name || r.code),
-        uuid: r.uuid ? String(r.uuid) : undefined,
-        createdAt: r.createdAt ?? Date.now()
-      }))
+      const data = (await res.json()) as { requests?: unknown }
+      if (!Array.isArray(data.requests)) return []
+      return data.requests.map((value) => {
+        const r = value as { code?: unknown; name?: unknown; uuid?: unknown; createdAt?: unknown }
+        return {
+          code: String(r.code ?? '').toUpperCase(),
+          name: String(r.name || r.code || ''),
+          uuid: r.uuid ? String(r.uuid) : undefined,
+          createdAt: Number(r.createdAt) || 0
+        }
+      })
     } catch {
       return []
     }
   }
 
-  async presence(uuids: string[]): Promise<Record<string, { server: string; lastSeen: number }>> {
-    const unique = Array.from(new Set(
-      uuids.map((uuid) => uuid.trim().toLowerCase()).filter(Boolean)
-    )).slice(0, 100)
+  async presence(
+    auth: FriendAuth,
+    uuids: string[]
+  ): Promise<Record<string, { server: string; lastSeen: number }>> {
+    const unique = Array.from(
+      new Set(uuids.map((uuid) => uuid.trim().toLowerCase()).filter(Boolean))
+    ).slice(0, 100)
     if (!unique.length) return {}
     try {
       const res = await fetch(
         `${WORKER_BASE}/v1/presence/friends?uuids=${encodeURIComponent(unique.join(','))}`,
-        { signal: AbortSignal.timeout(8000) }
+        { headers: this.headers(auth), signal: AbortSignal.timeout(8000) }
       )
       if (!res.ok) return {}
-      const data = await res.json()
+      const data = (await res.json()) as { presence?: unknown }
       const presence: Record<string, { server: string; lastSeen: number }> = {}
-      for (const [uuid, value] of Object.entries(data.presence ?? {})) {
+      if (!data.presence || typeof data.presence !== 'object') return presence
+      for (const [uuid, value] of Object.entries(data.presence)) {
         if (!value || typeof value !== 'object') continue
         const entry = value as { server?: unknown; lastSeen?: unknown }
         const server = String(entry.server ?? '').trim()

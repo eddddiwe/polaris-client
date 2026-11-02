@@ -254,6 +254,7 @@ export class ModsService {
         url: file.url,
         dest,
         sha1: file.hashes.sha1,
+        sha512: file.hashes.sha512,
         size: file.size,
         label: `${project.title} ${version.version_number}`
       }

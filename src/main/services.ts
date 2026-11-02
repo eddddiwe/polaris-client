@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import os from 'node:os'
 import { spawn } from 'node:child_process'
 import { join, dirname, resolve } from 'node:path'
-import { stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { app, shell } from 'electron'
 import type {
   AccountSnapshot,
@@ -59,7 +59,13 @@ import { ensureServersDat } from '../core/nbt'
 import { ModrinthClient, mapVersionEntry, type ModrinthVersion } from '../core/modrinth'
 import { ModsService } from '../core/mods'
 import { ModpackService, safeOverridePath, parseMrpackIndex } from '../core/modpacks'
-import { ensureDir, hashFile } from '../core/fsutil'
+import {
+  assertSafeZip,
+  MODPACK_ZIP_LIMITS,
+  readZipEntry,
+  readZipText
+} from '../core/zipSafe'
+import { ensureDir, hashFile, pathExists } from '../core/fsutil'
 import { ServerService } from '../core/server'
 import { LaunchService } from '../core/launch'
 import { PACKS, packById } from '../core/packs'
@@ -631,55 +637,66 @@ export class AppServices extends EventEmitter {
     return { versionId: install.versionId, loaderVersion: install.loaderVersion }
   }
 
-  /** Check GitHub releases for a newer version. */
+  /**
+   * Check GitHub releases for a newer version.
+   *
+   * GitHub is the trust anchor, not the Polaris Worker. The Worker could be
+   * compromised or misconfigured, so it cannot be allowed to name both the
+   * installer URL and the hash the launcher verifies.
+   */
   async checkForUpdates(): Promise<UpdateInfo> {
     const currentVersion = app.getVersion()
     const repo = 'eddddiwe/polaris-client'
-    // Try API first, fall back to GitHub
-    let url = 'https://polaris-api.joykelows17.workers.dev/v1/version'
     try {
-      const apiRes = await fetch(url, { signal: AbortSignal.timeout(5000) })
-      if (apiRes.ok) {
-        const apiData = await apiRes.json()
-        const hasUpdate = this.compareVersions(apiData.version, currentVersion) > 0
-        return {
-          hasUpdate,
-          currentVersion,
-          latestVersion: apiData.version,
-          releaseNotes: apiData.changelog,
-          downloadUrl: apiData.url,
-          downloadSize: Number(apiData.size) || undefined,
-          downloadSha256: apiData.sha256 || undefined,
-          publishedAt: apiData.publishedAt
-        }
-      }
-    } catch {
-      // Fall back to GitHub
-    }
-    url = `https://api.github.com/repos/${repo}/releases/latest`
-    try {
-      const res = await fetch(url, {
-        headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'Polaris-Client' }
+      const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Polaris-Client' },
+        signal: AbortSignal.timeout(8000)
       })
       if (!res.ok) throw new Error(`GitHub API error: ${res.status}`)
       const data = await res.json()
-      const latestVersion = data.tag_name?.replace(/^v/, '') ?? '0.0.0'
+      const latestVersion = String(data.tag_name || '').replace(/^v/, '')
+      if (!/^\d+\.\d+\.\d+$/.test(latestVersion)) throw new Error('GitHub release has no valid version tag')
       const hasUpdate = this.compareVersions(latestVersion, currentVersion) > 0
-      const asset = data.assets?.find((a: any) => a.name === 'Polaris-Setup.exe') || data.assets?.[0]
-      const digest = typeof asset?.digest === 'string' ? asset.digest.replace(/^sha256:/i, '') : ''
+      if (!hasUpdate) {
+        return {
+          hasUpdate: false,
+          currentVersion,
+          latestVersion,
+          releaseNotes: data.body ?? undefined,
+          downloadUrl: '',
+          publishedAt: data.published_at ?? new Date().toISOString()
+        }
+      }
+
+      const expectedName = `Polaris-Setup-${latestVersion}.exe`
+      const asset = (data.assets ?? []).find((entry: any) => entry.name === expectedName)
+      const digest = typeof asset?.digest === 'string' ? asset.digest.replace(/^sha256:/i, '').toLowerCase() : ''
+      if (!asset || !/^[0-9a-f]{64}$/.test(digest)) {
+        throw new Error(`Release v${latestVersion} has no SHA-256 digest on its installer asset`)
+      }
+      const downloadUrl = String(asset.browser_download_url || '')
+      if (!isTrustedReleaseAsset(downloadUrl, latestVersion)) {
+        throw new Error('GitHub returned an unexpected installer URL')
+      }
       return {
-        hasUpdate,
+        hasUpdate: true,
         currentVersion,
         latestVersion,
         releaseNotes: data.body ?? undefined,
-        downloadUrl: asset?.browser_download_url ?? `https://github.com/${repo}/releases/latest`,
-        downloadSize: Number(asset?.size) || undefined,
-        downloadSha256: digest || undefined,
+        downloadUrl,
+        downloadSize: Number(asset.size) || undefined,
+        downloadSha256: digest,
         publishedAt: data.published_at ?? new Date().toISOString()
       }
     } catch (err) {
-      this.logger.warn('Update check failed', err)
-      return { hasUpdate: false, currentVersion, latestVersion: currentVersion, downloadUrl: '', publishedAt: new Date().toISOString() }
+      this.logger.warn('Update check failed closed', err)
+      return {
+        hasUpdate: false,
+        currentVersion,
+        latestVersion: currentVersion,
+        downloadUrl: '',
+        publishedAt: new Date().toISOString()
+      }
     }
   }
 
@@ -716,7 +733,7 @@ export class AppServices extends EventEmitter {
     if (!info.hasUpdate) {
       return { status: 'up-to-date', version: info.latestVersion }
     }
-    if (!info.downloadUrl) {
+    if (!info.downloadUrl || !info.downloadSha256) {
       return { status: 'unavailable', version: info.latestVersion }
     }
 
@@ -727,7 +744,7 @@ export class AppServices extends EventEmitter {
     })
 
     if (process.platform === 'win32') {
-      await this.launchWindowsInstaller(installerPath)
+      await this.launchWindowsInstaller(installerPath, info.downloadSha256)
     } else {
       // macOS DMG / Linux AppImage: let the desktop open the downloaded file.
       await shell.openPath(installerPath)
@@ -751,6 +768,9 @@ export class AppServices extends EventEmitter {
    * fresh update.
    */
   private async downloadInstaller(info: UpdateInfo): Promise<string> {
+    if (!info.downloadSha256 || !/^[0-9a-f]{64}$/i.test(info.downloadSha256)) {
+      throw new Error('Refusing to download an installer without a published SHA-256')
+    }
     const dir = join(this.paths.downloads, 'updates')
     await ensureDir(dir)
 
@@ -771,19 +791,20 @@ export class AppServices extends EventEmitter {
     if (written < 1_000_000) {
       throw new Error(`Downloaded installer is unexpectedly small (${written} bytes)`)
     }
+    if (!(await this.installerIsUsable(canonical, info))) {
+      throw new Error('Installer failed its post-download SHA-256 verification')
+    }
     return canonical
   }
 
   private async installerIsUsable(path: string, info: UpdateInfo): Promise<boolean> {
     try {
+      if (!info.downloadSha256 || !/^[0-9a-f]{64}$/i.test(info.downloadSha256)) return false
       const file = await stat(path)
       if (file.size < 1_000_000) return false
       if (info.downloadSize && file.size !== info.downloadSize) return false
-      if (info.downloadSha256) {
-        const digest = await hashFile(path, 'sha256')
-        return digest.toLowerCase() === info.downloadSha256.toLowerCase()
-      }
-      return true
+      const digest = await hashFile(path, 'sha256')
+      return digest.toLowerCase() === info.downloadSha256.toLowerCase()
     } catch {
       return false
     }
@@ -792,92 +813,95 @@ export class AppServices extends EventEmitter {
   /**
    * Hand off to a one-shot Windows scheduled task. A detached child process
    * is killed with Electron on this platform, so Task Scheduler is used to
-   * run the helper independently of the launcher. The helper waits for the
-   * launcher PID to exit, runs the NSIS installer silently with retries, then
-   * opens the updated client and removes the task.
+   * run the helper independently of the launcher.
+   *
+   * The helper is a static, packaged script. It re-verifies the installer
+   * SHA-256 and holds a read-only handle for the whole install, so replacing
+   * the file between the launcher's check and execution fails.
    */
-  private async launchWindowsInstaller(installerPath: string): Promise<void> {
+  private async launchWindowsInstaller(installerPath: string, sha256: string): Promise<void> {
+    if (!/^[0-9a-f]{64}$/i.test(sha256)) {
+      throw new Error('Refusing to launch an installer without a valid SHA-256')
+    }
     const appExe = app.isPackaged ? app.getPath('exe') : ''
     const taskName = 'PolarisClientUpdate'
-    const helperPath = join(this.paths.root, 'update-helper.ps1')
-    const taskXmlPath = join(this.paths.root, 'update-helper-task.xml')
+    const helperPath = app.isPackaged
+      ? join(process.resourcesPath, 'update-helper.ps1')
+      : join(app.getAppPath(), 'resources', 'update-helper.ps1')
+    if (!(await pathExists(helperPath))) {
+      throw new Error('The packaged update helper is missing; reinstall Polaris Client')
+    }
     const logPath = join(this.paths.logs, 'update-helper.log')
-    const script = `
-$ErrorActionPreference = 'SilentlyContinue'
-$parentPid = ${process.pid}
-$installer = ${quotePowerShell(installerPath)}
-$appExe = ${quotePowerShell(appExe)}
-$taskName = ${quotePowerShell(taskName)}
-$taskXml = ${quotePowerShell(taskXmlPath)}
-$log = ${quotePowerShell(logPath)}
+    const tempDir = await mkdtemp(join(os.tmpdir(), 'polaris-update-'))
+    const taskXmlPath = join(tempDir, 'task.xml')
 
-function Write-Log([string]$message) {
-  Add-Content -Path $log -Value ((Get-Date).ToString('o') + ' ' + $message)
-}
-
-Write-Log "helper start parent=$parentPid installer=$installer"
-
-$deadline = (Get-Date).AddSeconds(45)
-while ((Get-Date) -lt $deadline -and (Get-Process -Id $parentPid -ErrorAction SilentlyContinue)) {
-  Start-Sleep -Milliseconds 400
-}
-Start-Sleep -Milliseconds 1200
-Write-Log 'launcher process exited; starting installer'
-
-$installed = $false
-for ($attempt = 0; $attempt -lt 8; $attempt++) {
-  try {
-    $proc = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru -ErrorAction SilentlyContinue
-    Write-Log "installer attempt $attempt exit=$($proc.ExitCode)"
-    if ($proc -and $proc.ExitCode -eq 0) { $installed = $true; break }
-  } catch {
-    Write-Log "installer attempt $attempt failed: $($_.Exception.Message)"
-    $installed = $false
-  }
-  Start-Sleep -Seconds 2
-}
-
-if ($installed) {
-  Write-Log 'install succeeded'
-  if ($appExe -and (Test-Path $appExe)) {
-    Write-Log "relaunching $appExe"
-    Start-Process -FilePath $appExe
-  } else {
-    Write-Log 'app executable not found for relaunch'
-  }
-} else {
-  Write-Log 'silent install failed; opening visible installer'
-  Start-Process -FilePath $installer
-}
-
-schtasks.exe /Delete /TN $taskName /F | Out-Null
-Remove-Item -Path $taskXml -Force
-Write-Log 'helper finished'
-`
-    const xml = buildUpdateTaskXml(helperPath)
-    await writeFile(helperPath, '\uFEFF' + script, 'utf8')
+    const helperArgs = [
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-WindowStyle',
+      'Hidden',
+      '-File',
+      helperPath,
+      '-Installer',
+      installerPath,
+      '-Sha256',
+      sha256.toLowerCase(),
+      '-ParentPid',
+      String(process.pid),
+      '-AppExe',
+      appExe,
+      '-LogPath',
+      logPath,
+      '-TaskXml',
+      taskXmlPath
+    ]
+    const commandLine = helperArgs.map((arg) => `"${arg}"`).join(' ')
+    const xml = buildUpdateTaskXml(commandLine)
     await writeFile(
       taskXmlPath,
       Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(xml, 'utf16le')])
     )
 
-    const created = await this.runProcess('schtasks.exe', [
-      '/Create', '/TN', taskName, '/XML', taskXmlPath, '/F'
-    ])
-    if (created !== 0) {
-      this.logger.warn('Could not register the update helper task; opening installer directly', { code: created })
-      await shell.openPath(installerPath)
-      return
-    }
+    try {
+      const created = await this.runProcess('schtasks.exe', [
+        '/Create',
+        '/TN',
+        taskName,
+        '/XML',
+        taskXmlPath,
+        '/F'
+      ])
+      if (created !== 0) {
+        this.logger.warn('Could not register the update helper task; opening the verified installer directly', {
+          code: created
+        })
+        if ((await hashFile(installerPath, 'sha256')).toLowerCase() !== sha256.toLowerCase()) {
+          throw new Error('Installer changed after verification; refusing to run it')
+        }
+        await shell.openPath(installerPath)
+        return
+      }
 
-    const started = await this.runProcess('schtasks.exe', ['/Run', '/TN', taskName])
-    if (started !== 0) {
-      this.logger.warn('Could not start the update helper task; opening installer directly', { code: started })
-      await shell.openPath(installerPath)
-      return
-    }
+      const started = await this.runProcess('schtasks.exe', ['/Run', '/TN', taskName])
+      if (started !== 0) {
+        this.logger.warn('Could not start the update helper task; opening the verified installer directly', {
+          code: started
+        })
+        if ((await hashFile(installerPath, 'sha256')).toLowerCase() !== sha256.toLowerCase()) {
+          throw new Error('Installer changed after verification; refusing to run it')
+        }
+        await shell.openPath(installerPath)
+        return
+      }
 
-    this.logger.info('Update helper task started', { taskName, helperPath, logPath })
+      this.logger.info('Update helper task started', { taskName, helperPath, logPath })
+    } finally {
+      // The task has already read its XML. Do not leave predictable update
+      // files in the user's data directory.
+      await rm(tempDir, { recursive: true, force: true }).catch(() => undefined)
+    }
   }
 
   private runProcess(command: string, args: string[], timeoutMs = 60_000): Promise<number> {
@@ -913,13 +937,18 @@ Write-Log 'helper finished'
     })
     if (!result.filePaths?.[0]) throw new Error('No file selected')
 
+    const archive = await stat(result.filePaths[0])
+    if (archive.size <= 0 || archive.size > 1024 * 1024 * 1024) {
+      throw new Error('Modpack archive is too large')
+    }
     const AdmZip = (await import('adm-zip')).default
-    const zip = new AdmZip(result.filePaths[0])
+    const zip = new AdmZip(await readFile(result.filePaths[0]))
+    assertSafeZip(zip, 'Modpack archive', MODPACK_ZIP_LIMITS)
 
     // Try Modrinth format first (modrinth.index.json)
     const modrinthEntry = zip.getEntry('modrinth.index.json')
     if (modrinthEntry) {
-      const plan = parseMrpackIndex(zip.readAsText(modrinthEntry))
+      const plan = parseMrpackIndex(readZipText(modrinthEntry, 'modrinth.index.json'))
       const config = await this.instances.create(
         {
           name: plan.name || 'Imported Modpack',
@@ -956,7 +985,7 @@ Write-Log 'helper finished'
     const manifestEntry = zip.getEntry('manifest.json')
     if (!manifestEntry) throw new Error('Invalid .mrpack: missing manifest.json or modrinth.index.json')
 
-    const manifest = JSON.parse(zip.readAsText(manifestEntry))
+    const manifest = JSON.parse(readZipText(manifestEntry, 'manifest.json'))
     const modCount = manifest.mods ? manifest.mods.length : 0
     const modNames = manifest.mods?.map((m: any) => m.name).join(', ') || 'unknown'
     const mcVersion = String(manifest.mc_version || '').trim()
@@ -985,21 +1014,15 @@ Write-Log 'helper finished'
         safeOverridePath(instanceDir, entry.entryName, 'client-overrides/')
       if (!target) continue
       await ensureDir(dirname(target))
-      await writeFile(target, entry.getData())
+      await writeFile(target, readZipEntry(entry, 256 * 1024 * 1024, entry.entryName))
     }
 
     return await this.summarize(await this.instances.get(config.id))
   }
 }
 
-/** PowerShell single-quoted literal; embedded quotes are doubled. */
-function quotePowerShell(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`
-}
-
 /** One-shot per-user task that runs the update helper outside the app. */
-function buildUpdateTaskXml(helperPath: string): string {
-  const args = `-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "${helperPath}"`
+function buildUpdateTaskXml(args: string): string {
   return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
@@ -1039,6 +1062,20 @@ function buildUpdateTaskXml(helperPath: string): string {
   </Actions>
 </Task>
 `
+}
+
+function isTrustedReleaseAsset(value: string, version: string): boolean {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'https:' &&
+      url.hostname === 'github.com' &&
+      url.pathname ===
+        `/eddddiwe/polaris-client/releases/download/v${version}/Polaris-Setup-${version}.exe`
+    )
+  } catch {
+    return false
+  }
 }
 
 function xmlEscape(value: string): string {

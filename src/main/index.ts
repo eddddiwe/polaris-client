@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, shell } from 'electron'
+import { app, BrowserWindow, dialog, session, shell } from 'electron'
 import os from 'node:os'
 import { join } from 'node:path'
 import { EVENTS } from '../shared/ipc'
@@ -41,6 +41,15 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     app.setAppUserModelId('dev.polaris.client')
+    // The launcher needs no camera, microphone, geolocation, notifications,
+    // clipboard-read, MIDI or device permissions. Deny everything.
+    session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+      callback(false)
+    })
+    session.defaultSession.setPermissionCheckHandler(() => false)
+    app.on('web-contents-created', (_event, contents) => {
+      contents.on('will-attach-webview', (event) => event.preventDefault())
+    })
     const services = new AppServices()
     registerIpc(services)
     mainWindow = createWindow(services)
@@ -69,6 +78,8 @@ function createWindow(services: AppServices): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      webviewTag: false,
+      allowRunningInsecureContent: false,
       spellcheck: false,
       // Memory optimization
       v8CacheOptions: 'code',
@@ -110,12 +121,27 @@ function createWindow(services: AppServices): BrowserWindow {
 
   wireServices(services, win)
 
-  if (process.env['ELECTRON_RENDERER_URL']) {
-    void win.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  // electron-vite sets this during development. A packaged build must never
+  // load a remote renderer: it would receive the preload API.
+  const devUrl = process.env['ELECTRON_RENDERER_URL']
+  if (!app.isPackaged && devUrl && isLoopbackDevUrl(devUrl)) {
+    void win.loadURL(devUrl)
   } else {
     void win.loadFile(join(__dirname, '../renderer/index.html'))
   }
   return win
+}
+
+function isLoopbackDevUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'http:' &&
+      (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]')
+    )
+  } catch {
+    return false
+  }
 }
 
 function wireServices(services: AppServices, win: BrowserWindow): void {

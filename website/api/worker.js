@@ -1,425 +1,557 @@
-// Cloudflare Worker for Polaris Launcher API
-// Deploy: wrangler deploy
+// Cloudflare Worker for the Polaris launcher API.
+//
+// The launcher and the bundled presence mod are the only intended clients.
+// There is no browser CORS grant: friend mutations require a per-account
+// secret in X-Polaris-Secret plus the public code in X-Polaris-Code.
+//
 // Endpoints:
-//   GET  /v1/version            -> { version, url, sha256, minVersion, changelog }
-//   GET  /v1/announcements      -> { announcements: [...], minVersion, killSwitch }
-//   POST /v1/presence           -> publish { uuid, name, server } for 120s
-//   GET  /v1/presence?server=   -> public presence for one server
-//   GET  /v1/presence/friends?uuids= -> presence for up to 100 UUIDs
-//   POST /v1/friends/register   -> register a friend code { code, name }
-//   POST /v1/friends/add        -> add confirmed friend { myCode, friendCode }
-//   POST /v1/friends/remove     -> remove friend { myCode, friendCode }
-//   POST /v1/friends/remove-mutual -> remove from both lists { myCode, friendCode }
-//   GET  /v1/friends/list?code= -> list confirmed friends { friends: [{ code, name }] }
-//   POST /v1/friends/request    -> send friend request { myCode, friendCode }
-//   POST /v1/friends/respond    -> accept/decline request { myCode, friendCode, action: 'accept'|'decline' }
-//   GET  /v1/friends/requests?code= -> list pending requests { requests: [{ code, name, createdAt }] }
+//   GET  /v1/version
+//   GET  /v1/announcements
+//   POST /v1/presence                 (authenticated)
+//   GET  /v1/presence?server=         (authenticated)
+//   GET  /v1/presence/friends?uuids=  (authenticated, caller's friends only)
+//   POST /v1/friends/register         (authenticated; first call pins the secret)
+//   GET  /v1/friends/list             (authenticated)
+//   POST /v1/friends/request          (authenticated)
+//   POST /v1/friends/respond          (authenticated)
+//   POST /v1/friends/remove-mutual    (authenticated)
+//   GET  /v1/friends/requests         (authenticated)
 
 const REPO = 'eddddiwe/polaris-client'
-const CURRENT_VERSION = '0.4.1'
+const FRIEND_CODE_RE = /^POLARIS-[A-Z0-9]{4}-[A-Z0-9]{4}$/
+const SECRET_RE = /^[A-Za-z0-9_-]{32,128}$/
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const MAX_FRIENDS = 200
+const MAX_PENDING = 100
+const REQUEST_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const PRESENCE_TTL_SECONDS = 120
+const PRESENCE_FRESH_MS = 90_000
+const MAX_BODY_BYTES = 4096
+
+/** Per-isolate fixed-window limiter. Cloudflare's edge also rate-limits abuse. */
+const buckets = new Map()
+
+class ApiError extends Error {
+  constructor(status, message) {
+    super(message)
+    this.status = status
+  }
+}
+
+function json(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'no-referrer'
+    }
+  })
+}
+
+function fail(status, message) {
+  return json({ ok: false, error: message }, status)
+}
 
 function normalizeUuid(value) {
   const raw = String(value || '').trim().toLowerCase()
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(raw)) return raw
+  if (UUID_RE.test(raw)) return raw
   if (/^[0-9a-f]{32}$/.test(raw)) {
     return raw.replace(/^(\w{8})(\w{4})(\w{4})(\w{4})(\w{12})$/, '$1-$2-$3-$4-$5')
   }
   return ''
 }
 
-async function resolveFriendUuid(kv, code, info) {
-  if (!info || info.uuid) return info
-  const name = String(info.name || '').trim()
-  if (!name || name === code) return info
-  try {
-    const res = await fetch(`https://playerdb.co/api/player/minecraft/${encodeURIComponent(name)}`, {
-      headers: { 'User-Agent': 'Polaris-API' },
-      signal: AbortSignal.timeout(5000)
-    })
-    if (!res.ok) return info
-    const body = await res.json()
-    const raw = String(body?.data?.player?.id || '')
-    if (!raw) return info
-    const uuid = /^[0-9a-f]{32}$/i.test(raw)
-      ? raw.replace(/^(\w{8})(\w{4})(\w{4})(\w{4})(\w{12})$/, '$1-$2-$3-$4-$5')
-      : raw
-    const updated = { ...info, uuid, createdAt: info.createdAt ?? Date.now() }
-    await kv.put(`friend:${code}`, JSON.stringify(updated))
-    return updated
-  } catch {
-    return info
+function normalizeCode(value) {
+  const code = String(value || '').trim().toUpperCase()
+  return FRIEND_CODE_RE.test(code) ? code : ''
+}
+
+function cleanText(value, maxLength) {
+  if (typeof value !== 'string') return ''
+  return value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, maxLength)
+}
+
+function rateLimit(request, name, limit, windowMs) {
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
+  const key = `${name}:${ip}`
+  const now = Date.now()
+  let bucket = buckets.get(key)
+  if (!bucket || bucket.reset <= now) {
+    bucket = { count: 0, reset: now + windowMs }
+    buckets.set(key, bucket)
+  }
+  bucket.count += 1
+  if (buckets.size > 5000) {
+    for (const [entry, value] of buckets) {
+      if (value.reset <= now) buckets.delete(entry)
+    }
+  }
+  return bucket.count <= limit
+}
+
+function limitOrThrow(request, name, limit, windowMs) {
+  if (!rateLimit(request, name, limit, windowMs)) {
+    throw new ApiError(429, 'Too many requests. Try again later.')
   }
 }
 
+async function readJson(request) {
+  const declared = Number(request.headers.get('Content-Length') || 0)
+  if (declared > MAX_BODY_BYTES) throw new ApiError(413, 'Request body is too large')
+  const text = await request.text()
+  if (text.length > MAX_BODY_BYTES) throw new ApiError(413, 'Request body is too large')
+  let body
+  try {
+    body = JSON.parse(text)
+  } catch {
+    throw new ApiError(400, 'Invalid JSON body')
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new ApiError(400, 'Invalid JSON body')
+  }
+  return body
+}
+
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+function sameHex(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  return diff === 0
+}
+
+async function readFriend(kv, code) {
+  const raw = await kv.get(`friend:${code}`)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Extract credentials and verify them against the stored secret hash.
+ * Registration is the only endpoint that may bind a legacy record.
+ */
+async function authenticate(kv, request) {
+  const code = normalizeCode(request.headers.get('X-Polaris-Code'))
+  const secret = String(request.headers.get('X-Polaris-Secret') || '').trim()
+  if (!code || !SECRET_RE.test(secret)) return null
+  const info = await readFriend(kv, code)
+  if (!info || !info.secretHash) return null
+  const hash = await sha256Hex(secret)
+  if (!sameHex(hash, String(info.secretHash))) return null
+  return { code, secret, info }
+}
+
+function publicFriend(code, info) {
+  return {
+    code,
+    name: cleanText(info?.name, 32) || code,
+    uuid: normalizeUuid(info?.uuid) || undefined,
+    addedAt: Number(info?.createdAt) || Date.now()
+  }
+}
+
+async function readList(kv, key) {
+  const raw = await kv.get(key)
+  if (!raw) return []
+  try {
+    const value = JSON.parse(raw)
+    return Array.isArray(value) ? value.filter((entry) => typeof entry === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+async function writeList(kv, key, list) {
+  const unique = [...new Set(list)].slice(0, MAX_FRIENDS)
+  await kv.put(key, JSON.stringify(unique))
+}
+
+async function readRequests(kv, auth) {
+  const incoming = await readList(kv, `incoming:${auth.code}`)
+  const requests = []
+  const keep = []
+  for (const senderCode of incoming) {
+    if (!FRIEND_CODE_RE.test(senderCode)) continue
+    const raw = await kv.get(`request:${senderCode}:${auth.code}`)
+    if (!raw) continue
+    let request
+    try {
+      request = JSON.parse(raw)
+    } catch {
+      continue
+    }
+    if (Number(request.expiresAt) <= Date.now()) {
+      await deleteRequest(kv, senderCode, auth.code)
+      continue
+    }
+    keep.push(senderCode)
+    const info = await readFriend(kv, senderCode)
+    if (!info) continue
+    requests.push({
+      code: senderCode,
+      name: cleanText(info.name, 32) || senderCode,
+      uuid: normalizeUuid(info.uuid) || undefined,
+      createdAt: Number(request.createdAt) || 0
+    })
+  }
+  if (keep.length !== incoming.length) {
+    await writeList(kv, `incoming:${auth.code}`, keep)
+  }
+  return requests
+}
+
+async function deleteRequest(kv, senderCode, recipientCode) {
+  await kv.delete(`request:${senderCode}:${recipientCode}`)
+  const senderPending = await readList(kv, `pending:${senderCode}`)
+  await writeList(
+    kv,
+    `pending:${senderCode}`,
+    senderPending.filter((code) => code !== recipientCode)
+  )
+  const recipientIncoming = await readList(kv, `incoming:${recipientCode}`)
+  await writeList(
+    kv,
+    `incoming:${recipientCode}`,
+    recipientIncoming.filter((code) => code !== senderCode)
+  )
+}
+
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env) {
     const url = new URL(request.url)
     const path = url.pathname
-    const minVersion = env.MIN_VERSION || CURRENT_VERSION
-
-    const corsHeaders = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-      'Content-Type': 'application/json',
-    }
+    const minVersion = env.MIN_VERSION || env.CURRENT_VERSION || '0.4.2'
 
     if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders })
+      // No Access-Control-Allow-Origin: the API is not a browser endpoint.
+      return new Response(null, { status: 204, headers: { Allow: 'GET, POST, OPTIONS' } })
     }
 
-    // Version check
-    if (path === '/v1/version' || path === '/version') {
-      try {
-        const ghRes = await fetch(`https://api.github.com/repos/${REPO}/releases/latest?t=${Date.now()}`, {
-          headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'Polaris-API' },
-          cf: { cacheTtl: 0, cacheEverything: false }
-        })
-        const gh = await ghRes.json()
-        const latestVersion = (gh.tag_name || '').replace(/^v/, '')
-        const version = latestVersion || CURRENT_VERSION
-        const directUrl = `https://github.com/${REPO}/releases/download/v${version}/Polaris-Setup-${version}.exe`
-        const asset = (gh.assets || []).find(a => a.name.endsWith('.exe')) || (gh.assets || [])[0]
-        const digest = typeof asset?.digest === 'string' ? asset.digest.replace(/^sha256:/i, '') : ''
-        return new Response(JSON.stringify({
-          version,
-          url: asset?.browser_download_url || directUrl,
-          sha256: digest,
-          size: Number(asset?.size) || 0,
-          minVersion,
-          changelog: gh.body || '',
-          publishedAt: gh.published_at || new Date().toISOString(),
-        }), { headers: corsHeaders })
-      } catch (e) {
-        return new Response(JSON.stringify({
-          version: CURRENT_VERSION,
-          url: `https://github.com/${REPO}/releases/download/v${CURRENT_VERSION}/Polaris-Setup-${CURRENT_VERSION}.exe`,
-          sha256: '',
-          size: 0,
-          minVersion,
-          changelog: '',
-          publishedAt: new Date().toISOString(),
-        }), { headers: corsHeaders })
-      }
-    }
-
-    // Announcements
-    if (path === '/v1/announcements' || path === '/announcements') {
-      return new Response(JSON.stringify({
-        announcements: [],
-        minVersion,
-        killSwitch: false,
-      }), { headers: corsHeaders })
-    }
-
-    // ---------- Presence API (same KV namespace) ----------
-    const kv = env.FRIENDS
-    if (path === '/v1/presence') {
-      if (!kv) return new Response(JSON.stringify({ ok: false, error: 'KV not configured' }), { status: 500, headers: corsHeaders })
-      if (request.method === 'POST') {
+    try {
+      // Version metadata. The updater independently confirms the release
+      // digest with GitHub; this endpoint is convenience/discovery only.
+      if (path === '/v1/version' || path === '/version') {
         try {
-          const body = await request.json()
-          const uuid = normalizeUuid(body.uuid)
-          const name = String(body.name || '').trim() || uuid
-          const server = String(body.server || '').trim().toLowerCase()
-          if (!uuid || !server) return new Response(JSON.stringify({ ok: false, error: 'uuid and server required' }), { status: 400, headers: corsHeaders })
-          if (server.length > 200) return new Response(JSON.stringify({ ok: false, error: 'server too long' }), { status: 400, headers: corsHeaders })
-          const record = JSON.stringify({ uuid, name, server, lastSeen: Date.now() })
-          await kv.put(`presence:${encodeURIComponent(server)}:${uuid}`, record, { expirationTtl: 120 })
-          // Secondary index so friends can resolve presence by UUID without scanning servers.
-          await kv.put(`presenceUuid:${uuid}`, record, { expirationTtl: 120 })
-          return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders })
-        } catch (e) {
-          return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 400, headers: corsHeaders })
+          const ghRes = await fetch(`https://api.github.com/repos/${REPO}/releases/latest?t=${Date.now()}`, {
+            headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Polaris-API' },
+            cf: { cacheTtl: 0, cacheEverything: false },
+            signal: AbortSignal.timeout(6000)
+          })
+          const gh = await ghRes.json()
+          const latestVersion = String(gh.tag_name || '').replace(/^v/, '')
+          const version = /^\d+\.\d+\.\d+$/.test(latestVersion)
+            ? latestVersion
+            : env.CURRENT_VERSION || '0.4.2'
+          const directUrl = `https://github.com/${REPO}/releases/download/v${version}/Polaris-Setup-${version}.exe`
+          const asset = (gh.assets || []).find((entry) => entry.name.endsWith('.exe')) || null
+          const digest = typeof asset?.digest === 'string' ? asset.digest.replace(/^sha256:/i, '') : ''
+          return json({
+            version,
+            url: asset?.browser_download_url || directUrl,
+            sha256: /^[0-9a-f]{64}$/i.test(digest) ? digest.toLowerCase() : '',
+            size: Number(asset?.size) || 0,
+            minVersion,
+            changelog: gh.body || '',
+            publishedAt: gh.published_at || new Date().toISOString()
+          })
+        } catch {
+          return json({
+            version: env.CURRENT_VERSION || '0.4.2',
+            url: `https://github.com/${REPO}/releases/latest`,
+            sha256: '',
+            size: 0,
+            minVersion,
+            changelog: '',
+            publishedAt: new Date().toISOString()
+          })
         }
       }
-      if (request.method === 'GET') {
-        try {
-          const server = String(url.searchParams.get('server') || '').trim().toLowerCase()
-          if (!server) return new Response(JSON.stringify({ ok: false, error: 'server required' }), { status: 400, headers: corsHeaders })
+
+      if (path === '/v1/announcements' || path === '/announcements') {
+        return json({ announcements: [], minVersion, killSwitch: false })
+      }
+
+      const kv = env.FRIENDS
+      if (!kv) return fail(500, 'Service is not configured')
+
+      // ---------- Presence ----------
+      if (path === '/v1/presence') {
+        limitOrThrow(request, 'presence', 120, 60_000)
+        const auth = await authenticate(kv, request)
+        if (!auth) return fail(401, 'Authentication required')
+
+        if (request.method === 'POST') {
+          const body = await readJson(request)
+          const uuid = normalizeUuid(body.uuid)
+          const name = cleanText(body.name, 32) || uuid
+          const server = cleanText(body.server, 200).toLowerCase()
+          if (!uuid || !server) return fail(400, 'uuid and server required')
+          const record = JSON.stringify({
+            uuid,
+            name,
+            server,
+            code: auth.code,
+            lastSeen: Date.now()
+          })
+          // Keying by code as well as UUID prevents another authenticated
+          // account from overwriting or hiding a player's presence record.
+          await kv.put(`presence:${encodeURIComponent(server)}:${auth.code}:${uuid}`, record, {
+            expirationTtl: PRESENCE_TTL_SECONDS
+          })
+          await kv.put(`presenceUuid:${uuid}:${auth.code}`, record, {
+            expirationTtl: PRESENCE_TTL_SECONDS
+          })
+          return json({ ok: true })
+        }
+
+        if (request.method === 'GET') {
+          const server = cleanText(url.searchParams.get('server'), 200).toLowerCase()
+          if (!server) return fail(400, 'server required')
           const prefix = `presence:${encodeURIComponent(server)}:`
-          const listed = await kv.list({ prefix, limit: 100 })
+          const listed = await kv.list({ prefix, limit: 1000 })
           const users = []
           const now = Date.now()
-          for (const entry of (listed.keys || [])) {
+          for (const entry of listed.keys || []) {
             const raw = await kv.get(entry.name)
             if (!raw) continue
-            const user = JSON.parse(raw)
-            if (now - Number(user.lastSeen || 0) > 90000) continue
+            let user
+            try {
+              user = JSON.parse(raw)
+            } catch {
+              continue
+            }
+            if (now - Number(user.lastSeen || 0) > PRESENCE_FRESH_MS) continue
             users.push({ uuid: user.uuid, name: user.name, lastSeen: user.lastSeen })
           }
           if (url.searchParams.get('format') === 'text') {
-            const textHeaders = { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' }
-            return new Response(users.map(u => `${u.uuid}|${u.name}`).join('\n'), { headers: textHeaders })
+            return new Response(users.map((user) => `${user.uuid}|${user.name}`).join('\n'), {
+              headers: {
+                'Content-Type': 'text/plain; charset=utf-8',
+                'Cache-Control': 'no-store',
+                'X-Content-Type-Options': 'nosniff'
+              }
+            })
           }
-          return new Response(JSON.stringify({ users }), { headers: corsHeaders })
-        } catch (e) {
-          return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 400, headers: corsHeaders })
+          return json({ users })
         }
-      }
-    }
 
-    // Friends-only presence lookup: UUIDs come from the friend list.
-    if (path === '/v1/presence/friends' && request.method === 'GET') {
-      if (!kv) return new Response(JSON.stringify({ ok: false, error: 'KV not configured' }), { status: 500, headers: corsHeaders })
-      try {
-        const uuids = String(url.searchParams.get('uuids') || '')
-          .split(',')
-          .map(normalizeUuid)
-          .filter(Boolean)
-        if (uuids.length > 100) {
-          return new Response(JSON.stringify({ ok: false, error: 'too many uuids' }), { status: 400, headers: corsHeaders })
-        }
+        return fail(405, 'Method not allowed')
+      }
+
+      // Only return presence for UUIDs on the caller's authenticated friend
+      // list. This prevents arbitrary UUID interrogation and spoofed records.
+      if (path === '/v1/presence/friends' && request.method === 'GET') {
+        limitOrThrow(request, 'presence-friends', 120, 60_000)
+        const auth = await authenticate(kv, request)
+        if (!auth) return fail(401, 'Authentication required')
+        const requested = new Set(
+          String(url.searchParams.get('uuids') || '')
+            .split(',')
+            .map(normalizeUuid)
+            .filter(Boolean)
+        )
+        if (requested.size === 0) return json({ presence: {} })
+        if (requested.size > 100) return fail(400, 'too many uuids')
+
+        const codes = await readList(kv, `friends:${auth.code}`)
         const presence = {}
         const now = Date.now()
-        await Promise.all(uuids.map(async (uuid) => {
-          const raw = await kv.get(`presenceUuid:${uuid}`)
-          if (!raw) return
-          const record = JSON.parse(raw)
-          if (now - Number(record.lastSeen || 0) > 90000) return
-          presence[uuid] = {
-            server: record.server,
-            lastSeen: record.lastSeen,
-            name: record.name,
-          }
-        }))
-        return new Response(JSON.stringify({ presence }), { headers: corsHeaders })
-      } catch (e) {
-        return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 400, headers: corsHeaders })
+        const profiles = await Promise.all(
+          codes.map(async (code) => ({ code, info: await readFriend(kv, code) }))
+        )
+        await Promise.all(
+          profiles.map(async ({ code, info }) => {
+            const uuid = normalizeUuid(info?.uuid)
+            if (!uuid || !requested.has(uuid)) return
+            const raw = await kv.get(`presenceUuid:${uuid}:${code}`)
+            if (!raw) return
+            let record
+            try {
+              record = JSON.parse(raw)
+            } catch {
+              return
+            }
+            if (record.code !== code) return
+            if (normalizeUuid(record.uuid) !== uuid) return
+            if (now - Number(record.lastSeen || 0) > PRESENCE_FRESH_MS) return
+            presence[uuid] = {
+              server: cleanText(record.server, 200),
+              lastSeen: Number(record.lastSeen) || 0
+            }
+          })
+        )
+        return json({ presence })
       }
-    }
 
-    // ---------- Friends API (requires KV binding: FRIENDS) ----------
-
-    // Register a friend code
-    if (path === '/v1/friends/register' && request.method === 'POST') {
-      if (!kv) return new Response(JSON.stringify({ ok: false, error: 'KV not configured' }), { status: 500, headers: corsHeaders })
-      try {
-        const body = await request.json()
-        const code = String(body.code || '').trim().toUpperCase()
-        const name = String(body.name || '').trim() || code
-        const uuid = String(body.uuid || '').trim()
-        if (!code) return new Response(JSON.stringify({ ok: false, error: 'code required' }), { status: 400, headers: corsHeaders })
-        await kv.put(`friend:${code}`, JSON.stringify({ name, uuid, createdAt: Date.now() }))
-        return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders })
-      } catch (e) {
-        return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 400, headers: corsHeaders })
-      }
-    }
-
-    // Add a confirmed friend
-    if (path === '/v1/friends/add' && request.method === 'POST') {
-      if (!kv) return new Response(JSON.stringify({ ok: false, error: 'KV not configured' }), { status: 500, headers: corsHeaders })
-      try {
-        const body = await request.json()
-        const myCode = String(body.myCode || '').trim().toUpperCase()
-        const friendCode = String(body.friendCode || '').trim().toUpperCase()
-        if (!myCode || !friendCode) return new Response(JSON.stringify({ ok: false, error: 'myCode and friendCode required' }), { status: 400, headers: corsHeaders })
-        const raw = await kv.get(`friends:${myCode}`)
-        const list = raw ? JSON.parse(raw) : []
-        if (!list.includes(friendCode)) list.push(friendCode)
-        await kv.put(`friends:${myCode}`, JSON.stringify(list))
-        // also remove from pending if exists
-        await kv.delete(`request:${myCode}:${friendCode}`)
-        return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders })
-      } catch (e) {
-        return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 400, headers: corsHeaders })
-      }
-    }
-
-    // Remove a friend
-    if (path === '/v1/friends/remove' && request.method === 'POST') {
-      if (!kv) return new Response(JSON.stringify({ ok: false, error: 'KV not configured' }), { status: 500, headers: corsHeaders })
-      try {
-        const body = await request.json()
-        const myCode = String(body.myCode || '').trim().toUpperCase()
-        const friendCode = String(body.friendCode || '').trim().toUpperCase()
-        const raw = await kv.get(`friends:${myCode}`)
-        const list = raw ? JSON.parse(raw) : []
-        const next = list.filter(c => c !== friendCode)
-        await kv.put(`friends:${myCode}`, JSON.stringify(next))
-        await kv.delete(`request:${myCode}:${friendCode}`)
-        return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders })
-      } catch (e) {
-        return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 400, headers: corsHeaders })
-      }
-    }
-
-    // Remove friend from BOTH lists (mutual removal)
-    if (path === '/v1/friends/remove-mutual' && request.method === 'POST') {
-      if (!kv) return new Response(JSON.stringify({ ok: false, error: 'KV not configured' }), { status: 500, headers: corsHeaders })
-      try {
-        const body = await request.json()
-        const myCode = String(body.myCode || '').trim().toUpperCase()
-        const friendCode = String(body.friendCode || '').trim().toUpperCase()
-        // Format validation
-        if (!myCode || !friendCode) return new Response(JSON.stringify({ ok: false, error: 'myCode and friendCode required' }), { status: 400, headers: corsHeaders })
-        if (!/^POLARIS-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(myCode)) return new Response(JSON.stringify({ ok: false, error: 'Invalid myCode format' }), { status: 400, headers: corsHeaders })
-        if (!/^POLARIS-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(friendCode)) return new Response(JSON.stringify({ ok: false, error: 'Invalid friendCode format' }), { status: 400, headers: corsHeaders })
-        // Prevent self-removal
-        if (myCode === friendCode) return new Response(JSON.stringify({ ok: false, error: 'Cannot remove yourself' }), { status: 400, headers: corsHeaders })
-        // Remove from myCode's list
-        let myFriendsRaw = await kv.get(`friends:${myCode}`)
-        let myFriends = myFriendsRaw ? JSON.parse(myFriendsRaw) : []
-        if (myFriends.includes(friendCode)) {
-          myFriends = myFriends.filter(c => c !== friendCode)
-          await kv.put(`friends:${myCode}`, JSON.stringify(myFriends))
+      // ---------- Friends ----------
+      if (path === '/v1/friends/register' && request.method === 'POST') {
+        limitOrThrow(request, 'register', 10, 60_000)
+        const code = normalizeCode(request.headers.get('X-Polaris-Code'))
+        const secret = String(request.headers.get('X-Polaris-Secret') || '').trim()
+        if (!code || !SECRET_RE.test(secret)) return fail(400, 'Invalid friend code or secret')
+        const body = await readJson(request)
+        const name = cleanText(body.name, 32) || code
+        const uuid = normalizeUuid(body.uuid)
+        const secretHash = await sha256Hex(secret)
+        const existing = await readFriend(kv, code)
+        if (existing?.secretHash && !sameHex(String(existing.secretHash), secretHash)) {
+          return fail(403, 'This friend code is already registered to another account')
         }
-        // Remove from friendCode's list
-        let friendFriendsRaw = await kv.get(`friends:${friendCode}`)
-        let friendFriends = friendFriendsRaw ? JSON.parse(friendFriendsRaw) : []
-        if (friendFriends.includes(myCode)) {
-          friendFriends = friendFriends.filter(c => c !== myCode)
-          await kv.put(`friends:${friendCode}`, JSON.stringify(friendFriends))
-        }
-        // Clean up pending request markers
-        await kv.delete(`request:${myCode}:${friendCode}`)
-        await kv.delete(`request:${friendCode}:${myCode}`)
-        // Remove from pending lists
-        let myPendingRaw = await kv.get(`pending:${myCode}`)
-        let myPending = myPendingRaw ? JSON.parse(myPendingRaw) : []
-        myPending = myPending.filter(c => c !== friendCode)
-        await kv.put(`pending:${myCode}`, JSON.stringify(myPending))
-        let friendPendingRaw = await kv.get(`pending:${friendCode}`)
-        let friendPending = friendPendingRaw ? JSON.parse(friendPendingRaw) : []
-        friendPending = friendPending.filter(c => c !== myCode)
-        await kv.put(`pending:${friendCode}`, JSON.stringify(friendPending))
-        // Clean up incoming lists both ways
-        const myIncomingRaw = await kv.get(`incoming:${myCode}`)
-        const myIncoming = myIncomingRaw ? JSON.parse(myIncomingRaw) : []
-        await kv.put(`incoming:${myCode}`, JSON.stringify(myIncoming.filter(c => c !== friendCode)))
-        const friendIncomingRaw = await kv.get(`incoming:${friendCode}`)
-        const friendIncoming = friendIncomingRaw ? JSON.parse(friendIncomingRaw) : []
-        await kv.put(`incoming:${friendCode}`, JSON.stringify(friendIncoming.filter(c => c !== myCode)))
-        return new Response(JSON.stringify({ ok: true, removedFromBoth: true }), { headers: corsHeaders })
-      } catch (e) {
-        return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 400, headers: corsHeaders })
+        await kv.put(
+          `friend:${code}`,
+          JSON.stringify({
+            name,
+            uuid: uuid || normalizeUuid(existing?.uuid) || undefined,
+            secretHash,
+            createdAt: Number(existing?.createdAt) || Date.now()
+          })
+        )
+        return json({ ok: true, code })
       }
-    }
-// List confirmed friends
-    if (path === '/v1/friends/list' && request.method === 'GET') {
-      if (!kv) return new Response(JSON.stringify({ ok: false, error: 'KV not configured' }), { status: 500, headers: corsHeaders })
-      try {
-        const code = String(url.searchParams.get('code') || '').trim().toUpperCase()
-        if (!code) return new Response(JSON.stringify({ ok: false, error: 'code required' }), { status: 400, headers: corsHeaders })
-        const raw = await kv.get(`friends:${code}`)
-        const codes = raw ? JSON.parse(raw) : []
-        const friends = []
-        for (const fc of codes) {
-          const infoRaw = await kv.get(`friend:${fc}`)
-          const info = await resolveFriendUuid(kv, fc, infoRaw ? JSON.parse(infoRaw) : { name: fc })
-          friends.push({ code: fc, name: info.name || fc, uuid: info.uuid || undefined })
-        }
-        return new Response(JSON.stringify({ friends }), { headers: corsHeaders })
-      } catch (e) {
-        return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 400, headers: corsHeaders })
-      }
-    }
 
-    // Send a friend request
-    if (path === '/v1/friends/request' && request.method === 'POST') {
-      if (!kv) return new Response(JSON.stringify({ ok: false, error: 'KV not configured' }), { status: 500, headers: corsHeaders })
-      try {
-        const body = await request.json()
-        const myCode = String(body.myCode || '').trim().toUpperCase()
-        const friendCode = String(body.friendCode || '').trim().toUpperCase()
-        if (!myCode || !friendCode) return new Response(JSON.stringify({ ok: false, error: 'myCode and friendCode required' }), { status: 400, headers: corsHeaders })
-        if (myCode === friendCode) return new Response(JSON.stringify({ ok: false, error: 'Cannot add yourself' }), { status: 400, headers: corsHeaders })
-        // Check if already friends
-        const friendsRaw = await kv.get(`friends:${myCode}`)
-        const friends = friendsRaw ? JSON.parse(friendsRaw) : []
-        if (friends.includes(friendCode)) return new Response(JSON.stringify({ ok: false, error: 'Already friends' }), { status: 400, headers: corsHeaders })
-        // Check if already has pending request
-        const pendingRaw = await kv.get(`pending:${myCode}`)
-        const pending = pendingRaw ? JSON.parse(pendingRaw) : []
-        if (pending.includes(friendCode)) return new Response(JSON.stringify({ ok: false, error: 'Request already sent' }), { status: 400, headers: corsHeaders })
-        // Create request
-        await kv.put(`request:${myCode}:${friendCode}`, JSON.stringify({ myCode, friendCode, createdAt: Date.now(), status: 'pending' }))
-        // Track the sender's outgoing requests...
-        pending.push(friendCode)
-        await kv.put(`pending:${myCode}`, JSON.stringify(pending))
-        // ...and the recipient's incoming requests so they can list them.
-        const incomingRaw = await kv.get(`incoming:${friendCode}`)
-        const incoming = incomingRaw ? JSON.parse(incomingRaw) : []
-        if (!incoming.includes(myCode)) incoming.push(myCode)
-        await kv.put(`incoming:${friendCode}`, JSON.stringify(incoming))
-        return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders })
-      } catch (e) {
-        return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 400, headers: corsHeaders })
-      }
-    }
+      // Every remaining friends endpoint requires valid credentials.
+      const auth = await authenticate(kv, request)
+      if (!auth) return fail(401, 'Authentication required')
 
-    // Respond to a friend request (accept or decline)
-    if (path === '/v1/friends/respond' && request.method === 'POST') {
-      if (!kv) return new Response(JSON.stringify({ ok: false, error: 'KV not configured' }), { status: 500, headers: corsHeaders })
-      try {
-        const body = await request.json()
-        const myCode = String(body.myCode || '').trim().toUpperCase()
-        const friendCode = String(body.friendCode || '').trim().toUpperCase()
+      if (path === '/v1/friends/list' && request.method === 'GET') {
+        limitOrThrow(request, 'friends-list', 120, 60_000)
+        const codes = await readList(kv, `friends:${auth.code}`)
+        const friends = await Promise.all(
+          codes.map(async (code) => publicFriend(code, await readFriend(kv, code)))
+        )
+        return json({ friends })
+      }
+
+      if (path === '/v1/friends/request' && request.method === 'POST') {
+        limitOrThrow(request, 'friends-request', 20, 60_000)
+        const body = await readJson(request)
+        const friendCode = normalizeCode(body.friendCode)
+        if (!friendCode) return fail(400, 'Invalid friend code')
+        if (friendCode === auth.code) return fail(400, 'Cannot add yourself')
+        const target = await readFriend(kv, friendCode)
+        if (!target) return fail(404, 'No account uses that friend code')
+
+        const friends = await readList(kv, `friends:${auth.code}`)
+        if (friends.includes(friendCode)) return fail(409, 'Already friends')
+
+        const pending = await readList(kv, `pending:${auth.code}`)
+        if (pending.includes(friendCode)) return fail(409, 'Request already sent')
+        if (pending.length >= MAX_PENDING) return fail(409, 'Too many outgoing requests')
+
+        // If they already asked us, point the user at their inbox instead of
+        // creating a second request edge.
+        if (await kv.get(`request:${friendCode}:${auth.code}`)) {
+          return fail(409, 'They already sent you a friend request')
+        }
+
+        const targetIncoming = await readList(kv, `incoming:${friendCode}`)
+        if (targetIncoming.length >= MAX_PENDING) return fail(409, 'Their request inbox is full')
+        const expiresAt = Date.now() + REQUEST_TTL_MS
+        await kv.put(
+          `request:${auth.code}:${friendCode}`,
+          JSON.stringify({
+            myCode: auth.code,
+            friendCode,
+            createdAt: Date.now(),
+            expiresAt
+          }),
+          { expirationTtl: Math.ceil(REQUEST_TTL_MS / 1000) }
+        )
+        await writeList(kv, `pending:${auth.code}`, [...pending, friendCode])
+        if (!targetIncoming.includes(auth.code)) {
+          await writeList(kv, `incoming:${friendCode}`, [...targetIncoming, auth.code])
+        }
+        return json({ ok: true })
+      }
+
+      if (path === '/v1/friends/respond' && request.method === 'POST') {
+        limitOrThrow(request, 'friends-respond', 20, 60_000)
+        const body = await readJson(request)
+        const friendCode = normalizeCode(body.friendCode)
         const action = String(body.action || '').trim().toLowerCase()
-        if (!myCode || !friendCode || !action) return new Response(JSON.stringify({ ok: false, error: 'myCode, friendCode, and action required' }), { status: 400, headers: corsHeaders })
-        if (action !== 'accept' && action !== 'decline') return new Response(JSON.stringify({ ok: false, error: 'action must be accept or decline' }), { status: 400, headers: corsHeaders })
-        // Check if request exists
-        const reqRaw = await kv.get(`request:${friendCode}:${myCode}`)
-        if (!reqRaw) return new Response(JSON.stringify({ ok: false, error: 'No pending request found' }), { status: 404, headers: corsHeaders })
+        if (!friendCode || (action !== 'accept' && action !== 'decline')) {
+          return fail(400, 'friendCode and action are required')
+        }
+        const raw = await kv.get(`request:${friendCode}:${auth.code}`)
+        if (!raw) return fail(404, 'No pending request found')
+        let pendingRequest
+        try {
+          pendingRequest = JSON.parse(raw)
+        } catch {
+          await kv.delete(`request:${friendCode}:${auth.code}`)
+          return fail(404, 'No pending request found')
+        }
+        if (Number(pendingRequest.expiresAt) <= Date.now()) {
+          await deleteRequest(kv, friendCode, auth.code)
+          return fail(410, 'That friend request expired')
+        }
+
         if (action === 'accept') {
-          // Add as confirmed friend both ways
-          // Add friendCode to myCode's friends list
-          let myFriendsRaw = await kv.get(`friends:${myCode}`)
-          let myFriends = myFriendsRaw ? JSON.parse(myFriendsRaw) : []
-          if (!myFriends.includes(friendCode)) myFriends.push(friendCode)
-          await kv.put(`friends:${myCode}`, JSON.stringify(myFriends))
-
-          // Add myCode to friendCode's friends list
-          let friendFriendsRaw = await kv.get(`friends:${friendCode}`)
-          let friendFriends = friendFriendsRaw ? JSON.parse(friendFriendsRaw) : []
-          if (!friendFriends.includes(myCode)) friendFriends.push(myCode)
-          await kv.put(`friends:${friendCode}`, JSON.stringify(friendFriends))
+          const myFriends = await readList(kv, `friends:${auth.code}`)
+          const theirFriends = await readList(kv, `friends:${friendCode}`)
+          if (myFriends.length >= MAX_FRIENDS || theirFriends.length >= MAX_FRIENDS) {
+            return fail(409, 'Friend list is full')
+          }
+          if (!myFriends.includes(friendCode)) {
+            await writeList(kv, `friends:${auth.code}`, [...myFriends, friendCode])
+          }
+          if (!theirFriends.includes(auth.code)) {
+            await writeList(kv, `friends:${friendCode}`, [...theirFriends, auth.code])
+          }
         }
-        // The request is resolved: delete it and clear both tracking lists.
-        await kv.delete(`request:${friendCode}:${myCode}`)
-        // Sender's outgoing list
-        const pendingRaw = await kv.get(`pending:${friendCode}`)
-        const pending = pendingRaw ? JSON.parse(pendingRaw) : []
-        await kv.put(`pending:${friendCode}`, JSON.stringify(pending.filter(c => c !== myCode)))
-        // Recipient's incoming list
-        const incomingRaw = await kv.get(`incoming:${myCode}`)
-        const incoming = incomingRaw ? JSON.parse(incomingRaw) : []
-        await kv.put(`incoming:${myCode}`, JSON.stringify(incoming.filter(c => c !== friendCode)))
-        return new Response(JSON.stringify({ ok: true, action }), { headers: corsHeaders })
-      } catch (e) {
-        return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 400, headers: corsHeaders })
+        await deleteRequest(kv, friendCode, auth.code)
+        return json({ ok: true, action })
       }
-    }
 
-    // List pending friend requests
-    if (path === '/v1/friends/requests' && request.method === 'GET') {
-      if (!kv) return new Response(JSON.stringify({ ok: false, error: 'KV not configured' }), { status: 500, headers: corsHeaders })
-      try {
-        const code = String(url.searchParams.get('code') || '').trim().toUpperCase()
-        if (!code) return new Response(JSON.stringify({ ok: false, error: 'code required' }), { status: 400, headers: corsHeaders })
-        const incomingRaw = await kv.get(`incoming:${code}`)
-        const incoming = incomingRaw ? JSON.parse(incomingRaw) : []
-        const requests = []
-        for (const senderCode of incoming) {
-          const reqRaw = await kv.get(`request:${senderCode}:${code}`)
-          if (!reqRaw) continue
-          const req = JSON.parse(reqRaw)
-          const infoRaw = await kv.get(`friend:${senderCode}`)
-          const info = await resolveFriendUuid(kv, senderCode, infoRaw ? JSON.parse(infoRaw) : {})
-          requests.push({ code: senderCode, name: info.name || senderCode, uuid: info.uuid || undefined, createdAt: req.createdAt ?? 0 })
-        }
-        return new Response(JSON.stringify({ requests }), { headers: corsHeaders })
-      } catch (e) {
-        return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 400, headers: corsHeaders })
+      if (path === '/v1/friends/remove-mutual' && request.method === 'POST') {
+        limitOrThrow(request, 'friends-remove', 20, 60_000)
+        const body = await readJson(request)
+        const friendCode = normalizeCode(body.friendCode)
+        if (!friendCode) return fail(400, 'Invalid friend code')
+        if (friendCode === auth.code) return fail(400, 'Cannot remove yourself')
+
+        const mine = await readList(kv, `friends:${auth.code}`)
+        await writeList(
+          kv,
+          `friends:${auth.code}`,
+          mine.filter((code) => code !== friendCode)
+        )
+        const theirs = await readList(kv, `friends:${friendCode}`)
+        await writeList(
+          kv,
+          `friends:${friendCode}`,
+          theirs.filter((code) => code !== auth.code)
+        )
+        await deleteRequest(kv, auth.code, friendCode)
+        await deleteRequest(kv, friendCode, auth.code)
+        return json({ ok: true, removedFromBoth: true })
       }
-    }
 
-    // Health check
-    if (path === '/health' || path === '/') {
-      return new Response(JSON.stringify({ status: 'ok', service: 'polaris-api' }), { headers: corsHeaders })
-    }
+      if (path === '/v1/friends/requests' && request.method === 'GET') {
+        limitOrThrow(request, 'friends-requests', 120, 60_000)
+        return json({ requests: await readRequests(kv, auth) })
+      }
 
-    return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: corsHeaders })
+      if (path === '/health' || path === '/') {
+        return json({ status: 'ok', service: 'polaris-api' })
+      }
+
+      return fail(404, 'Not found')
+    } catch (error) {
+      if (error instanceof ApiError) return fail(error.status, error.message)
+      console.error('Polaris API error', error)
+      return fail(500, 'Internal server error')
+    }
   }
 }

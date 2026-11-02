@@ -122,12 +122,10 @@ export interface PolarisAPI {
   downloadJava(major: number): Promise<JavaInfo[]>
   settingsSnapshot(): Promise<Settings>
   friendsList(): Promise<Friend[]>
-  friendsAdd(code: string, name: string): Promise<Friend[]>
-  friendsRemove(code: string): Promise<Friend[]>
   friendsRemoveMutual(friendCode: string): Promise<Friend[]>
-  friendsRequest(code: string, name: string): Promise<Array<{ code: string; name: string; uuid?: string; createdAt: number }>>
-  friendsRespond(myCode: string, friendCode: string, action: 'accept' | 'decline'): Promise<Array<{ code: string; name: string; uuid?: string; createdAt: number }>>
-  friendsGetRequests(myCode: string): Promise<Array<{ code: string; name: string; uuid?: string; createdAt: number }>>
+  friendsRequest(code: string): Promise<Array<{ code: string; name: string; uuid?: string; createdAt: number }>>
+  friendsRespond(friendCode: string, action: 'accept' | 'decline'): Promise<Array<{ code: string; name: string; uuid?: string; createdAt: number }>>
+  friendsGetRequests(): Promise<Array<{ code: string; name: string; uuid?: string; createdAt: number }>>
   friendsPresence(uuids: string[]): Promise<Record<string, { server: string; lastSeen: number }>>
   checkForUpdates(): Promise<UpdateInfo>
   installUpdate(): Promise<InstallUpdateResult>

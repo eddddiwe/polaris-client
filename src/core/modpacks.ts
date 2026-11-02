@@ -1,5 +1,5 @@
-import { readFile, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { readFile, stat, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve, sep } from 'node:path'
 import AdmZip from 'adm-zip'
 import type {
   InstanceConfig,
@@ -8,12 +8,23 @@ import type {
   ModpackRef
 } from '../shared/types'
 import type { Paths } from './paths'
-import type { Downloader, DownloadItem } from './http'
+import { assertPublicHttpsUrl, type Downloader, type DownloadItem } from './http'
 import type { Logger } from './logger'
 import type { ProgressHub } from './events'
 import type { ModrinthClient, ModrinthVersion } from './modrinth'
 import { pickVersion, primaryFileAny } from './modrinth'
 import { ensureDir, safeFilename } from './fsutil'
+import {
+  assertSafeZip,
+  MODPACK_ZIP_LIMITS,
+  readZipEntry,
+  readZipText
+} from './zipSafe'
+
+const MAX_MODPACK_ARCHIVE_BYTES = 1024 * 1024 * 1024
+const MAX_MODPACK_FILE_BYTES = 512 * 1024 * 1024
+const MAX_OVERRIDE_BYTES = 256 * 1024 * 1024
+const MAX_MODPACK_TOTAL_FILES = 4096
 
 /** modrinth.index.json inside an .mrpack archive. */
 export interface MrpackIndex {
@@ -38,7 +49,14 @@ export interface MrpackPlan {
   mcVersion: string
   loader: LoaderType
   loaderVersion?: string
-  files: { path: string; url: string; sha1?: string; size?: number; optional: boolean }[]
+  files: {
+    path: string
+    url: string
+    sha1?: string
+    sha512?: string
+    size?: number
+    optional: boolean
+  }[]
 }
 
 /**
@@ -66,18 +84,39 @@ export function parseMrpackIndex(raw: string, fallbackGameVersion?: string): Mrp
     throw new Error('Only Fabric modpacks are supported in this release (Quilt/Forge packs were rejected)')
   }
 
+  if ((index.files ?? []).length > MAX_MODPACK_TOTAL_FILES) {
+    throw new Error('Modpack declares too many files')
+  }
   const files = (index.files ?? []).flatMap((file) => {
     const env = file.env?.client ?? 'required'
     if (env === 'unsupported') return []
     const url = file.downloads?.[0]
     if (!url) return []
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      throw new Error(`Modpack file ${file.path} has an invalid download URL`)
+    }
+    if (parsed.protocol !== 'https:') {
+      throw new Error(`Modpack file ${file.path} must be downloaded over HTTPS`)
+    }
     const path = normalizeArchivePath(file.path)
-    if (!path) return []
+    if (!path) throw new Error(`Modpack contains an unsafe file path: ${file.path}`)
+    const sha1 = cleanHash(file.hashes?.sha1, 40)
+    const sha512 = cleanHash(file.hashes?.sha512, 128)
+    if (!sha1 && !sha512) {
+      throw new Error(`Modpack file ${file.path} is missing a SHA-1 or SHA-512 checksum`)
+    }
+    if (file.fileSize && (!Number.isFinite(file.fileSize) || file.fileSize > MAX_MODPACK_FILE_BYTES)) {
+      throw new Error(`Modpack file ${file.path} is too large`)
+    }
     return [
       {
         path,
         url,
-        sha1: file.hashes?.sha1,
+        sha1,
+        sha512,
         size: file.fileSize,
         optional: env === 'optional'
       }
@@ -92,6 +131,12 @@ export function parseMrpackIndex(raw: string, fallbackGameVersion?: string): Mrp
     loaderVersion: loaderVersion ?? undefined,
     files
   }
+}
+
+function cleanHash(value: string | undefined, length: number): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const hash = value.trim().toLowerCase()
+  return hash.length === length && /^[0-9a-f]+$/.test(hash) ? hash : undefined
 }
 
 /** "1.21.4", ">=1.21" or "~1.20.1" → exact version when unambiguous, else null. */
@@ -111,9 +156,23 @@ export function safeOverridePath(instanceDir: string, entryName: string, prefix:
   if (!normalized.startsWith(prefix)) return null
   const relative = normalized.slice(prefix.length).replace(/^\/+/, '')
   if (!relative || relative.endsWith('/')) return null
-  if (relative.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')) return null
-  const target = resolve(instanceDir, relative)
-  if (!target.toLowerCase().startsWith(resolve(instanceDir).toLowerCase())) return null
+  if (
+    relative
+      .split('/')
+      .some(
+        (segment) =>
+          segment === '' ||
+          segment === '.' ||
+          segment === '..' ||
+          segment.includes(':') ||
+          /[.\s]$/.test(segment)
+      )
+  ) {
+    return null
+  }
+  const root = resolve(instanceDir)
+  const target = resolve(root, relative)
+  if (!target.toLowerCase().startsWith((root + sep).toLowerCase())) return null
   return target
 }
 
@@ -126,7 +185,18 @@ export function normalizeArchivePath(input: string): string | null {
   if (!normalized || normalized.endsWith('/')) return null
   if (/^[A-Za-z]:/.test(normalized)) return null
   const segments = normalized.split('/')
-  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) return null
+  if (
+    segments.some(
+      (segment) =>
+        segment === '' ||
+        segment === '.' ||
+        segment === '..' ||
+        segment.includes(':') ||
+        /[.\s]$/.test(segment)
+    )
+  ) {
+    return null
+  }
   return normalized
 }
 
@@ -161,11 +231,28 @@ export class ModpackService {
     const file = primaryFileAny(version)
     if (!file || !file.filename.endsWith('.mrpack')) throw new Error(`${project.title} has no .mrpack file`)
     const archivePath = join(this.paths.downloads, await safeFilename(file.filename, 'pack.mrpack'))
-    await this.downloader.downloadAll([{ url: file.url, dest: archivePath, sha1: file.hashes.sha1, size: file.size, label: `${project.title} ${version.version_number}` }])
+    await this.downloader.downloadAll([
+      {
+        url: file.url,
+        dest: archivePath,
+        sha1: file.hashes.sha1,
+        sha512: file.hashes.sha512,
+        size: file.size,
+        // Fall back to the server's declared size only if it is sane.
+        maxBytes: file.size && file.size > 0 ? file.size : MAX_MODPACK_ARCHIVE_BYTES,
+        strictSource: true,
+        label: `${project.title} ${version.version_number}`
+      }
+    ])
+    const archive = await stat(archivePath)
+    if (archive.size <= 0 || archive.size > MAX_MODPACK_ARCHIVE_BYTES) {
+      throw new Error('Downloaded modpack archive is too large')
+    }
     const zip = new AdmZip(await readFile(archivePath))
+    assertSafeZip(zip, 'Modpack archive', MODPACK_ZIP_LIMITS)
     const indexEntry = zip.getEntry('modrinth.index.json')
     if (!indexEntry) throw new Error('Archive is missing modrinth.index.json')
-    const plan = parseMrpackIndex(zip.readAsText(indexEntry), version.game_versions[0])
+    const plan = parseMrpackIndex(readZipText(indexEntry, 'modrinth.index.json'), version.game_versions[0])
     return { projectId: project.id, slug: project.slug, title: project.title, version, plan, archivePath }
   }
 
@@ -183,7 +270,12 @@ export class ModpackService {
     const instanceDir = join(this.paths.instances, instance.id)
     await ensureDir(instanceDir)
 
+    const archive = await stat(archivePath)
+    if (archive.size <= 0 || archive.size > MAX_MODPACK_ARCHIVE_BYTES) {
+      throw new Error('Modpack archive is too large')
+    }
     const zip = new AdmZip(await readFile(archivePath))
+    assertSafeZip(zip, 'Modpack archive', MODPACK_ZIP_LIMITS)
     let overridesExtracted = 0
     for (const entry of zip.getEntries()) {
       if (entry.isDirectory) continue
@@ -192,7 +284,7 @@ export class ModpackService {
         safeOverridePath(instanceDir, entry.entryName, 'client-overrides/')
       if (!target) continue
       await ensureDir(dirname(target))
-      await writeFile(target, entry.getData())
+      await writeFile(target, readZipEntry(entry, MAX_OVERRIDE_BYTES, entry.entryName))
       overridesExtracted++
     }
 
@@ -200,14 +292,23 @@ export class ModpackService {
     const skipped = plan.files.length - wanted.length
     const instanceRoot = resolve(instanceDir)
     const items: DownloadItem[] = []
+    const checkedOrigins = new Set<string>()
     for (const file of wanted) {
       const dest = resolve(instanceRoot, file.path)
-      if (!dest.toLowerCase().startsWith(instanceRoot.toLowerCase())) continue
+      if (!dest.toLowerCase().startsWith(instanceRoot.toLowerCase() + sep)) continue
+      const origin = new URL(file.url).origin
+      if (!checkedOrigins.has(origin)) {
+        await assertPublicHttpsUrl(file.url)
+        checkedOrigins.add(origin)
+      }
       items.push({
         url: file.url,
         dest,
         sha1: file.sha1,
+        sha512: file.sha512,
         size: file.size,
+        maxBytes: file.size && file.size > 0 ? file.size : MAX_MODPACK_FILE_BYTES,
+        strictSource: true,
         label: file.path
       })
     }
