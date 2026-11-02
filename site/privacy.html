@@ -116,7 +116,7 @@
         <ul>
           <li><strong>Update and announcement checks.</strong> The launcher requests the current version. Cloudflare and GitHub process standard request metadata such as IP address, user agent, timestamp and requested URL. No account identifier is sent.</li>
           <li><strong>Friend codes.</strong> If you create or add a friend, the API stores your friend code, display name, optional Minecraft UUID, friend list and pending requests in Cloudflare KV. People who know your code can resolve that record. Removing a friend or responding to a request updates or deletes the relevant records.</li>
-          <li><strong>Presence.</strong> If you enable presence sharing, the API stores your UUID, Minecraft name, current server address and a last-seen timestamp. See the next section.</li>
+          <li><strong>Presence.</strong> If you enable presence sharing, the API stores your UUID, Minecraft name, current server address and a last-seen timestamp. The Friends page resolves those records by UUID so it can show an accurate online badge. See the next section.</li>
         </ul>
         <p>
           The API does not run an analytics pipeline, does not log request bodies for advertising, and does
@@ -135,8 +135,8 @@
           <strong>Presence is off by default as of 0.4.0.</strong> You can enable or disable it at any time
           under <strong>Right Shift → General → Share presence &amp; show badges</strong>. Disabling it stops
           new posts immediately; the last entry expires within two minutes. Presence is not sent in
-          singleplayer. The server-side list is readable by anyone who knows the server address, so treat it
-          as public while it is enabled.
+          singleplayer. The server-side list is readable by anyone who knows the server address, and the
+          UUID lookup is readable by anyone who knows the UUID, so treat it as public while it is enabled.
         </p>
 
         <h2 id="website">6. This website</h2>
