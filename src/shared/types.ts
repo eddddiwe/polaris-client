@@ -178,6 +178,20 @@ export interface Friend {
   addedAt: number
 }
 
+export interface ChatMessage {
+  id: string
+  from: string
+  to: string
+  fromName: string
+  text: string
+  createdAt: number
+}
+
+export interface ChatTyping {
+  from: string
+  fromName: string
+}
+
 export interface FriendSnapshot {
   myCode: string | null
   friends: Friend[]

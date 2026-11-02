@@ -11,7 +11,16 @@ import type {
 } from '@shared/types'
 import type { PolarisAPI } from '@shared/api'
 
-export type Page = 'home' | 'instances' | 'instance' | 'discover' | 'performance' | 'store' | 'settings' | 'friends'
+export type Page =
+  | 'home'
+  | 'instances'
+  | 'instance'
+  | 'discover'
+  | 'performance'
+  | 'store'
+  | 'settings'
+  | 'friends'
+  | 'chat'
 export type ToastKind = 'info' | 'success' | 'error'
 
 export interface Toast {

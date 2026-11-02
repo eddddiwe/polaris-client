@@ -29,6 +29,11 @@ export function createTauriApi(): PolarisAPI {
       invoke('friends_respond', { friendCode, action }),
     friendsGetRequests: async () => invoke('friends_getRequests'),
     friendsPresence: async (uuids: string[]) => invoke('friends_presence', { uuids }),
+    chatStart: async () => invoke('chat_start'),
+    chatStop: async () => invoke('chat_stop'),
+    chatHistory: async (friendCode: string) => invoke('chat_history', { friendCode }),
+    chatSend: async (friendCode: string, text: string) => invoke('chat_send', { friendCode, text }),
+    chatTyping: async (friendCode: string) => invoke('chat_typing', { friendCode }),
     getInstance: (id) => invoke('instance_get', { id }),
     createInstance: (input) => invoke('create_instance', { name: input.name, mcVersion: input.mcVersion, loader: input.loader }),
     updateInstance: (id, patch) => invoke('update_instance', { id, patch }),
@@ -103,6 +108,18 @@ export function createTauriApi(): PolarisAPI {
     },
     onShardsChanged: (cb) => {
       const unlisten = (window as any).__TAURI__?.event?.listen('shards-changed', () => cb())
+      return () => { unlisten?.then((f: any) => f()) }
+    },
+    onChatMessage: (cb) => {
+      const unlisten = (window as any).__TAURI__?.event?.listen('chat-message', (e: any) => cb(e.payload))
+      return () => { unlisten?.then((f: any) => f()) }
+    },
+    onChatTyping: (cb) => {
+      const unlisten = (window as any).__TAURI__?.event?.listen('chat-typing', (e: any) => cb(e.payload))
+      return () => { unlisten?.then((f: any) => f()) }
+    },
+    onChatState: (cb) => {
+      const unlisten = (window as any).__TAURI__?.event?.listen('chat-state', (e: any) => cb(e.payload))
       return () => { unlisten?.then((f: any) => f()) }
     },
   }

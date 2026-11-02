@@ -72,6 +72,11 @@ const api: PolarisAPI & { platform: NodeJS.Platform } = {
     ipcRenderer.invoke(IPC.friendsRespond, friendCode, action),
   friendsGetRequests: () => ipcRenderer.invoke(IPC.friendsGetRequests),
   friendsPresence: (uuids: string[]) => ipcRenderer.invoke(IPC.friendsPresence, uuids),
+  chatStart: () => ipcRenderer.invoke(IPC.chatStart),
+  chatStop: () => ipcRenderer.invoke(IPC.chatStop),
+  chatHistory: (friendCode: string) => ipcRenderer.invoke(IPC.chatHistory, friendCode),
+  chatSend: (friendCode: string, text: string) => ipcRenderer.invoke(IPC.chatSend, friendCode, text),
+  chatTyping: (friendCode: string) => ipcRenderer.invoke(IPC.chatTyping, friendCode),
   checkForUpdates: () => ipcRenderer.invoke(IPC.checkForUpdates),
   installUpdate: () => ipcRenderer.invoke(IPC.installUpdate),
   importMrpack: () => ipcRenderer.invoke(IPC.importMrpack),
@@ -82,7 +87,10 @@ const api: PolarisAPI & { platform: NodeJS.Platform } = {
   onAccountChanged: (cb) => subscribe(EVENTS.accountChanged, cb),
   onAccountError: (cb) => subscribe(EVENTS.accountError, cb),
   onDeviceCode: (cb) => subscribe(EVENTS.deviceCode, cb),
-  onShardsChanged: (cb) => subscribe(EVENTS.shardsChanged, cb)
+  onShardsChanged: (cb) => subscribe(EVENTS.shardsChanged, cb),
+  onChatMessage: (cb) => subscribe(EVENTS.chatMessage, cb),
+  onChatTyping: (cb) => subscribe(EVENTS.chatTyping, cb),
+  onChatState: (cb) => subscribe(EVENTS.chatState, cb)
 }
 
 contextBridge.exposeInMainWorld('polaris', api)

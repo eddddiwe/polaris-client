@@ -152,6 +152,9 @@ function wireServices(services: AppServices, win: BrowserWindow): void {
   services.on('account-changed', (snapshot) => send(win, EVENTS.accountChanged, snapshot))
   services.on('account-error', (message) => send(win, EVENTS.accountError, message))
   services.on('shards-changed', () => send(win, EVENTS.shardsChanged, {}))
+  services.on('chat-message', (message) => send(win, EVENTS.chatMessage, message))
+  services.on('chat-typing', (typing) => send(win, EVENTS.chatTyping, typing))
+  services.on('chat-state', (state) => send(win, EVENTS.chatState, state))
 
   services.on('game-started', ({ instanceId }: { instanceId: string }) => {
     const settings = services.settingsStore.get()

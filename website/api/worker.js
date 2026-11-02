@@ -20,7 +20,8 @@
 //   POST /v1/shards/ack               (authenticated; acknowledge applied grants)
 
 const REPO = 'eddddiwe/polaris-client'
-const FRIEND_CODE_RE = /^POLARIS-[A-Z0-9]{4}-[A-Z0-9]{4}$/
+// Matches the launcher's 32-symbol alphabet (no I, O, 0 or 1).
+const FRIEND_CODE_RE = /^POLARIS-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/
 const SECRET_RE = /^[A-Za-z0-9_-]{32,128}$/
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const SHARD_ID_RE = /^[0-9a-f-]{36}$/i
@@ -30,6 +31,13 @@ const REQUEST_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const PRESENCE_TTL_SECONDS = 120
 const PRESENCE_FRESH_MS = 90_000
 const IP_TTL_SECONDS = 30 * 24 * 60 * 60
+const CHAT_TICKET_TTL_SECONDS = 90
+const CHAT_MESSAGE_TTL_SECONDS = 30 * 24 * 60 * 60
+const MAX_CHAT_CHARS = 800
+const MAX_SOCKETS_PER_INBOX = 8
+// Keeps a history request well under the Workers 50-subrequest limit:
+// auth + isFriend + list + one read per message <= 43 KV operations.
+const MAX_HISTORY_MESSAGES = 40
 const MAX_BODY_BYTES = 4096
 
 /** Per-isolate fixed-window limiter. Cloudflare's edge also rate-limits abuse. */
@@ -81,9 +89,28 @@ function normalizeCode(value) {
   return FRIEND_CODE_RE.test(code) ? code : ''
 }
 
+// Bidi and zero-width controls can visually reorder text ("trojan source")
+// and have no place in a chat message or display name.
+const BIDI_CONTROLS = /[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g
+
 function cleanText(value, maxLength) {
   if (typeof value !== 'string') return ''
-  return value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, maxLength)
+  return value
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
+    .replace(BIDI_CONTROLS, '')
+    .trim()
+    .slice(0, maxLength)
+}
+
+function cleanMessage(value, maxLength) {
+  if (typeof value !== 'string') return ''
+  return value
+    .replace(/\r\n?/g, '\n')
+    // Keep tab and newline; strip other C0/C1 controls.
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, '')
+    .replace(BIDI_CONTROLS, '')
+    .trim()
+    .slice(0, maxLength)
 }
 
 function rateLimit(request, name, limit, windowMs) {
@@ -165,6 +192,30 @@ async function authenticate(kv, request) {
   return { code, secret, info }
 }
 
+function chatRoom(a, b) {
+  return [a, b].sort().join(':')
+}
+
+function chatInbox(env, code) {
+  if (!env.CHAT) return null
+  return env.CHAT.get(env.CHAT.idFromName(code))
+}
+
+async function pushChat(env, code, payload) {
+  const stub = chatInbox(env, code)
+  if (!stub) return false
+  try {
+    const response = await stub.fetch('https://chat.internal/broadcast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
 function publicFriend(code, info) {
   return {
     code,
@@ -183,6 +234,11 @@ async function readList(kv, key) {
   } catch {
     return []
   }
+}
+
+async function isFriend(kv, code, friendCode) {
+  if (!code || !friendCode || code === friendCode) return false
+  return (await readList(kv, `friends:${code}`)).includes(friendCode)
 }
 
 async function writeList(kv, key, list) {
@@ -297,6 +353,34 @@ export default {
 
       const kv = env.FRIENDS
       if (!kv) return fail(500, 'Service is not configured')
+
+      // WebSocket handoff uses a short-lived ticket that is deleted on first
+      // read, so the account secret never appears in a URL or handshake.
+      if (path === '/v1/chat/ws' && request.method === 'GET') {
+        limitOrThrow(request, 'chat-ws', 60, 60_000)
+        if (!env.CHAT) return fail(503, 'Chat is not configured')
+        if ((request.headers.get('Upgrade') || '').toLowerCase() !== 'websocket') {
+          return fail(426, 'WebSocket upgrade required')
+        }
+        const ticket = String(url.searchParams.get('ticket') || '').trim()
+        if (!ticket) return fail(401, 'Chat ticket required')
+        const raw = await kv.get(`chatTicket:${ticket}`)
+        if (!raw) return fail(401, 'Chat ticket expired')
+        await kv.delete(`chatTicket:${ticket}`)
+        let ticketData
+        try {
+          ticketData = JSON.parse(raw)
+        } catch {
+          return fail(401, 'Invalid chat ticket')
+        }
+        const code = normalizeCode(ticketData?.code)
+        if (!code) return fail(401, 'Invalid chat ticket')
+        const stub = chatInbox(env, code)
+        if (!stub) return fail(503, 'Chat is not configured')
+        const headers = new Headers(request.headers)
+        headers.set('X-Polaris-Code', code)
+        return await stub.fetch(new Request(request, { headers }))
+      }
 
       // ---------- Presence ----------
       if (path === '/v1/presence') {
@@ -442,6 +526,99 @@ export default {
       // Every remaining friends endpoint requires valid credentials.
       const auth = await authenticate(kv, request)
       if (!auth) return fail(401, 'Authentication required')
+
+      if (path === '/v1/chat/ticket' && request.method === 'POST') {
+        limitOrThrow(request, 'chat-ticket', 30, 60_000)
+        if (!env.CHAT) return fail(503, 'Chat is not configured')
+        const ticket = crypto.randomUUID()
+        await kv.put(`chatTicket:${ticket}`, JSON.stringify({ code: auth.code }), {
+          expirationTtl: CHAT_TICKET_TTL_SECONDS
+        })
+        return json({ ticket })
+      }
+
+      if (path === '/v1/chat/history' && request.method === 'GET') {
+        limitOrThrow(request, 'chat-history', 120, 60_000)
+        const friendCode = normalizeCode(url.searchParams.get('friendCode'))
+        if (!friendCode) return fail(400, 'Invalid friend code')
+        if (!(await isFriend(kv, auth.code, friendCode))) return fail(403, 'Chat is limited to friends')
+        const room = chatRoom(auth.code, friendCode)
+        // Keys are stored newest-first, so the first page is the newest
+        // messages and older history never masks a fresh message.
+        const listed = await kv.list({ prefix: `chat:${room}:`, limit: MAX_HISTORY_MESSAGES })
+        const raws = await Promise.all((listed.keys || []).map((entry) => kv.get(entry.name)))
+        const messages = []
+        for (const raw of raws) {
+          if (!raw) continue
+          try {
+            const value = JSON.parse(raw)
+            const from = normalizeCode(value?.from)
+            const to = normalizeCode(value?.to)
+            if (!value?.id || !from || !to) continue
+            // Defence in depth: never surface a record from another room.
+            if (from !== auth.code && from !== friendCode) continue
+            if (to !== auth.code && to !== friendCode) continue
+            messages.push({
+              id: String(value.id),
+              from,
+              to,
+              fromName: cleanText(value.fromName, 32),
+              text: cleanMessage(value.text, MAX_CHAT_CHARS),
+              createdAt: Number(value.createdAt) || 0
+            })
+          } catch {
+            // ignore malformed messages
+          }
+        }
+        messages.sort((a, b) => a.createdAt - b.createdAt)
+        return json({ messages })
+      }
+
+      if (path === '/v1/chat/send' && request.method === 'POST') {
+        limitOrThrow(request, 'chat-send', 30, 60_000)
+        if (!env.CHAT) return fail(503, 'Chat is not configured')
+        const body = await readJson(request)
+        const friendCode = normalizeCode(body.friendCode)
+        const text = cleanMessage(body.text, MAX_CHAT_CHARS)
+        if (!friendCode) return fail(400, 'Invalid friend code')
+        if (!text) return fail(400, 'Message is empty')
+        if (!(await isFriend(kv, auth.code, friendCode))) return fail(403, 'Chat is limited to friends')
+        const message = {
+          id: crypto.randomUUID(),
+          from: auth.code,
+          to: friendCode,
+          fromName: cleanText(auth.info?.name, 32) || auth.code,
+          text,
+          createdAt: Date.now()
+        }
+        const room = chatRoom(auth.code, friendCode)
+        // Inverted timestamp keeps the newest messages at the front of a list
+        // page; history sorts the returned records back into reading order.
+        const keyTime = String(9_999_999_999_999 - message.createdAt).padStart(13, '0')
+        await kv.put(`chat:${room}:${keyTime}-${message.id}`, JSON.stringify(message), {
+          expirationTtl: CHAT_MESSAGE_TTL_SECONDS
+        })
+        await Promise.all([
+          pushChat(env, auth.code, { type: 'message', message }),
+          pushChat(env, friendCode, { type: 'message', message })
+        ])
+        return json({ message })
+      }
+
+      if (path === '/v1/chat/typing' && request.method === 'POST') {
+        limitOrThrow(request, 'chat-typing', 120, 60_000)
+        if (!env.CHAT) return fail(503, 'Chat is not configured')
+        const body = await readJson(request)
+        const friendCode = normalizeCode(body.friendCode)
+        if (!friendCode) return fail(400, 'Invalid friend code')
+        if (!(await isFriend(kv, auth.code, friendCode))) return fail(403, 'Chat is limited to friends')
+        await pushChat(env, friendCode, {
+          type: 'typing',
+          from: auth.code,
+          fromName: cleanText(auth.info?.name, 32) || auth.code
+        })
+        return json({ ok: true })
+      }
 
       if (path === '/v1/shards/pending' && request.method === 'GET') {
         limitOrThrow(request, 'shards-pending', 30, 60_000)
@@ -613,6 +790,85 @@ export default {
       if (error instanceof ApiError) return fail(error.status, error.message)
       console.error('Polaris API error', error)
       return fail(500, 'Internal server error')
+    }
+  }
+}
+
+/**
+ * One Durable Object per account. WebSockets only receive broadcasts; chat
+ * messages are sent through the authenticated HTTP endpoint and persisted in
+ * KV for history.
+ */
+export class ChatInbox {
+  constructor(state) {
+    this.state = state
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url)
+    if (url.pathname === '/broadcast' && request.method === 'POST') {
+      let payload
+      try {
+        payload = await request.json()
+      } catch {
+        return new Response('Invalid payload', { status: 400 })
+      }
+      if (!payload || (payload.type !== 'message' && payload.type !== 'typing')) {
+        return new Response('Invalid payload', { status: 400 })
+      }
+      const data = JSON.stringify(payload)
+      for (const socket of this.state.getWebSockets()) {
+        try {
+          socket.send(data)
+        } catch {
+          // A dead socket will be removed by the runtime.
+        }
+      }
+      return new Response('ok')
+    }
+
+    if ((request.headers.get('Upgrade') || '').toLowerCase() !== 'websocket') {
+      return new Response('WebSocket upgrade required', { status: 426 })
+    }
+
+    // Ticket issuance is rate limited, but one account should not be able to
+    // hold an unbounded number of sockets open.
+    if (this.state.getWebSockets().length >= MAX_SOCKETS_PER_INBOX) {
+      return new Response('Too many connections', { status: 429 })
+    }
+
+    const pair = new WebSocketPair()
+    const [client, server] = Object.values(pair)
+    this.state.acceptWebSocket(server)
+    return new Response(null, { status: 101, webSocket: client })
+  }
+
+  async webSocketMessage(socket, message) {
+    try {
+      const value = JSON.parse(String(message))
+      if (value?.type === 'ping') {
+        socket.send(JSON.stringify({ type: 'pong' }))
+      }
+    } catch {
+      // Ignore malformed client frames; chat sends use HTTP.
+    }
+  }
+
+  async webSocketClose(socket, code, reason) {
+    // Reserved codes (1005/1006) throw when echoed back to close().
+    const safe = code === 1000 || (code >= 3000 && code <= 4999) ? code : 1000
+    try {
+      socket.close(safe, reason)
+    } catch {
+      // Already closed.
+    }
+  }
+
+  async webSocketError(socket) {
+    try {
+      socket.close(1011, 'Chat socket error')
+    } catch {
+      // Already closed.
     }
   }
 }

@@ -1002,6 +1002,18 @@ export function createMockApi(): Window['polaris'] {
     friendsRemoveMutual: async () => ({ friends: [], synced: true }),
     friendsGetRequests: async () => [],
     friendsPresence: async () => ({}),
+    chatStart: async () => undefined,
+    chatStop: async () => undefined,
+    chatHistory: async () => [],
+    chatSend: async (friendCode, text) => ({
+      id: `mock-${Date.now()}`,
+      from: 'POLARIS-TEST-1234',
+      to: friendCode,
+      fromName: 'Steve',
+      text,
+      createdAt: Date.now()
+    }),
+    chatTyping: async () => undefined,
     friendsRequest: async (code) => [{ code: code.toUpperCase(), name: code, createdAt: Date.now() }],
     friendsRespond: async (friendCode, action) => {
       if (action === 'accept') return [{ code: friendCode, name: friendCode, createdAt: Date.now() }]
@@ -1035,7 +1047,10 @@ export function createMockApi(): Window['polaris'] {
     onAccountChanged: () => () => undefined,
     onAccountError: () => () => undefined,
     onDeviceCode: () => () => undefined,
-    onShardsChanged: () => () => undefined
+    onShardsChanged: () => () => undefined,
+    onChatMessage: () => () => undefined,
+    onChatTyping: () => () => undefined,
+    onChatState: () => () => undefined
   }
 }
 

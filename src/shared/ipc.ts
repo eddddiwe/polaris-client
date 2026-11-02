@@ -59,7 +59,12 @@ export const IPC = {
   friendsRequest: 'friends:request',
   friendsRespond: 'friends:respond',
   friendsGetRequests: 'friends:getRequests',
-  friendsPresence: 'friends:presence'
+  friendsPresence: 'friends:presence',
+  chatStart: 'chat:start',
+  chatStop: 'chat:stop',
+  chatHistory: 'chat:history',
+  chatSend: 'chat:send',
+  chatTyping: 'chat:typing'
 } as const
 
 export const EVENTS = {
@@ -71,5 +76,8 @@ export const EVENTS = {
   accountError: 'event:account-error',
   deviceCode: 'event:device-code',
   instanceChanged: 'event:instance-changed',
-  shardsChanged: 'event:shards-changed'
+  shardsChanged: 'event:shards-changed',
+  chatMessage: 'event:chat-message',
+  chatTyping: 'event:chat-typing',
+  chatState: 'event:chat-state'
 } as const

@@ -1,6 +1,8 @@
 import type {
   AccountSnapshot,
   Bootstrap,
+  ChatMessage,
+  ChatTyping,
   CosmeticSnapshot,
   Friend,
   FriendSnapshot,
@@ -129,6 +131,11 @@ export interface PolarisAPI {
   friendsPresence(
     uuids: string[]
   ): Promise<Record<string, { server: string; lastSeen: number }> | null>
+  chatStart(): Promise<void>
+  chatStop(): Promise<void>
+  chatHistory(friendCode: string): Promise<ChatMessage[]>
+  chatSend(friendCode: string, text: string): Promise<ChatMessage>
+  chatTyping(friendCode: string): Promise<void>
   checkForUpdates(): Promise<UpdateInfo>
   installUpdate(): Promise<InstallUpdateResult>
   importMrpack(): Promise<InstanceSummary>
@@ -141,6 +148,9 @@ export interface PolarisAPI {
   onAccountError(cb: (message: string) => void): () => void
   onDeviceCode(cb: (info: DeviceCodeInfo) => void): () => void
   onShardsChanged(cb: () => void): () => void
+  onChatMessage(cb: (message: ChatMessage) => void): () => void
+  onChatTyping(cb: (typing: ChatTyping) => void): () => void
+  onChatState(cb: (state: 'connecting' | 'connected' | 'disconnected') => void): () => void
 }
 
 export type { ModrinthSearchHit }

@@ -13,3 +13,12 @@ REPO = "eddddiwe/polaris-client"
 binding = "FRIENDS"
 id = "776f1750bce1429ab0da871efcc3c42f"
 preview_id = "preview_776f1750bce1429ab0da871efcc3c42f"
+
+# One live inbox per account. Chat history lives in KV.
+[[durable_objects.bindings]]
+name = "CHAT"
+class_name = "ChatInbox"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ChatInbox"]

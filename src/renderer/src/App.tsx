@@ -15,6 +15,7 @@ const PerformancePage = lazy(() => import('./pages/Performance').then(m => ({ de
 const StorePage = lazy(() => import('./pages/Store').then(m => ({ default: m.StorePage })))
 const SettingsPage = lazy(() => import('./pages/Settings').then(m => ({ default: m.SettingsPage })))
 const FriendsPage = lazy(() => import('./pages/Friends').then(m => ({ default: m.FriendsPage })))
+const ChatPage = lazy(() => import('./pages/Chat').then(m => ({ default: m.ChatPage })))
 import { AccountModal, ConfirmModal, NewInstanceModal } from './components/Modals'
 import { PolarisMark } from './components/Icons'
 
@@ -378,6 +379,7 @@ export default function App(): JSX.Element {
               {page === 'store' && <Suspense fallback={<div className="page-loading">Loading...</div>}><StorePage /></Suspense>}
               {page === 'settings' && <Suspense fallback={<div className="page-loading">Loading...</div>}><SettingsPage /></Suspense>}
               {page === 'friends' && <Suspense fallback={<div className="page-loading">Loading...</div>}><FriendsPage /></Suspense>}
+              {page === 'chat' && <Suspense fallback={<div className="page-loading">Loading...</div>}><ChatPage /></Suspense>}
             </PageErrorBoundary>
           </div>
         </main>

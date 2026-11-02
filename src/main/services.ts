@@ -7,6 +7,7 @@ import { app, shell } from 'electron'
 import type {
   AccountSnapshot,
   Bootstrap,
+  ChatMessage,
   CosmeticSnapshot,
   CreateFromPackInput,
   CreateInstanceInput,
@@ -72,6 +73,7 @@ import { PACKS, packById } from '../core/packs'
 import { detectHardware, makePlan, applyOptions, readGameUi, writeGameUi } from '../core/performance'
 import { CosmeticsService } from '../core/cosmetics'
 import { FriendStore } from '../core/friends'
+import { ChatService } from '../core/chat'
 import { ShardGrantService } from '../core/shards'
 import { scanJava, inspectJava, downloadJava } from '../core/java'
 
@@ -82,6 +84,7 @@ export class AppServices extends EventEmitter {
   readonly settingsStore = new SettingsStore(this.paths.settings, this.paths.root)
   readonly cosmetics = new CosmeticsService(this.settingsStore)
   readonly friends = new FriendStore(join(this.paths.root, 'friends.json'))
+  readonly chat = new ChatService()
   readonly shardGrants = new ShardGrantService()
   readonly accounts = new AccountStore(this.paths.accounts, new SafeStorageCipher())
   readonly instances: InstanceStore
@@ -153,6 +156,9 @@ export class AppServices extends EventEmitter {
     this.progress.on((event) => {
       this.emit('progress', event)
     })
+    this.chat.on('message', (message) => this.emit('chat-message', message))
+    this.chat.on('typing', (typing) => this.emit('chat-typing', typing))
+    this.chat.on('state', (state) => this.emit('chat-state', state))
     this.launcher.onState((state) => this.emit('launch-state', state))
 
     this.ready = this.initialize()
@@ -679,6 +685,31 @@ export class AppServices extends EventEmitter {
     this.java = await scanJava([javaPath])
     this.hardware = { ...this.hardware, java: this.java }
     return this.java
+  }
+
+  chatStart(): void {
+    const account = this.accounts.activeStored()
+    if (!account?.friendCode || !account.friendSecret) {
+      this.chat.stop()
+      return
+    }
+    this.chat.start({ code: account.friendCode, secret: account.friendSecret })
+  }
+
+  chatStop(): void {
+    this.chat.stop()
+  }
+
+  async chatHistory(friendCode: string): Promise<ChatMessage[]> {
+    return await this.chat.history(friendCode)
+  }
+
+  async chatSend(friendCode: string, text: string): Promise<ChatMessage> {
+    return await this.chat.send(friendCode, text)
+  }
+
+  async chatTyping(friendCode: string): Promise<void> {
+    await this.chat.typing(friendCode)
   }
 
   async activeAccountForLaunch(): Promise<StoredAccount | undefined> {

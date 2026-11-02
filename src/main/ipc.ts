@@ -117,6 +117,24 @@ export function registerIpc(services: AppServices): void {
     }
     return services.friends.presence(account, uuids)
   })
+  handle(IPC.chatStart, async () => {
+    const account = activeFriendAccount()
+    if (!account) throw new Error('Sign in to use chat.')
+    try {
+      // The ticket endpoint needs a registered profile. A failure here is not
+      // fatal: chat retries with backoff and registers again next time.
+      await registerFriendAccount(account)
+    } catch {
+      // Offline or a transient API error; let the socket retry.
+    }
+    services.chatStart()
+  })
+  handle(IPC.chatStop, async () => services.chatStop())
+  handle(IPC.chatHistory, async (friendCode: string) => services.chatHistory(friendCode))
+  handle(IPC.chatSend, async (friendCode: string, text: string) =>
+    services.chatSend(friendCode, text)
+  )
+  handle(IPC.chatTyping, async (friendCode: string) => services.chatTyping(friendCode))
 
   ipcMain.handle(IPC.windowAction, (event, action: 'minimize' | 'maximize' | 'close' | 'show') => {
     const win = BrowserWindow.fromWebContents(event.sender)
