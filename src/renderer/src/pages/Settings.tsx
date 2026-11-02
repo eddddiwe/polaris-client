@@ -302,6 +302,12 @@ export function SettingsPage(): JSX.Element {
               checked={boot.settings.autoUpdateMods}
               onChange={(value) => void setSetting({ autoUpdateMods: value })}
             />
+            <ToggleRow
+              title="In-game chat mod"
+              body="Install the bundled Polaris Chat mod in Fabric instances so friend messages appear in Minecraft. Turn off to remove it."
+              checked={boot.settings.inGameChat !== false}
+              onChange={(value) => void setSetting({ inGameChat: value })}
+            />
           </div>
         </section>
         )}

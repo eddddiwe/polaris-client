@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createWriteStream, readFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import readline from 'node:readline'
 import os from 'node:os'
@@ -10,6 +10,8 @@ import type { Installer } from './install'
 import type { ServerService } from './server'
 import type { AccountStore } from './accounts'
 import type { AuthService } from './auth'
+import type { ChatService } from './chat'
+import { supportsInGameChat } from './instances'
 import { selectJava } from './java'
 import { buildJvmFlags } from './performance'
 import { requiredJavaMajor } from './version'
@@ -46,6 +48,7 @@ export class LaunchService {
     private readonly installer: Installer,
     private readonly accounts: AccountStore,
     private readonly auth: AuthService,
+    private readonly chatService: ChatService,
     private readonly logger: Logger,
     private readonly hooks: LaunchHooks = {}
   ) {}
@@ -115,9 +118,31 @@ export class LaunchService {
       const account = await this.auth.refreshIfNeeded(stored)
       const args = this.buildArguments(instance, settings, installed.version, installed.classpath, installed.assetIndexId, nativesDir, account, java, jvmTuning)
       const gameEnv: NodeJS.ProcessEnv = { ...process.env, POLARIS_CLIENT: '1' }
-      if (account.friendCode && account.friendSecret) {
-        gameEnv.POLARIS_FRIEND_CODE = account.friendCode
-        gameEnv.POLARIS_FRIEND_SECRET = account.friendSecret
+      // Only Fabric instances that actually contain the bundled mods receive
+      // credentials. Presence still needs the account secret because the
+      // shipped PolarisConfig build reads it; chat gets a scoped token.
+      if (instance.loader === 'fabric' && account.friendCode) {
+        const installedMods = await readdir(join(instanceDir, 'mods')).catch(() => [] as string[])
+        const hasPresence = installedMods.some((name) =>
+          /^polaris-config-1\.2\.1(-modern|-official)?\.jar$/i.test(name)
+        )
+        const hasChat = installedMods.some((name) =>
+          /^polaris-chat-1\.0\.0(-modern|-official)?\.jar$/i.test(name)
+        )
+        if (hasPresence && account.friendSecret) {
+          gameEnv.POLARIS_FRIEND_CODE = account.friendCode
+          gameEnv.POLARIS_FRIEND_SECRET = account.friendSecret
+        }
+        if (settings.inGameChat !== false && supportsInGameChat(instance.mcVersion) && hasChat && account.friendSecret) {
+          const session = await this.chatService.session({
+            code: account.friendCode,
+            secret: account.friendSecret
+          })
+          if (session && session.code === account.friendCode) {
+            gameEnv.POLARIS_FRIEND_CODE = account.friendCode
+            gameEnv.POLARIS_CHAT_TOKEN = session.token
+          }
+        }
       }
 
       this.setState({ status: 'running', message: `Running on Java ${java.major}`, startedAt: Date.now() })

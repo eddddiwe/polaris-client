@@ -313,7 +313,8 @@ export function ChatPage(): JSX.Element {
           <span className="eyebrow">Social</span>
           <h1>Chat</h1>
           <p className="page-sub">
-            Private messages with your Polaris friends. Messages are stored for 30 days.
+            Private messages with your Polaris friends. Messages are stored for 30 days, and the bundled
+            mod brings the same chat in-game.
           </p>
         </div>
         <div className="chat-status-group">

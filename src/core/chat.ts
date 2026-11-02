@@ -61,6 +61,28 @@ export class ChatService extends EventEmitter {
     }
   }
 
+  /**
+   * Issues a short-lived, chat-scoped token for the in-game mod. The game
+   * process never receives the account secret.
+   */
+  async session(auth: FriendAuth): Promise<{ token: string; code: string; expiresAt: number } | null> {
+    try {
+      const response = await fetch(`${WORKER_BASE}/v1/chat/token`, {
+        method: 'POST',
+        headers: this.headers(auth),
+        signal: AbortSignal.timeout(2500)
+      })
+      if (!response.ok) return null
+      const data = (await response.json()) as { token?: unknown; code?: unknown; expiresAt?: unknown }
+      const token = String(data.token || '')
+      const code = String(data.code || '').toUpperCase()
+      if (!/^pc_[0-9a-f-]{36}$/i.test(token) || !FRIEND_CODE.test(code)) return null
+      return { token, code, expiresAt: Number(data.expiresAt) || 0 }
+    } catch {
+      return null
+    }
+  }
+
   start(auth: FriendAuth): void {
     this.stop()
     this.auth = auth

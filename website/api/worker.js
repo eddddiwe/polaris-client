@@ -23,6 +23,7 @@ const REPO = 'eddddiwe/polaris-client'
 // Matches the launcher's 32-symbol alphabet (no I, O, 0 or 1).
 const FRIEND_CODE_RE = /^POLARIS-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/
 const SECRET_RE = /^[A-Za-z0-9_-]{32,128}$/
+const CHAT_TOKEN_RE = /^pc_[0-9a-f-]{36}$/i
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const SHARD_ID_RE = /^[0-9a-f-]{36}$/i
 const MAX_FRIENDS = 200
@@ -32,6 +33,7 @@ const PRESENCE_TTL_SECONDS = 120
 const PRESENCE_FRESH_MS = 90_000
 const IP_TTL_SECONDS = 30 * 24 * 60 * 60
 const CHAT_TICKET_TTL_SECONDS = 90
+const CHAT_TOKEN_TTL_SECONDS = 12 * 60 * 60
 const CHAT_MESSAGE_TTL_SECONDS = 30 * 24 * 60 * 60
 const MAX_CHAT_CHARS = 800
 const MAX_SOCKETS_PER_INBOX = 8
@@ -91,7 +93,7 @@ function normalizeCode(value) {
 
 // Bidi and zero-width controls can visually reorder text ("trojan source")
 // and have no place in a chat message or display name.
-const BIDI_CONTROLS = /[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g
+const BIDI_CONTROLS = /[\u00a7\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g
 
 function cleanText(value, maxLength) {
   if (typeof value !== 'string') return ''
@@ -184,12 +186,39 @@ async function readFriend(kv, code) {
 async function authenticate(kv, request) {
   const code = normalizeCode(request.headers.get('X-Polaris-Code'))
   const secret = String(request.headers.get('X-Polaris-Secret') || '').trim()
-  if (!code || !SECRET_RE.test(secret)) return null
+  if (!code || !SECRET_RE.test(secret) || CHAT_TOKEN_RE.test(secret)) return null
   const info = await readFriend(kv, code)
   if (!info || !info.secretHash) return null
   const hash = await sha256Hex(secret)
   if (!sameHex(hash, String(info.secretHash))) return null
   return { code, secret, info }
+}
+
+/**
+ * Chat may authenticate with either the account secret (launcher) or a
+ * short-lived, chat-scoped token (the in-game mod). The token is stored hashed
+ * and never grants access to friends, shards or account endpoints.
+ */
+async function authenticateChat(kv, request) {
+  const token = String(request.headers.get('X-Polaris-Chat-Token') || '').trim()
+  if (token) {
+    if (!CHAT_TOKEN_RE.test(token)) return null
+    const digest = await sha256Hex(token)
+    const raw = await kv.get(`chatToken:${digest}`)
+    if (!raw) return null
+    let data
+    try {
+      data = JSON.parse(raw)
+    } catch {
+      return null
+    }
+    const code = normalizeCode(data?.code)
+    if (!code) return null
+    const info = await readFriend(kv, code)
+    if (!info) return null
+    return { code, secret: '', info }
+  }
+  return await authenticate(kv, request)
 }
 
 function chatRoom(a, b) {
@@ -496,7 +525,9 @@ export default {
         limitOrThrow(request, 'register', 10, 60_000)
         const code = normalizeCode(request.headers.get('X-Polaris-Code'))
         const secret = String(request.headers.get('X-Polaris-Secret') || '').trim()
-        if (!code || !SECRET_RE.test(secret)) return fail(400, 'Invalid friend code or secret')
+        if (!code || !SECRET_RE.test(secret) || CHAT_TOKEN_RE.test(secret)) {
+          return fail(400, 'Invalid friend code or secret')
+        }
         const body = await readJson(request)
         const name = cleanText(body.name, 32) || code
         const uuid = normalizeUuid(body.uuid)
@@ -523,9 +554,38 @@ export default {
         return json({ ok: true, code })
       }
 
-      // Every remaining friends endpoint requires valid credentials.
-      const auth = await authenticate(kv, request)
+      if (path === '/v1/chat/token' && request.method === 'POST') {
+        limitOrThrow(request, 'chat-token', 20, 60_000)
+        if (!env.CHAT) return fail(503, 'Chat is not configured')
+        const master = await authenticate(kv, request)
+        if (!master) return fail(401, 'Authentication required')
+        const token = `pc_${crypto.randomUUID()}`
+        await kv.put(`chatToken:${await sha256Hex(token)}`, JSON.stringify({ code: master.code }), {
+          expirationTtl: CHAT_TOKEN_TTL_SECONDS
+        })
+        return json({
+          token,
+          code: master.code,
+          expiresAt: Date.now() + CHAT_TOKEN_TTL_SECONDS * 1000
+        })
+      }
+
+      // Chat accepts a short-lived scoped token; every other endpoint requires
+      // the account secret.
+      const isChatRoute = path.startsWith('/v1/chat/')
+      const auth = isChatRoute ? await authenticateChat(kv, request) : await authenticate(kv, request)
       if (!auth) return fail(401, 'Authentication required')
+
+      if (path === '/v1/chat/friends' && request.method === 'GET') {
+        limitOrThrow(request, 'chat-friends', 60, 60_000)
+        const codes = (await readList(kv, `friends:${auth.code}`)).slice(0, 40)
+        const friends = []
+        for (const code of codes) {
+          const info = await readFriend(kv, code)
+          if (info) friends.push(publicFriend(code, info))
+        }
+        return json({ friends })
+      }
 
       if (path === '/v1/chat/ticket' && request.method === 'POST') {
         limitOrThrow(request, 'chat-ticket', 30, 60_000)

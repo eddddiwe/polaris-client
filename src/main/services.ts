@@ -144,6 +144,7 @@ export class AppServices extends EventEmitter {
       this.installer,
       this.accounts,
       this.auth,
+      this.chat,
       this.logger.child('launch'),
       {
         onStarted: (instanceId, pid) => this.emit('game-started', { instanceId, pid }),
@@ -187,6 +188,8 @@ export class AppServices extends EventEmitter {
         this.accounts.load(),
         this.friends.load()
       ])
+      // Apply the persisted in-game chat choice before any instance sync.
+      this.instances.setChatModEnabled(settings.inGameChat !== false)
       this.logger.info('Polaris starting', { version: app.getVersion(), dataDir: this.paths.root })
       void this.syncShardGrants()
       this.shardTimer = setInterval(() => void this.syncShardGrants(), 15_000)
@@ -655,6 +658,15 @@ export class AppServices extends EventEmitter {
 
   async updateSettings(patch: Partial<Settings>): Promise<Settings> {
     const updated = await this.settingsStore.update(patch)
+    if (Object.prototype.hasOwnProperty.call(patch, 'inGameChat')) {
+      this.instances.setChatModEnabled(updated.inGameChat !== false)
+      // Apply the removal or reinstall before returning to the UI.
+      try {
+        await this.instances.list((id) => this.launcher.isRunning(id))
+      } catch {
+        // Instance sync is best effort; the setting is already persisted.
+      }
+    }
     if (Object.prototype.hasOwnProperty.call(patch, 'javaPath')) {
       this.java = await scanJava(updated.javaPath ? [updated.javaPath] : [])
       this.hardware = { ...this.hardware, java: this.java }

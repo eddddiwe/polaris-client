@@ -167,6 +167,18 @@
           the two participants. Individual messages cannot be deleted from the app yet; they disappear when
           their 30-day lifetime ends.
         </p>
+        <p>
+          The bundled Polaris Chat mod uses a chat-scoped token issued by the Polaris API when a game
+          instance is launched by Polaris; the token is valid for up to 12 hours. This lets friends message
+          you in-game without giving the chat mod your account secret. It connects to the same API and shows
+          messages on your screen; like vanilla chat, those lines are also written to the instance's chat
+          log on disk.
+        </p>
+        <p>
+          The separate PolarisConfig presence mod still receives the account secret described in section 5
+          while a Fabric instance is running. The in-game chat mod does not receive or send that secret,
+          and you can remove it with <strong>Settings → In-game chat mod</strong>.
+        </p>
 
         <h2 id="website">7. This website</h2>
         <p>

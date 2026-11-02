@@ -207,6 +207,8 @@ export interface Settings {
   pauseUiDuringGame: boolean
   autoUpdateMods: boolean
   showSnapshots: boolean
+  /** Install the bundled in-game chat mod in Fabric instances. */
+  inGameChat?: boolean
   accent: string
   reduceMotion: boolean
   mirrorVanillaCache: boolean

@@ -1,0 +1,19 @@
+subprojects {
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+    }
+}
+
+tasks.register('syncMods', Copy) {
+    dependsOn ':v1211:remapJar', ':v12111:remapJar', ':v26:jar'
+    into file('../../resources/mods')
+    from(project(':v1211').tasks.named('remapJar')) {
+        rename { 'polaris-chat-1.0.0.jar' }
+    }
+    from(project(':v12111').tasks.named('remapJar')) {
+        rename { 'polaris-chat-1.0.0-modern.jar' }
+    }
+    from(project(':v26').tasks.named('jar')) {
+        rename { 'polaris-chat-1.0.0-official.jar' }
+    }
+}

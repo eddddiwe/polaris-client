@@ -299,6 +299,36 @@ describe('ChatService', () => {
     }
   })
 
+  it('fetches a chat-scoped session for the game process', async () => {
+    const token = 'pc_11111111-1111-4111-8111-111111111111'
+    const { service, fetchMock } = setup((url) =>
+      url.endsWith('/v1/chat/token')
+        ? json({ token, code: AUTH.code, expiresAt: 1_793_635_000_000 })
+        : json({})
+    )
+    try {
+      await expect(service.session(AUTH)).resolves.toEqual({
+        token,
+        code: AUTH.code,
+        expiresAt: 1_793_635_000_000
+      })
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+      expect((init.headers as Record<string, string>)['X-Polaris-Secret']).toBe(AUTH.secret)
+      expect(init.body).toBeUndefined()
+    } finally {
+      service.stop()
+    }
+  })
+
+  it('rejects malformed chat sessions', async () => {
+    const { service } = setup(() => json({ token: 'not-a-token', code: AUTH.code }))
+    try {
+      await expect(service.session(AUTH)).resolves.toBeNull()
+    } finally {
+      service.stop()
+    }
+  })
+
   it('stops retrying when the ticket endpoint rejects the credentials', async () => {
     vi.useFakeTimers()
     const { service, fetchMock } = setup(() => json({ error: 'Authentication required' }, 401))

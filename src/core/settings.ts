@@ -21,6 +21,7 @@ export function defaultSettings(root: string): Settings {
     pauseUiDuringGame: true,
     autoUpdateMods: false,
     showSnapshots: false,
+    inGameChat: true,
     accent: '#7c5cff',
     reduceMotion: false,
     mirrorVanillaCache: true,
@@ -80,6 +81,7 @@ export function normalizeSettings(input: Settings, root: string): Settings {
   const cape = cosmeticById(input.equippedCape)
   return {
     ...input,
+    inGameChat: input.inGameChat !== false,
     dataDir: root,
     memoryMb: clamp(input.memoryMb, 1024, 32768),
     accent: typeof input.accent === 'string' && /^#[0-9a-f]{6}$/i.test(input.accent) ? input.accent : '#7c5cff',

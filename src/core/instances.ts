@@ -12,8 +12,13 @@ const POLARIS_CONFIG_MODERN = 'polaris-config-1.2.1-modern.jar'
 const POLARIS_CONFIG_OFFICIAL = 'polaris-config-1.2.1-official.jar'
 const POLARIS_CONFIG_PATTERN = /^polaris-config-.*\.jar$/i
 
+const POLARIS_CHAT_INTERMEDIARY = 'polaris-chat-1.0.0.jar'
+const POLARIS_CHAT_MODERN = 'polaris-chat-1.0.0-modern.jar'
+const POLARIS_CHAT_OFFICIAL = 'polaris-chat-1.0.0-official.jar'
+const POLARIS_CHAT_PATTERN = /^polaris-chat-.*\.jar$/i
+
 /** Cache source-jar hashes; the same bundled jar is compared for every instance. */
-const polarisConfigHashes = new Map<string, { size: number; mtimeMs: number; hash: string }>()
+const bundledModHashes = new Map<string, { size: number; mtimeMs: number; hash: string }>()
 
 function polarisConfigFile(mcVersion: string): string {
   const [major = 0, minor = 0, patch = 0] = mcVersion.split('.').map(Number)
@@ -23,8 +28,32 @@ function polarisConfigFile(mcVersion: string): string {
   return POLARIS_CONFIG_INTERMEDIARY
 }
 
+export function supportsInGameChat(mcVersion: string): boolean {
+  const [major = 0, minor = 0, patch = 0] = mcVersion.split('.').map(Number)
+  if (major >= 26) return true
+  if (major !== 1) return false
+  if (minor > 21) return true
+  if (minor !== 21) return false
+  // 1.21.9/1.21.10 changed KeyBinding category types; 1.21.11 changed input.
+  return (patch >= 1 && patch <= 8) || patch >= 11
+}
+
+export function polarisChatFile(mcVersion: string): string {
+  const [major = 0, minor = 0, patch = 0] = mcVersion.split('.').map(Number)
+  if (major >= 26) return POLARIS_CHAT_OFFICIAL
+  if (major === 1 && (minor > 21 || (minor === 21 && patch >= 11))) return POLARIS_CHAT_MODERN
+  return POLARIS_CHAT_INTERMEDIARY
+}
+
 export class InstanceStore {
+  /** Updated by AppServices when the in-game chat setting changes. */
+  chatModEnabled = true
+
   constructor(private readonly paths: Paths) {}
+
+  setChatModEnabled(enabled: boolean): void {
+    this.chatModEnabled = enabled
+  }
 
   dir(id: string): string {
     if (!isSafeSegment(id)) throw new Error('Invalid instance id')
@@ -150,52 +179,102 @@ export class InstanceStore {
   }
 
   /**
-   * Install or migrate the bundled PolarisConfig mod. Existing installs with a
-   * PolarisConfig jar are upgraded; deleting the mod keeps it deleted. New
-   * instances always get the build that matches their mapping family.
+   * Install or migrate the bundled mods. Existing PolarisConfig installs are
+   * upgraded; deleting it keeps it deleted. The chat companion follows the
+   * user's in-game chat setting and is removed when that setting is off.
    */
   private async syncPolarisConfig(config: InstanceConfig, installIfMissing: boolean): Promise<void> {
     if (config.kind !== 'game' || config.loader !== 'fabric') return
     try {
       const { app } = await import('electron')
-      const sourceName = polarisConfigFile(config.mcVersion)
-      const source = join(app.getAppPath(), 'resources', 'mods', sourceName)
-      if (!(await pathExists(source))) return
-
       const modsDir = join(this.dir(config.id), 'mods')
-      const existing = (await safeReaddir(modsDir)).filter((name) => POLARIS_CONFIG_PATTERN.test(name))
-      if (!existing.length && !installIfMissing) return
+      const modFiles = await safeReaddir(modsDir)
+      const configExisting = modFiles.filter((name) => POLARIS_CONFIG_PATTERN.test(name))
+      // ".jar.disabled" is the launcher's per-instance mod toggle.
+      const chatEntries = modFiles.filter((name) =>
+        /^polaris-chat-.*\.jar(\.disabled)?$/i.test(name)
+      )
+      const chatExisting = chatEntries.filter((name) => !name.endsWith('.disabled'))
+      const chatDisabled = chatEntries.some((name) => name.endsWith('.disabled'))
+      const hasFabricApi = modFiles.some((name) => /^fabric-api-.*\.jar$/i.test(name))
+      await this.syncBundledMod(
+        app.getAppPath(),
+        modsDir,
+        polarisConfigFile(config.mcVersion),
+        POLARIS_CONFIG_PATTERN,
+        configExisting.length > 0 || installIfMissing
+      )
 
-      const dest = join(modsDir, sourceName)
-      const [sourceStat, destStat] = await Promise.all([
-        stat(source),
-        stat(dest).catch(() => null)
-      ])
-      let matches = false
-      if (destStat && destStat.size === sourceStat.size) {
-        const cached = polarisConfigHashes.get(source)
-        let sourceHash =
-          cached && cached.size === sourceStat.size && cached.mtimeMs === sourceStat.mtimeMs
-            ? cached.hash
-            : ''
-        if (!sourceHash) {
-          sourceHash = await hashFile(source, 'sha256')
-          polarisConfigHashes.set(source, {
-            size: sourceStat.size,
-            mtimeMs: sourceStat.mtimeMs,
-            hash: sourceHash
-          })
+      if (
+        !this.chatModEnabled ||
+        !supportsInGameChat(config.mcVersion) ||
+        !hasFabricApi ||
+        chatDisabled
+      ) {
+        for (const name of chatExisting) {
+          await rm(join(modsDir, name), { force: true })
         }
-        matches = sourceHash === (await hashFile(dest, 'sha256'))
+        return
       }
-      if (!matches) {
-        await copyFile(source, dest)
-      }
-      for (const name of existing) {
-        if (name !== sourceName) await rm(join(modsDir, name), { force: true })
+
+      // Instances created before 0.4.5 only carry PolarisConfig; they still
+      // receive the chat companion once. Deleting both jars opts out.
+      const chatBundled =
+        chatExisting.length > 0 || installIfMissing || configExisting.length > 0
+      if (chatBundled) {
+        await this.syncBundledMod(
+          app.getAppPath(),
+          modsDir,
+          polarisChatFile(config.mcVersion),
+          POLARIS_CHAT_PATTERN,
+          true
+        )
       }
     } catch {
-      // Optional bundled mod; never block instance listing or creation.
+      // Optional bundled mods; never block instance listing or creation.
+    }
+  }
+
+  /** Copies the build that matches this instance and removes stale variants. */
+  private async syncBundledMod(
+    appPath: string,
+    modsDir: string,
+    sourceName: string,
+    pattern: RegExp,
+    installIfMissing: boolean
+  ): Promise<void> {
+    const source = join(appPath, 'resources', 'mods', sourceName)
+    if (!(await pathExists(source))) return
+    const existing = (await safeReaddir(modsDir)).filter((name) => pattern.test(name))
+    if (!existing.length && !installIfMissing) return
+
+    const dest = join(modsDir, sourceName)
+    const [sourceStat, destStat] = await Promise.all([
+      stat(source),
+      stat(dest).catch(() => null)
+    ])
+    let matches = false
+    if (destStat && destStat.size === sourceStat.size) {
+      const cached = bundledModHashes.get(source)
+      let sourceHash =
+        cached && cached.size === sourceStat.size && cached.mtimeMs === sourceStat.mtimeMs
+          ? cached.hash
+          : ''
+      if (!sourceHash) {
+        sourceHash = await hashFile(source, 'sha256')
+        bundledModHashes.set(source, {
+          size: sourceStat.size,
+          mtimeMs: sourceStat.mtimeMs,
+          hash: sourceHash
+        })
+      }
+      matches = sourceHash === (await hashFile(dest, 'sha256'))
+    }
+    if (!matches) {
+      await copyFile(source, dest)
+    }
+    for (const name of existing) {
+      if (name !== sourceName) await rm(join(modsDir, name), { force: true })
     }
   }
 

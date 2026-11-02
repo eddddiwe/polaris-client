@@ -26,7 +26,8 @@ import {
   writeGameUi
 } from '../src/core/performance'
 import { CosmeticsService } from '../src/core/cosmetics'
-import { SettingsStore } from '../src/core/settings'
+import { SettingsStore, defaultSettings, normalizeSettings } from '../src/core/settings'
+import { polarisChatFile, supportsInGameChat } from '../src/core/instances'
 import { assertSafeSegment, isSafeSegment, readJson } from '../src/core/fsutil'
 import {
   buildSearchFacets,
@@ -257,6 +258,31 @@ describe('performance plans', () => {
     expect(makePlan('balanced', hardware, 0).memoryMb).toBe(1024)
     expect(makePlan('balanced', hardware, Number.NaN).memoryMb).toBe(8192)
     expect(makePlan('competitive', hardware).jvmArgs).toContain('-Xmx8192M')
+  })
+})
+
+describe('bundled chat compatibility', () => {
+  it('only installs the chat mod on versions its adapters support', () => {
+    expect(supportsInGameChat('1.20.1')).toBe(false)
+    expect(supportsInGameChat('1.21.0')).toBe(false)
+    expect(supportsInGameChat('1.21.1')).toBe(true)
+    expect(supportsInGameChat('1.21.8')).toBe(true)
+    expect(supportsInGameChat('1.21.9')).toBe(false)
+    expect(supportsInGameChat('1.21.10')).toBe(false)
+    expect(supportsInGameChat('1.21.11')).toBe(true)
+    expect(supportsInGameChat('26.3')).toBe(true)
+    expect(polarisChatFile('1.21.1')).toBe('polaris-chat-1.0.0.jar')
+    expect(polarisChatFile('1.21.11')).toBe('polaris-chat-1.0.0-modern.jar')
+    expect(polarisChatFile('26.3')).toBe('polaris-chat-1.0.0-official.jar')
+  })
+})
+
+describe('settings', () => {
+  it('defaults in-game chat on and preserves an opt-out', () => {
+    const root = 'C:\\data'
+    expect(defaultSettings(root).inGameChat).toBe(true)
+    expect(normalizeSettings({ ...defaultSettings(root), inGameChat: false }, root).inGameChat).toBe(false)
+    expect(normalizeSettings(defaultSettings(root), root).inGameChat).toBe(true)
   })
 })
 

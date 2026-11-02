@@ -181,6 +181,50 @@ describe('Polaris chat transport', () => {
     expect(response.status).toBe(400)
   })
 
+  it('issues a chat-scoped token that cannot reach friends or mint more tokens', async () => {
+    const response = await call('/v1/chat/token', {
+      method: 'POST',
+      code: ALICE,
+      secret: ALICE_SECRET
+    })
+    expect(response.status).toBe(200)
+    const { token, code } = await response.json()
+    expect(code).toBe(ALICE)
+    expect(token).toMatch(/^pc_[0-9a-f-]{36}$/i)
+
+    const stored = [...kv.puts].reverse().find((entry) => entry.key.startsWith('chatToken:'))
+    expect(stored).toBeTruthy()
+    expect(stored?.options?.expirationTtl).toBe(12 * 60 * 60)
+
+    const chatHeaders = { 'X-Polaris-Chat-Token': token } as Record<string, string>
+    const history = await (worker as any).fetch(
+      new Request(`https://polaris.test/v1/chat/history?friendCode=${BOB}`, { headers: chatHeaders }),
+      env
+    )
+    expect(history.status).toBe(200)
+
+    const chatFriends = await (worker as any).fetch(
+      new Request('https://polaris.test/v1/chat/friends', { headers: chatHeaders }),
+      env
+    )
+    expect(chatFriends.status).toBe(200)
+    expect((await chatFriends.json()).friends.map((friend: { code: string }) => friend.code)).toEqual([
+      BOB
+    ])
+
+    const friends = await (worker as any).fetch(
+      new Request('https://polaris.test/v1/friends/list', { headers: chatHeaders }),
+      env
+    )
+    expect(friends.status).toBe(401)
+
+    const secondToken = await (worker as any).fetch(
+      new Request('https://polaris.test/v1/chat/token', { method: 'POST', headers: chatHeaders }),
+      env
+    )
+    expect(secondToken.status).toBe(401)
+  })
+
   it('requires authentication for ticket, history and send', async () => {
     expect((await call('/v1/chat/ticket', { method: 'POST' })).status).toBe(401)
     expect((await call(`/v1/chat/history?friendCode=${BOB}`)).status).toBe(401)
