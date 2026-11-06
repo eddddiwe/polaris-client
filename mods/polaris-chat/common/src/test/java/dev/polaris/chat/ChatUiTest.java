@@ -3,7 +3,13 @@ package dev.polaris.chat;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ChatUiTest {
     private static final class FakePaint implements Paint {
@@ -13,6 +19,24 @@ class ChatUiTest {
 
         @Override
         public void text(String text, int x, int y, int color) {
+        }
+
+        @Override
+        public int width(String text) {
+            return text.length() * 6;
+        }
+    }
+
+    private static final class RecordingPaint implements Paint {
+        final List<String> texts = new ArrayList<>();
+
+        @Override
+        public void fill(int x1, int y1, int x2, int y2, int color) {
+        }
+
+        @Override
+        public void text(String text, int x, int y, int color) {
+            texts.add(text);
         }
 
         @Override
@@ -38,9 +62,37 @@ class ChatUiTest {
         ChatInput input = new ChatInput();
         ui.render(new FakePaint(), chat, input, 800, 600, 0, 0, 0L);
 
-        ChatUi.Hit hit = ui.click(50, 95, 0, chat, input);
+        ChatUi.Row row = ui.friendRows().get(1);
+        ChatUi.Hit hit = ui.click((row.x1() + row.x2()) / 2, (row.y1() + row.y2()) / 2, 0, chat, input);
         assertEquals(ChatUi.Action.SELECT, hit.action());
-        assertEquals("POLARIS-ZX89-QW23", hit.code());
+        assertEquals("POLARIS-KL55-MN78", hit.code());
+    }
+
+    @Test
+    void longMessagesRemainReachableAtTheDefaultGuiScale() throws Exception {
+        PolarisChat.INSTANCE.stop();
+        System.setProperty("polaris.chat.demo", "1");
+        PolarisChat chat = PolarisChat.INSTANCE;
+        chat.start();
+
+        String longText = "This is a long message that must remain readable. ".repeat(12);
+        Method merge = PolarisChat.class.getDeclaredMethod("merge", String.class, List.class);
+        merge.setAccessible(true);
+        merge.invoke(chat, "POLARIS-ZX89-QW23", List.of(new ChatMessage(
+                "b1111111-1111-4111-8111-111111111111",
+                "POLARIS-ZX89-QW23",
+                "POLARIS-AB34-CD56",
+                "Nova",
+                longText,
+                System.currentTimeMillis())));
+
+        RecordingPaint paint = new RecordingPaint();
+        ChatUi ui = new ChatUi();
+        ui.render(paint, chat, new ChatInput(), 427, 240, 0, 0, 0L);
+        assertFalse(paint.texts.isEmpty());
+        boolean hasContent = paint.texts.stream()
+                .anyMatch(text -> longText.contains(text) && text.length() > 8);
+        assertTrue(hasContent);
     }
 
     @Test
@@ -56,8 +108,8 @@ class ChatUiTest {
         input.append('i');
         ui.render(new FakePaint(), chat, input, 800, 600, 0, 0, 0L);
 
-        // The send button sits at the right edge of the composer.
-        ChatUi.Hit hit = ui.click(730, 538, 0, chat, input);
+        ChatUi.Rect send = ui.sendBox();
+        ChatUi.Hit hit = ui.click(send.centerX(), send.centerY(), 0, chat, input);
         assertEquals(ChatUi.Action.SEND, hit.action());
     }
 }

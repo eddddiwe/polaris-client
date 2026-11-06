@@ -70,7 +70,9 @@ public final class ChatUi {
     private String cachedCode;
     private int cachedCount = -1;
     private String cachedLastId = "";
+    private String cachedLastText = "";
     private int cachedWidth = -1;
+    private int cachedHeight = -1;
 
     private int panelX;
     private int panelY;
@@ -106,6 +108,15 @@ public final class ChatUi {
 
     public void render(Paint paint, PolarisChat chat, ChatInput input, int width, int height,
                        int mouseX, int mouseY, long now) {
+        // Never let a click hit last frame's geometry if this frame returns early.
+        closeButton = new Rect(0, 0, 0, 0);
+        refreshButton = new Rect(0, 0, 0, 0);
+        sendButton = new Rect(0, 0, 0, 0);
+        olderButton = new Rect(0, 0, 0, 0);
+        newerButton = new Rect(0, 0, 0, 0);
+        messagesBox = new Rect(0, 0, 0, 0);
+        sidebarBox = new Rect(0, 0, 0, 0);
+
         // Minecraft's GUI scale already handles DPI. Clamp the panel to the
         // logical screen instead of shrinking the text, like PolarisConfig.
         scale = 1f;
@@ -123,13 +134,14 @@ public final class ChatUi {
         int headerH = size(compact ? 48 : 60);
         int footerH = size(compact ? 32 : 48);
         int sideW = Math.min(size(204), Math.max(size(132), panelW / 4));
+        sideW = Math.min(sideW, Math.max(size(40), panelW - size(80)));
         sidebarX = panelX;
         sidebarY = panelY + headerH;
         sidebarW = sideW;
         sidebarH = panelH - headerH - footerH;
         contentX = panelX + sidebarW + size(18);
         contentY = panelY + headerH + size(compact ? 6 : 14);
-        contentW = panelX + panelW - contentX - size(18);
+        contentW = Math.max(size(24), panelX + panelW - contentX - size(18));
         contentH = panelH - headerH - footerH - size(28);
 
         drawHeader(paint, chat, width, height, mouseX, mouseY, headerH);
@@ -289,11 +301,12 @@ public final class ChatUi {
             return;
         }
 
-        paint.text(friend.name(), contentX, contentY + size(2), TEXT);
-        int codeW = paint.width(friend.code()) + size(12);
+        paint.text(fit(paint, friend.name(), contentW - size(120)), contentX, contentY + size(2), TEXT);
+        String code = fit(paint, friend.code(), contentW - size(24));
+        int codeW = paint.width(code) + size(12);
         pill(paint, contentX, contentY + size(14), codeW, size(13), withAlpha(0xFFFFFF, 10));
         pillOutline(paint, contentX, contentY + size(14), codeW, size(13), withAlpha(ACCENT, 40));
-        paint.text(friend.code(), contentX + size(6), contentY + size(17), DIM);
+        paint.text(code, contentX + size(6), contentY + size(17), DIM);
 
         int olderW = paint.width("Older") + size(16);
         int newerW = paint.width("Newer") + size(16);
@@ -316,12 +329,12 @@ public final class ChatUi {
 
         int composerH = size(compact ? 24 : 30);
         int composerY = panelY + panelH - size(compact ? 32 : 48) - size(compact ? 8 : 18) - composerH;
-        int composerW = contentW - size(62);
-        int messagesY = contentY + size(compact ? 24 : 34);
-        int messagesH = composerY - messagesY - size(compact ? 4 : 10);
+        int composerW = Math.max(size(20), contentW - size(62));
+        int messagesY = contentY + size(compact ? 30 : 34);
+        int messagesH = Math.max(size(24), composerY - messagesY - size(14));
         messagesBox = new Rect(contentX, messagesY, contentW, messagesH);
 
-        List<Card> cards = buildCards(paint, chat, selected, contentW);
+        List<Card> cards = buildCards(paint, chat, selected, contentW, messagesH);
         int total = cards.isEmpty() ? 0 : cards.get(cards.size() - 1).top() + cards.get(cards.size() - 1).height();
         maxPage = Math.max(0, total - messagesH);
         pageOffset = clamp(pageOffset, 0, maxPage);
@@ -365,7 +378,8 @@ public final class ChatUi {
         }
 
         int sendH = size(compact ? 18 : 22);
-        sendButton = new Rect(contentX + composerW + size(8), composerY + (composerH - sendH) / 2, size(54), sendH);
+        sendButton = new Rect(contentX + composerW + size(8), composerY + (composerH - sendH) / 2,
+                size(compact ? 44 : 54), sendH);
         boolean canSend = !draft.trim().isEmpty();
         pill(paint, sendButton.x(), sendButton.y(), sendButton.w(), sendButton.h(),
                 canSend ? ACCENT : withAlpha(0xFFFFFF, 10));
@@ -384,40 +398,63 @@ public final class ChatUi {
     private void drawCard(Paint paint, Card card, int x, int y, int width) {
         roundRect(paint, x, y, width, card.height(), radius(8), CARD);
         roundRectOutline(paint, x, y, width, card.height(), radius(8), HAIRLINE);
-        paint.text(card.name(), x + size(8), y + size(3), card.nameColor());
-        if (!card.time().isEmpty()) {
-            paint.text(card.time(), x + width - size(8) - paint.width(card.time()), y + size(3), DIM);
+        int textY;
+        if (card.name().isEmpty()) {
+            textY = y + size(4);
+        } else {
+            int timeW = card.time().isEmpty() ? 0 : paint.width(card.time()) + size(8);
+            paint.text(fit(paint, card.name(), width - size(16) - timeW),
+                    x + size(8), y + size(3), card.nameColor());
+            if (!card.time().isEmpty()) {
+                paint.text(card.time(), x + width - size(8) - paint.width(card.time()), y + size(3), DIM);
+            }
+            textY = y + size(12);
         }
-        int textY = y + size(12);
         for (String line : card.text()) {
             paint.text(fit(paint, line, width - size(16)), x + size(8), textY, TEXT);
             textY += size(8);
         }
     }
 
-    private List<Card> buildCards(Paint paint, PolarisChat chat, String code, int width) {
+    private List<Card> buildCards(Paint paint, PolarisChat chat, String code, int width, int maxHeight) {
         List<ChatMessage> messages = chat.thread(code);
         String lastId = messages.isEmpty() ? "" : messages.get(messages.size() - 1).id();
+        String lastText = messages.isEmpty() ? "" : messages.get(messages.size() - 1).text();
         if (code.equals(cachedCode) && messages.size() == cachedCount
-                && lastId.equals(cachedLastId) && width == cachedWidth) {
+                && lastId.equals(cachedLastId) && lastText.equals(cachedLastText)
+                && width == cachedWidth && maxHeight == cachedHeight) {
             return cachedCards;
         }
 
         List<Card> cards = new ArrayList<>();
         int top = 0;
+        int lineH = size(8);
+        int maxLines = Math.max(1, (Math.max(size(24), maxHeight) - size(12) - size(2)) / lineH);
         for (ChatMessage message : messages) {
             boolean mine = message.from().equals(chat.myCode());
             String name = mine ? "You" : message.fromName();
             int nameColor = mine ? ACCENT_SOFT : ACCENT;
             List<String> wrapped = wrap(paint, message.text(), width - size(16));
-            int height = size(12) + Math.max(1, wrapped.size()) * size(8) + size(2);
-            cards.add(new Card(top, height, name, nameColor, clock(message.createdAt()), wrapped));
-            top += height + size(3);
+            int offset = 0;
+            boolean first = true;
+            while (offset < wrapped.size()) {
+                int count = Math.min(maxLines, wrapped.size() - offset);
+                List<String> chunk = new ArrayList<>(wrapped.subList(offset, offset + count));
+                String cardName = first ? name : "";
+                String cardTime = first ? clock(message.createdAt()) : "";
+                int height = (first ? size(12) : size(6)) + count * lineH + size(2);
+                cards.add(new Card(top, height, cardName, nameColor, cardTime, chunk));
+                top += height + size(3);
+                offset += count;
+                first = false;
+            }
         }
         cachedCode = code;
         cachedCount = messages.size();
         cachedLastId = lastId;
+        cachedLastText = lastText;
         cachedWidth = width;
+        cachedHeight = maxHeight;
         cachedCards = List.copyOf(cards);
         return cards;
     }
