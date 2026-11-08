@@ -1,7 +1,9 @@
 package dev.polaris.chat;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Chat screen styled like the bundled PolarisConfig menu: centred panel,
@@ -65,7 +67,7 @@ public final class ChatUi {
     private static final int BASE_WIDTH = 820;
     private static final int BASE_HEIGHT = 520;
 
-    private final List<Row> rows = new ArrayList<>();
+    private final List<RowData> rows = new ArrayList<>();
     private List<Card> cachedCards = List.of();
     private String cachedCode;
     private int cachedCount = -1;
@@ -73,6 +75,9 @@ public final class ChatUi {
     private String cachedLastText = "";
     private int cachedWidth = -1;
     private int cachedHeight = -1;
+    private final Map<String, List<String>> wrapCache = new HashMap<>();
+    private String wrapCode;
+    private int wrapWidth = -1;
 
     private int panelX;
     private int panelY;
@@ -102,8 +107,15 @@ public final class ChatUi {
     private int maxListOffset;
     private int pageOffset;
     private int maxPage;
+    private int fontProbe = -1, rowProbe = -1;
 
     record Card(int top, int height, String name, int nameColor, String time, List<String> text) {
+    }
+
+    // Row memo, rebuilt only on input changes; the header title width invalidates it on font change.
+    private record RowData(Friend friend, String label, String subtitle, String badge,
+                           int badgeTextWidth, int nameBudget, int unread, boolean showCode,
+                           int x1, int y1, int x2, int y2) {
     }
 
     public void render(Paint paint, PolarisChat chat, ChatInput input, int width, int height,
@@ -159,8 +171,9 @@ public final class ChatUi {
         drawIcon(paint, x, y + size(1), size(18), MARK, ACCENT);
 
         int titleX = x + size(28);
-        paint.text("Polaris Chat", titleX, y + size(2), TEXT);
         int titleW = paint.width("Polaris Chat");
+        fontProbe = titleW;
+        paint.text("Polaris Chat", titleX, y + size(2), TEXT);
 
         String version = "v1.0.0";
         int pillH = size(13);
@@ -209,7 +222,17 @@ public final class ChatUi {
         sidebarBox = new Rect(sidebarX + size(8), sidebarY + size(26),
                 sidebarW - size(16), sidebarH - size(26) - size(compact ? 50 : 58));
 
-        rows.clear();
+        // The header already measured the title this frame; a change means the
+        // font metrics changed (resource reload), so fitted row text is stale.
+        if (rowProbe != fontProbe) {
+            rowProbe = fontProbe;
+            rows.clear();
+            // Row widths and wrapped lines were measured with the old font.
+            wrapCache.clear();
+            cachedCode = null;
+            wrapCode = null;
+        }
+
         int rowH = size(32);
         int rowX = sidebarX + size(10);
         int rowW = sidebarW - size(20);
@@ -218,21 +241,42 @@ public final class ChatUi {
         List<Friend> friends = chat.friends();
         maxListOffset = Math.max(0, friends.size() - visible);
         listOffset = clamp(listOffset, 0, maxListOffset);
+        int count = Math.min(visible, friends.size());
+        while (rows.size() > count) rows.remove(rows.size() - 1);
 
         if (friends.isEmpty()) {
             paint.text("No friends yet.", rowX + size(4), rowTop + size(6), DIM);
             paint.text("Add them in the launcher.", rowX + size(4), rowTop + size(19), DIM);
         } else {
-            for (int i = 0; i < visible; i++) {
-                int index = i + listOffset;
-                if (index >= friends.size()) break;
-                Friend friend = friends.get(index);
+            boolean showCode = sidebarW >= size(180);
+            int rowGap = size(3);
+            int textInset = size(16);
+            int badgeReserve = size(28);
+            int codeBudget = rowW - textInset;
+            for (int i = 0; i < count; i++) {
+                Friend friend = friends.get(i + listOffset);
                 int y = rowTop + i * rowH;
+                int y2 = y + rowH - rowGap;
+                int unread = chat.unread(friend.code());
+                int nameBudget = rowW - textInset - (unread > 0 ? badgeReserve : 0);
+                RowData cached = i < rows.size() ? rows.get(i) : null;
+                if (cached == null || !cached.friend().equals(friend) || cached.x1() != rowX
+                        || cached.y1() != y || cached.x2() != rowX + rowW || cached.y2() != y2
+                        || cached.showCode() != showCode || cached.unread() != unread
+                        || cached.nameBudget() != nameBudget) {
+                    String badge = unread <= 0 ? "" : unread > 99 ? "99+" : String.valueOf(unread);
+                    cached = new RowData(friend, fit(paint, friend.name(), nameBudget),
+                            showCode ? fit(paint, friend.code(), codeBudget) : "", badge,
+                            badge.isEmpty() ? 0 : paint.width(badge), nameBudget, unread, showCode,
+                            rowX, y, rowX + rowW, y2);
+                    if (i < rows.size()) rows.set(i, cached);
+                    else rows.add(cached);
+                }
                 boolean active = friend.code().equals(chat.selected());
-                boolean hover = mouseX >= rowX && mouseX < rowX + rowW && mouseY >= y && mouseY < y + rowH - size(3);
+                boolean hover = mouseX >= rowX && mouseX < rowX + rowW && mouseY >= y && mouseY < y2;
                 float t = active ? 1f : hover ? 0.55f : 0f;
                 if (t > 0f) {
-                    roundRect(paint, rowX, y, rowW, rowH - size(3), radius(9),
+                    roundRect(paint, rowX, y, rowW, rowH - rowGap, radius(9),
                             active ? withAlpha(mix(ACCENT, PANEL, 0.8f), 225) : withAlpha(0xFFFFFF, 13));
                     if (active) {
                         roundRect(paint, rowX + size(3), y + size(9), size(3), rowH - size(21),
@@ -244,26 +288,21 @@ public final class ChatUi {
                 int iconColor = active ? ACCENT : mix(DIM, TEXT, 0.35f + 0.45f * t);
                 drawIcon(paint, rowX + size(10), y + (rowH - size(8)) / 2 - size(2), size(8), CHAT_ICON, iconColor);
                 int nameColor = active ? TEXT : mix(MUTED, TEXT, t);
-                int unread = chat.unread(friend.code());
-                int textW = rowW - size(16) - (unread > 0 ? size(28) : 0);
-                boolean showCode = sidebarW >= size(180);
                 int nameY = showCode ? y + size(7) : y + size(11);
-                paint.text(fit(paint, friend.name(), textW), rowX + size(24), nameY, nameColor);
+                paint.text(cached.label(), rowX + size(24), nameY, nameColor);
                 if (showCode) {
-                    paint.text(fit(paint, friend.code(), rowW - size(16)),
-                            rowX + size(24), y + size(18), DIM);
+                    paint.text(cached.subtitle(), rowX + size(24), y + size(18), DIM);
                 }
 
-                if (unread > 0) {
-                    String badge = unread > 99 ? "99+" : String.valueOf(unread);
-                    int badgeW = paint.width(badge) + size(8);
+                if (!cached.badge().isEmpty()) {
+                    int badgeW = cached.badgeTextWidth() + size(8);
                     int badgeH = size(12);
                     int badgeX = rowX + rowW - badgeW - size(7);
-                    int badgeY = y + (rowH - size(3) - badgeH) / 2;
+                    int badgeY = y + (rowH - rowGap - badgeH) / 2;
                     pill(paint, badgeX, badgeY, badgeW, badgeH, withAlpha(ACCENT_SOFT, 210));
-                    paint.centered(badge, badgeX + badgeW / 2, badgeY + size(3), DARK_TEXT);
+                    paint.text(cached.badge(), badgeX + badgeW / 2 - cached.badgeTextWidth() / 2,
+                            badgeY + size(3), DARK_TEXT);
                 }
-                rows.add(new Row(friend.code(), rowX, y, rowX + rowW, y + rowH - size(3)));
             }
         }
 
@@ -405,16 +444,21 @@ public final class ChatUi {
         if (card.name().isEmpty()) {
             textY = y + size(4);
         } else {
-            int timeW = card.time().isEmpty() ? 0 : paint.width(card.time()) + size(8);
-            paint.text(fit(paint, card.name(), width - size(16) - timeW),
+            // Measure the clock once per card instead of once for the name
+            // budget and again for its position.
+            String time = card.time();
+            int timeW = time.isEmpty() ? 0 : paint.width(time);
+            paint.text(fit(paint, card.name(), width - size(16) - (time.isEmpty() ? 0 : timeW + size(8))),
                     x + size(8), y + size(3), card.nameColor());
-            if (!card.time().isEmpty()) {
-                paint.text(card.time(), x + width - size(8) - paint.width(card.time()), y + size(3), DIM);
+            if (!time.isEmpty()) {
+                paint.text(time, x + width - size(8) - timeW, y + size(3), DIM);
             }
             textY = y + size(12);
         }
+        // wrap() already bounded every line to this width, so re-fitting each
+        // line (and its width measure) every frame is redundant.
         for (String line : card.text()) {
-            paint.text(fit(paint, line, width - size(16)), x + size(8), textY, TEXT);
+            paint.text(line, x + size(8), textY, TEXT);
             textY += size(8);
         }
     }
@@ -433,11 +477,16 @@ public final class ChatUi {
         int top = 0;
         int lineH = size(8);
         int maxLines = Math.max(1, (Math.max(size(24), maxHeight) - size(12) - size(2)) / lineH);
+        if (!code.equals(wrapCode) || width != wrapWidth) {
+            wrapCache.clear();
+            wrapCode = code;
+            wrapWidth = width;
+        }
         for (ChatMessage message : messages) {
             boolean mine = message.from().equals(chat.myCode());
             String name = mine ? "You" : message.fromName();
             int nameColor = mine ? ACCENT_SOFT : ACCENT;
-            List<String> wrapped = wrap(paint, message.text(), width - size(16));
+            List<String> wrapped = wrapCached(paint, message.text(), width - size(16));
             int offset = 0;
             boolean first = true;
             while (offset < wrapped.size()) {
@@ -460,6 +509,18 @@ public final class ChatUi {
         cachedHeight = maxHeight;
         cachedCards = List.copyOf(cards);
         return cards;
+    }
+
+    private List<String> wrapCached(Paint paint, String text, int maxWidth) {
+        List<String> lines = wrapCache.get(text);
+        if (lines == null) {
+            // Bounded: a long-lived screen should not retain every message text
+            // that scrolled out of the 200-message window.
+            if (wrapCache.size() >= 512) wrapCache.clear();
+            lines = List.copyOf(wrap(paint, text, maxWidth));
+            wrapCache.put(text, lines);
+        }
+        return lines;
     }
 
     // ------------------------------------------------------------------ footer
@@ -521,10 +582,10 @@ public final class ChatUi {
             pageOffset = clamp(pageOffset - messagesBox.h, 0, maxPage);
             return Hit.NONE;
         }
-        for (Row row : rows) {
+        for (RowData row : rows) {
             if (mouseX >= row.x1() && mouseX < row.x2() && mouseY >= row.y1() && mouseY < row.y2()) {
                 pageOffset = 0;
-                return new Hit(Action.SELECT, row.code());
+                return new Hit(Action.SELECT, row.friend().code());
             }
         }
         return Hit.NONE;
@@ -542,7 +603,7 @@ public final class ChatUi {
     // ------------------------------------------------------------------ helpers
 
     List<Row> friendRows() {
-        return List.copyOf(rows);
+        return rows.stream().map(r -> new Row(r.friend().code(), r.x1(), r.y1(), r.x2(), r.y2())).toList();
     }
 
     Rect sendBox() {
@@ -586,6 +647,15 @@ public final class ChatUi {
         return (alpha << 24) | (red << 16) | (green << 8) | blue;
     }
 
+    /**
+     * Corner inset of scanline {@code i}. Rows sharing an inset are merged into
+     * one fill, which is pixel-identical but cuts the quad count dramatically.
+     */
+    private static int inset(int r, int i) {
+        int dy = r - i - 1;
+        return r - (int) Math.round(Math.sqrt((double) r * r - (double) dy * dy));
+    }
+
     private static void roundRect(Paint paint, int x, int y, int w, int h, int r, int color) {
         if (w <= 0 || h <= 0) return;
         r = Math.min(r, Math.min(w / 2, h / 2));
@@ -594,11 +664,15 @@ public final class ChatUi {
             return;
         }
         paint.fill(x + r, y + r, x + w - r, y + h - r, color);
-        for (int i = 0; i < r; i++) {
-            int dy = r - i - 1;
-            int inset = r - (int) Math.round(Math.sqrt((double) r * r - (double) dy * dy));
-            paint.fill(x + inset, y + i, x + w - inset, y + i + 1, color);
-            paint.fill(x + inset, y + h - 1 - i, x + w - inset, y + h - i, color);
+        int start = 0;
+        int run = inset(r, 0);
+        for (int i = 1; i <= r; i++) {
+            int next = i < r ? inset(r, i) : -1;
+            if (next == run) continue;
+            paint.fill(x + run, y + start, x + w - run, y + i, color);
+            paint.fill(x + run, y + h - i, x + w - run, y + h - start, color);
+            start = i;
+            run = next;
         }
     }
 
@@ -614,15 +688,28 @@ public final class ChatUi {
         }
         paint.fill(x + r, y, x + w - r, y + 1, color);
         paint.fill(x + r, y + h - 1, x + w - r, y + h, color);
-        paint.fill(x, y + r, x + 1, y + h - r, color);
-        paint.fill(x + w - 1, y + r, x + w, y + h - r, color);
+        int full = r;
         for (int i = 0; i < r; i++) {
-            int dy = r - i - 1;
-            int inset = r - (int) Math.round(Math.sqrt((double) r * r - (double) dy * dy));
-            paint.fill(x + inset, y + i, x + inset + 1, y + i + 1, color);
-            paint.fill(x + w - inset - 1, y + i, x + w - inset, y + i + 1, color);
-            paint.fill(x + inset, y + h - 1 - i, x + inset + 1, y + h - i, color);
-            paint.fill(x + w - inset - 1, y + h - 1 - i, x + w - inset, y + h - i, color);
+            if (inset(r, i) == 0) {
+                full = i;
+                break;
+            }
+        }
+        // Zero-inset corner rows are flush with the straight edges, so fold
+        // them into the side strokes instead of emitting separate quads.
+        paint.fill(x, y + full, x + 1, y + h - full, color);
+        paint.fill(x + w - 1, y + full, x + w, y + h - full, color);
+        int start = 0;
+        int run = inset(r, 0);
+        for (int i = 1; i <= full; i++) {
+            int next = i < full ? inset(r, i) : -1;
+            if (next == run) continue;
+            paint.fill(x + run, y + start, x + run + 1, y + i, color);
+            paint.fill(x + w - run - 1, y + start, x + w - run, y + i, color);
+            paint.fill(x + run, y + h - i, x + run + 1, y + h - start, color);
+            paint.fill(x + w - run - 1, y + h - i, x + w - run, y + h - start, color);
+            start = i;
+            run = next;
         }
     }
 
@@ -640,12 +727,14 @@ public final class ChatUi {
 
     private static void fadeLine(Paint paint, int x, int y, int width, int height, int color) {
         int segments = 24;
+        int maxAlpha = color >>> 24;
         for (int i = 0; i < segments; i++) {
             float t = (float) i / (segments - 1);
-            float a = (float) Math.sin(Math.PI * t);
+            int alpha = Math.round(maxAlpha * (float) Math.sin(Math.PI * t));
+            if (alpha == 0) continue;
             int segX = x + Math.round((float) width * i / segments);
             int segW = Math.max(1, width / segments + 1);
-            paint.fill(segX, y, segX + segW, y + height, withAlpha(color, Math.round((color >>> 24) * a)));
+            paint.fill(segX, y, segX + segW, y + height, withAlpha(color, alpha));
         }
     }
 
@@ -653,9 +742,17 @@ public final class ChatUi {
         int pixel = Math.max(1, size / 8);
         for (int row = 0; row < pattern.length; row++) {
             String line = pattern[row];
-            for (int col = 0; col < line.length(); col++) {
-                if (line.charAt(col) != '#') continue;
-                paint.fill(x + col * pixel, y + row * pixel, x + (col + 1) * pixel, y + (row + 1) * pixel, color);
+            int runStart = -1;
+            for (int col = 0; col <= line.length(); col++) {
+                boolean on = col < line.length() && line.charAt(col) == '#';
+                if (on && runStart < 0) {
+                    runStart = col;
+                } else if (!on && runStart >= 0) {
+                    // Merge each horizontal run of icon pixels into a single quad.
+                    paint.fill(x + runStart * pixel, y + row * pixel,
+                            x + col * pixel, y + (row + 1) * pixel, color);
+                    runStart = -1;
+                }
             }
         }
     }
@@ -694,16 +791,38 @@ public final class ChatUi {
     private static String fit(Paint paint, String text, int maxWidth) {
         if (paint.width(text) <= maxWidth) return text;
         String suffix = "...";
-        int end = text.length();
-        while (end > 1 && paint.width(text.substring(0, end) + suffix) > maxWidth) end--;
-        return text.substring(0, end) + suffix;
+        if (text.isEmpty()) return suffix;
+        // Widths are monotonic in prefix length, so binary-search the longest
+        // prefix that fits instead of measuring prefix + suffix at every step.
+        int lo = 1;
+        int hi = text.length();
+        while (lo < hi) {
+            int mid = (lo + hi + 1) >>> 1;
+            if (paint.width(text.substring(0, mid) + suffix) <= maxWidth) {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        return text.substring(0, lo) + suffix;
     }
 
     private static String fitTail(Paint paint, String text, int maxWidth) {
         if (paint.width(text) <= maxWidth) return text;
-        int start = 0;
-        while (start < text.length() - 1 && paint.width(text.substring(start)) > maxWidth) start++;
-        return text.substring(start);
+        // Widths shrink monotonically as the start moves right; binary-search
+        // the smallest tail that fits. This turns the old O(n^2) scan over
+        // long drafts into O(log n) width measurements.
+        int lo = 0;
+        int hi = text.length() - 1;
+        while (lo < hi) {
+            int mid = (lo + hi) >>> 1;
+            if (paint.width(text.substring(mid)) <= maxWidth) {
+                hi = mid;
+            } else {
+                lo = mid + 1;
+            }
+        }
+        return text.substring(lo);
     }
 
     private static String clock(long timestamp) {

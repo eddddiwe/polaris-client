@@ -16,6 +16,37 @@ public final class PolarisChatScreen extends Screen {
     private final ChatUi ui = new ChatUi();
     private final ChatInput input = new ChatInput();
 
+    /** Draw target for the current frame only; cleared once rendering finishes. */
+    private DrawContext drawContext;
+
+    /** Reused adapter so each frame allocates no Paint instance. */
+    private final Paint paint = new Paint() {
+        @Override
+        public void fill(int x1, int y1, int x2, int y2, int color) {
+            drawContext.fill(x1, y1, x2, y2, color);
+        }
+
+        @Override
+        public void text(String text, int x, int y, int color) {
+            drawContext.drawText(textRenderer, text, x, y, color, false);
+        }
+
+        @Override
+        public int width(String text) {
+            return textRenderer.getWidth(text);
+        }
+
+        @Override
+        public void clip(int x1, int y1, int x2, int y2) {
+            drawContext.enableScissor(x1, y1, x2, y2);
+        }
+
+        @Override
+        public void unclip() {
+            drawContext.disableScissor();
+        }
+    };
+
     public PolarisChatScreen() {
         super(Text.literal("Polaris Chat"));
     }
@@ -33,33 +64,12 @@ public final class PolarisChatScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        Paint paint = new Paint() {
-            @Override
-            public void fill(int x1, int y1, int x2, int y2, int color) {
-                context.fill(x1, y1, x2, y2, color);
-            }
-
-            @Override
-            public void text(String text, int x, int y, int color) {
-                context.drawText(textRenderer, text, x, y, color, false);
-            }
-
-            @Override
-            public int width(String text) {
-                return textRenderer.getWidth(text);
-            }
-
-            @Override
-            public void clip(int x1, int y1, int x2, int y2) {
-                context.enableScissor(x1, y1, x2, y2);
-            }
-
-            @Override
-            public void unclip() {
-                context.disableScissor();
-            }
-        };
-        ui.render(paint, PolarisChat.INSTANCE, input, width, height, mouseX, mouseY, System.currentTimeMillis());
+        drawContext = context;
+        try {
+            ui.render(paint, PolarisChat.INSTANCE, input, width, height, mouseX, mouseY, System.currentTimeMillis());
+        } finally {
+            drawContext = null;
+        }
     }
 
     @Override

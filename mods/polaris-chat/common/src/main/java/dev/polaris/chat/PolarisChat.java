@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -59,7 +60,9 @@ public final class PolarisChat {
     private volatile WebSocket socket;
     private volatile Thread worker;
     private volatile ScheduledExecutorService heartbeat;
+    private volatile ScheduledFuture<?> heartbeatTask;
     private volatile long lastInbound;
+    private long wakeSeq; // Guarded by backoffLock; bumped by retry() to cancel a pending wait.
 
     private PolarisChat() {
     }
@@ -109,7 +112,7 @@ public final class PolarisChat {
         Thread thread = worker;
         worker = null;
         if (thread != null) thread.interrupt();
-        stopHeartbeat();
+        shutdownHeartbeat();
         closeSocket(true);
         synchronized (backoffLock) {
             backoffLock.notifyAll();
@@ -150,7 +153,9 @@ public final class PolarisChat {
     public List<ChatMessage> thread(String code) {
         if (code == null) return List.of();
         List<ChatMessage> messages = threads.get(code);
-        return messages == null ? List.of() : List.copyOf(messages);
+        // merge() only stores immutable snapshots, so the UI can share them
+        // across frames instead of copying the list on every read.
+        return messages == null ? List.of() : messages;
     }
 
     public int unread(String code) {
@@ -235,6 +240,7 @@ public final class PolarisChat {
             }
         }
         synchronized (backoffLock) {
+            wakeSeq++;
             backoffLock.notifyAll();
         }
     }
@@ -244,6 +250,10 @@ public final class PolarisChat {
     private void runLoop() {
         int attempt = 0;
         while (running) {
+            long wake;
+            synchronized (backoffLock) {
+                wake = wakeSeq;
+            }
             long connectedAt = 0;
             try {
                 status = "connecting";
@@ -269,7 +279,7 @@ public final class PolarisChat {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception failure) {
-                error = friendly(failure);
+                error = ChatCodes.plain(friendly(failure));
             } finally {
                 stopHeartbeat();
                 closeSocket(false);
@@ -282,8 +292,13 @@ public final class PolarisChat {
             long delay = backoff(attempt);
             attempt = Math.min(attempt + 1, 5);
             synchronized (backoffLock) {
+                long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delay);
                 try {
-                    backoffLock.wait(delay);
+                    while (running && wakeSeq == wake) {
+                        long remaining = deadline - System.nanoTime();
+                        if (remaining <= 0L) break;
+                        TimeUnit.NANOSECONDS.timedWait(backoffLock, remaining);
+                    }
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                     break;
@@ -291,6 +306,7 @@ public final class PolarisChat {
             }
         }
         if (!"unavailable".equals(status)) status = "offline";
+        shutdownHeartbeat();
     }
 
     private String requestTicket() throws IOException, InterruptedException {
@@ -362,7 +378,7 @@ public final class PolarisChat {
                 }
                 merge(code, fetched);
             } catch (Exception failure) {
-                error = friendly(failure);
+                error = ChatCodes.plain(friendly(failure));
             } finally {
                 loading.remove(code);
             }
@@ -384,7 +400,7 @@ public final class PolarisChat {
                 } catch (Exception ignored) {
                     // A proxy or edge error page is not JSON.
                 }
-                error = detail;
+                error = ChatCodes.plain(detail);
                 return;
             }
             Map<String, Object> root = Json.object(Json.parse(response.body()));
@@ -392,36 +408,46 @@ public final class PolarisChat {
             if (sent != null) receive(sent);
             error = "";
         } catch (Exception failure) {
-            error = friendly(failure);
+            error = ChatCodes.plain(friendly(failure));
         }
     }
 
     private void startHeartbeat(WebSocket ws) {
         stopHeartbeat();
-        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "PolarisChatPing");
-            thread.setDaemon(true);
-            return thread;
-        });
-        executor.scheduleAtFixedRate(() -> {
-            WebSocket current = socket;
-            if (current == null) return;
+        ScheduledExecutorService executor = heartbeat;
+        if (executor == null || executor.isShutdown()) {
+            executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+                Thread thread = new Thread(runnable, "PolarisChatPing");
+                thread.setDaemon(true);
+                return thread;
+            });
+            heartbeat = executor;
+        }
+        // Reuse one daemon timer across reconnects; pin the task to this socket so a
+        // cancelled-but-running tick can never abort a newer connection.
+        heartbeatTask = executor.scheduleAtFixedRate(() -> {
             if (System.currentTimeMillis() - lastInbound > 60_000L) {
-                current.abort();
+                ws.abort();
                 return;
             }
             try {
-                current.sendText("{\"type\":\"ping\"}", true).whenComplete((ignored, failure) -> {
-                    if (failure != null) current.abort();
+                ws.sendText("{\"type\":\"ping\"}", true).whenComplete((ignored, failure) -> {
+                    if (failure != null) ws.abort();
                 });
             } catch (Exception failure) {
-                current.abort();
+                ws.abort();
             }
         }, 20, 20, TimeUnit.SECONDS);
-        heartbeat = executor;
     }
 
     private void stopHeartbeat() {
+        ScheduledFuture<?> task = heartbeatTask;
+        heartbeatTask = null;
+        if (task != null) task.cancel(false);
+    }
+
+    private void shutdownHeartbeat() {
+        stopHeartbeat();
         ScheduledExecutorService executor = heartbeat;
         heartbeat = null;
         if (executor != null) executor.shutdownNow();
@@ -460,19 +486,43 @@ public final class PolarisChat {
     }
 
     private void merge(String code, List<ChatMessage> fetched) {
+        if (fetched.isEmpty()) return;
         threads.compute(code, (key, existing) -> {
-            Map<String, ChatMessage> byId = new LinkedHashMap<>();
-            if (existing != null) {
-                for (ChatMessage message : existing) byId.put(message.id(), message);
+            if (existing == null) existing = List.of();
+            if (fetched.size() == 1) {
+                ChatMessage message = fetched.get(0);
+                if (existing.isEmpty() || appends(existing, message)) {
+                    return appendCapped(existing, message);
+                }
             }
+            Map<String, ChatMessage> byId = new LinkedHashMap<>(
+                    Math.max(16, existing.size() + fetched.size()));
+            for (ChatMessage message : existing) byId.put(message.id(), message);
             for (ChatMessage message : fetched) byId.put(message.id(), message);
             List<ChatMessage> merged = new ArrayList<>(byId.values());
             merged.sort(Comparator.comparingLong(ChatMessage::createdAt));
-            if (merged.size() > MAX_THREAD) {
-                merged = new ArrayList<>(merged.subList(merged.size() - MAX_THREAD, merged.size()));
-            }
+            int overflow = merged.size() - MAX_THREAD;
+            if (overflow > 0) merged.subList(0, overflow).clear();
             return List.copyOf(merged);
         });
+    }
+
+    /** True when one live message can be appended without dedupe or a full sort. */
+    private static boolean appends(List<ChatMessage> existing, ChatMessage message) {
+        if (message.createdAt() < existing.get(existing.size() - 1).createdAt()) return false;
+        for (int i = existing.size() - 1; i >= 0; i--) {
+            if (existing.get(i).id().equals(message.id())) return false;
+        }
+        return true;
+    }
+
+    private static List<ChatMessage> appendCapped(List<ChatMessage> existing, ChatMessage message) {
+        int size = existing.size();
+        int from = Math.max(0, size + 1 - MAX_THREAD);
+        List<ChatMessage> merged = new ArrayList<>(size + 1 - from);
+        merged.addAll(existing.subList(from, size));
+        merged.add(message);
+        return List.copyOf(merged);
     }
 
     private void resortFriends() {

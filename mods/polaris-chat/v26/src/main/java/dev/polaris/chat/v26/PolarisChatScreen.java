@@ -4,7 +4,6 @@ import dev.polaris.chat.ChatInput;
 import dev.polaris.chat.ChatUi;
 import dev.polaris.chat.Paint;
 import dev.polaris.chat.PolarisChat;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.CharacterEvent;
@@ -16,6 +15,42 @@ import dev.polaris.chat.Keys;
 public final class PolarisChatScreen extends Screen {
     private final ChatUi ui = new ChatUi();
     private final ChatInput input = new ChatInput();
+
+    /** Draw target for the current frame only; cleared once rendering finishes. */
+    private GuiGraphicsExtractor extractor;
+
+    /** Reused adapter so each frame allocates no Paint instance. */
+    private final Paint paint = new Paint() {
+        @Override
+        public void fill(int x1, int y1, int x2, int y2, int color) {
+            extractor.fill(x1, y1, x2, y2, color);
+        }
+
+        @Override
+        public void text(String text, int x, int y, int color) {
+            extractor.text(font, text, x, y, color);
+        }
+
+        @Override
+        public int width(String text) {
+            return font.width(text);
+        }
+
+        @Override
+        public void centered(String text, int centerX, int y, int color) {
+            extractor.centeredText(font, text, centerX, y, color);
+        }
+
+        @Override
+        public void clip(int x1, int y1, int x2, int y2) {
+            extractor.enableScissor(x1, y1, x2, y2);
+        }
+
+        @Override
+        public void unclip() {
+            extractor.disableScissor();
+        }
+    };
 
     public PolarisChatScreen() {
         super(Component.literal("Polaris Chat"));
@@ -34,39 +69,12 @@ public final class PolarisChatScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor extractor, int mouseX, int mouseY, float delta) {
-        Font textFont = this.font;
-        Paint paint = new Paint() {
-            @Override
-            public void fill(int x1, int y1, int x2, int y2, int color) {
-                extractor.fill(x1, y1, x2, y2, color);
-            }
-
-            @Override
-            public void text(String text, int x, int y, int color) {
-                extractor.text(textFont, text, x, y, color);
-            }
-
-            @Override
-            public int width(String text) {
-                return textFont.width(text);
-            }
-
-            @Override
-            public void centered(String text, int centerX, int y, int color) {
-                extractor.centeredText(textFont, text, centerX, y, color);
-            }
-
-            @Override
-            public void clip(int x1, int y1, int x2, int y2) {
-                extractor.enableScissor(x1, y1, x2, y2);
-            }
-
-            @Override
-            public void unclip() {
-                extractor.disableScissor();
-            }
-        };
-        ui.render(paint, PolarisChat.INSTANCE, input, width, height, mouseX, mouseY, System.currentTimeMillis());
+        this.extractor = extractor;
+        try {
+            ui.render(paint, PolarisChat.INSTANCE, input, width, height, mouseX, mouseY, System.currentTimeMillis());
+        } finally {
+            this.extractor = null;
+        }
     }
 
     @Override
