@@ -5,17 +5,34 @@
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector))
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 
+  /* Scroll work: one passive listener, one rAF per burst --------------------- */
+
+  let scrollFrame = 0
+  const scrollJobs = []
+  const scheduleScrollWork = () => {
+    if (scrollFrame) return
+    scrollFrame = window.requestAnimationFrame(() => {
+      scrollFrame = 0
+      for (const job of scrollJobs) job()
+    })
+  }
+  window.addEventListener('scroll', scheduleScrollWork, { passive: true })
+
   /* Header scroll state + mobile navigation -------------------------------- */
 
   const header = $('#site-header')
   const navToggle = $('.nav-toggle')
   const nav = $('#site-nav')
 
+  let headerScrolled = false
   const onScroll = () => {
-    header.classList.toggle('scrolled', window.scrollY > 8)
+    const scrolled = window.scrollY > 8
+    if (scrolled === headerScrolled) return
+    headerScrolled = scrolled
+    header.classList.toggle('scrolled', scrolled)
   }
+  scrollJobs.push(onScroll)
   onScroll()
-  window.addEventListener('scroll', onScroll, { passive: true })
 
   const closeNav = () => {
     header.classList.remove('nav-open')
@@ -51,15 +68,16 @@
     .map((link) => document.getElementById(link.hash.slice(1)))
     .filter(Boolean)
 
-  let activeFrame = 0
+  let lastActive = ''
   const updateActiveLink = () => {
-    activeFrame = 0
     const threshold = 150
     let active = ''
     for (const section of linkedSections) {
       const rect = section.getBoundingClientRect()
       if (rect.top <= threshold && rect.bottom > threshold) active = section.id
     }
+    if (active === lastActive) return
+    lastActive = active
     for (const link of navLinks) {
       const isActive = active !== '' && link.hash === `#${active}`
       link.classList.toggle('active', isActive)
@@ -68,10 +86,7 @@
     }
   }
 
-  const requestActive = () => {
-    if (!activeFrame) activeFrame = window.requestAnimationFrame(updateActiveLink)
-  }
-  window.addEventListener('scroll', requestActive, { passive: true })
+  scrollJobs.push(updateActiveLink)
   updateActiveLink()
 
   /* Scroll reveal ----------------------------------------------------------- */
@@ -112,22 +127,28 @@
 
   if (heroArt && appWindow && finePointer.matches) {
     let frame = 0
-    let lastX = 0
-    let lastY = 0
+    let pointerX = 0
+    let pointerY = 0
 
     const applyTilt = () => {
       frame = 0
-      appWindow.style.setProperty('--ry', `${(lastX * 2.4).toFixed(2)}deg`)
-      appWindow.style.setProperty('--rx', `${(-lastY * 1.8).toFixed(2)}deg`)
+      const rect = heroArt.getBoundingClientRect()
+      const x = (pointerX - rect.left) / rect.width - 0.5
+      const y = (pointerY - rect.top) / rect.height - 0.5
+      appWindow.style.setProperty('--ry', `${(x * 2.4).toFixed(2)}deg`)
+      appWindow.style.setProperty('--rx', `${(-y * 1.8).toFixed(2)}deg`)
     }
 
-    heroArt.addEventListener('pointermove', (event) => {
-      if (reduceMotion.matches) return
-      const rect = heroArt.getBoundingClientRect()
-      lastX = (event.clientX - rect.left) / rect.width - 0.5
-      lastY = (event.clientY - rect.top) / rect.height - 0.5
-      if (!frame) frame = window.requestAnimationFrame(applyTilt)
-    })
+    heroArt.addEventListener(
+      'pointermove',
+      (event) => {
+        if (reduceMotion.matches) return
+        pointerX = event.clientX
+        pointerY = event.clientY
+        if (!frame) frame = window.requestAnimationFrame(applyTilt)
+      },
+      { passive: true }
+    )
 
     heroArt.addEventListener('pointerleave', () => {
       if (frame) {

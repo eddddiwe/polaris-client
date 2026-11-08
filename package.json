@@ -74,11 +74,16 @@
       "out/preload/**/*",
       "out/renderer/**/*",
       "resources/**/*",
+      "!resources/update-helper.ps1",
       "LICENSE",
       "NOTICE",
+      "!**/*.map",
       "!admin/**/*"
     ],
     "compression": "maximum",
+    "electronLanguages": [
+      "en-US"
+    ],
     "publish": null,
     "afterPack": "scripts/after-pack.cjs",
     "extraResources": [
