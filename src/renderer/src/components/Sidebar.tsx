@@ -1,4 +1,6 @@
+import { memo } from 'react'
 import { useApp, type Page } from '../context'
+import { preloadPage } from '../routes'
 import { Icon, PolarisMark, type IconName } from './Icons'
 import { CosmeticBadge } from './Cosmetics'
 import { SkinAvatar } from './SkinAvatar'
@@ -13,6 +15,46 @@ const NAV: { id: Page; label: string; icon: IconName }[] = [
   { id: 'chat', label: 'Chat', icon: 'message' },
   { id: 'settings', label: 'Settings', icon: 'settings' }
 ]
+
+/**
+ * The app context value is rebuilt on every App render (progress events, toasts,
+ * launch state), so Sidebar re-renders far more often than navigation changes.
+ * Memoizing this subtree keeps all eight rows and their SVG icons out of those
+ * renders; only a page or instance-count change re-renders it.
+ */
+const SidebarNav = memo(function SidebarNav({
+  page,
+  instanceCount,
+  onNavigate
+}: {
+  page: Page
+  instanceCount: number
+  onNavigate: (page: Page) => void
+}): JSX.Element {
+  // The instance detail route keeps the Instances entry highlighted.
+  const activePage = page === 'instance' ? 'instances' : page
+  return (
+    <nav className="nav">
+      <span className="nav-label">Workspace</span>
+      {NAV.map((item) => {
+        const active = activePage === item.id
+        return (
+          <button
+            key={item.id}
+            className={active ? 'nav-item active' : 'nav-item'}
+            onClick={() => onNavigate(item.id)}
+            onPointerEnter={() => preloadPage(item.id)}
+            onFocus={() => preloadPage(item.id)}
+          >
+            <Icon name={item.icon} size={18} />
+            <span>{item.label}</span>
+            {item.id === 'instances' && instanceCount > 0 && <em>{instanceCount}</em>}
+          </button>
+        )
+      })}
+    </nav>
+  )
+})
 
 export function Sidebar(): JSX.Element {
   const { page, navigate, boot, launchState, gameRunning, openAccount, stop } = useApp()
@@ -29,20 +71,7 @@ export function Sidebar(): JSX.Element {
         </div>
       </div>
 
-      <nav className="nav">
-        <span className="nav-label">Workspace</span>
-        {NAV.map((item) => (
-          <button
-            key={item.id}
-            className={`nav-item ${page === item.id || (page === 'instance' && item.id === 'instances') ? 'active' : ''}`}
-            onClick={() => navigate(item.id)}
-          >
-            <Icon name={item.icon} size={18} />
-            <span>{item.label}</span>
-            {item.id === 'instances' && boot.instances.length > 0 && <em>{boot.instances.length}</em>}
-          </button>
-        ))}
-      </nav>
+      <SidebarNav page={page} instanceCount={boot.instances.length} onNavigate={navigate} />
 
       {gameRunning && runningInstance && (
         <div className="sidebar-game">

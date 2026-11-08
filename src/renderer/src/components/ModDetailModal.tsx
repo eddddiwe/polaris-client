@@ -23,15 +23,31 @@ export function ModDetailModal({
   onCreated?: (id: string) => void
 }): JSX.Element {
   const { api, toast, gameRunning } = useApp()
-  const [detail, setDetail] = useState<ModDetail | null>(null)
-  const [versions, setVersions] = useState<ModVersionEntry[]>([])
+  // Results are keyed by (project, instance) so a response for a project that is no
+  // longer selected can never render, even if it lands after a close or a switch.
+  const [loaded, setLoaded] = useState<{ key: string; detail: ModDetail; versions: ModVersionEntry[] } | null>(null)
+  const [failure, setFailure] = useState<{ key: string; message: string } | null>(null)
   const [tab, setTab] = useState<'about' | 'versions'>('about')
   const [gallery, setGallery] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [broken, setBroken] = useState<Record<string, boolean>>({})
   const [includeOptional, setIncludeOptional] = useState(false)
+
+  const key = detailKey(projectRef, instanceId)
+
+  // Drop view state from the previous project during this render, not one frame
+  // later in an effect (which would briefly paint the old mod's gallery/spinner).
+  const [seen, setSeen] = useState({ key, projectRef })
+  if (seen.key !== key || seen.projectRef !== projectRef) {
+    if (seen.projectRef !== projectRef) setBusy(null)
+    if (seen.key !== key) {
+      setTab('about')
+      setGallery(0)
+      setBroken({})
+      setIncludeOptional(false)
+    }
+    setSeen({ key, projectRef })
+  }
 
   useEffect(() => {
     const handler = (event: KeyboardEvent): void => {
@@ -42,13 +58,9 @@ export function ModDetailModal({
   }, [onClose])
 
   useEffect(() => {
+    const requestKey = detailKey(projectRef, instanceId)
     let cancelled = false
-    setLoading(true)
-    setError('')
-    setDetail(null)
-    setVersions([])
-    setGallery(0)
-    setTab('about')
+    setFailure((previous) => (previous?.key === requestKey ? null : previous))
     void (async () => {
       try {
         const [project, list] = await Promise.all([
@@ -56,18 +68,24 @@ export function ModDetailModal({
           api.modVersions(projectRef, instanceId).catch(() => [])
         ])
         if (cancelled) return
-        setDetail(project)
-        setVersions(list)
+        setLoaded({ key: requestKey, detail: project, versions: list })
+        setFailure((previous) => (previous?.key === requestKey ? null : previous))
       } catch (err) {
-        if (!cancelled) setError(errorMessage(err))
-      } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) setFailure({ key: requestKey, message: errorMessage(err) })
       }
     })()
+    // The preload bridge has no AbortController, so a closed or re-targeted modal
+    // ignores the reply instead of applying it.
     return () => {
       cancelled = true
     }
   }, [api, projectRef, instanceId])
+
+  const entry = loaded?.key === key ? loaded : null
+  const detail = entry?.detail ?? null
+  const versions = entry?.versions ?? []
+  const error = failure?.key === key ? failure.message : ''
+  const loading = !detail && !error
 
   const isPack = detail?.projectType === 'modpack'
   const latest = versions[0]
@@ -377,6 +395,11 @@ function ProjectAvatar({ detail }: { detail: ModDetail }): JSX.Element {
     .toUpperCase()
   if (!detail.iconUrl || failed) return <span className="mod-detail-avatar fallback">{initials}</span>
   return <img className="mod-detail-avatar" src={detail.iconUrl} alt="" onError={() => setFailed(true)} />
+}
+
+/** Identity of one detail request: project plus the instance it is matched against. */
+function detailKey(projectRef: string, instanceId: string | null): string {
+  return `${projectRef}\u0000${instanceId ?? ''}`
 }
 
 function formatDate(value: string): string {

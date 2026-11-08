@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
 
 /**
  * Minimal, dependency-free Markdown renderer. It emits React elements only —
@@ -7,7 +7,18 @@ import type { ReactNode } from 'react'
  * inline bold/italic/code/links/images.
  */
 export function Markdown({ text, onLink }: { text: string; onLink?: (url: string) => void }): JSX.Element {
-  return <div className="markdown">{renderBlocks(text ?? '', onLink)}</div>
+  // Keep the latest handler without making parsed output depend on its identity:
+  // callers pass an inline arrow, which would otherwise re-parse on every parent render.
+  const handler = useRef(onLink)
+  useEffect(() => {
+    handler.current = onLink
+  }, [onLink])
+  const open = useCallback((url: string) => {
+    if (handler.current) handler.current(url)
+    else window.open(url, '_blank', 'noopener,noreferrer')
+  }, [])
+  const content = useMemo(() => renderBlocks(text ?? '', open), [text, open])
+  return <div className="markdown">{content}</div>
 }
 
 const SAFE_LINK = /^https?:\/\//i

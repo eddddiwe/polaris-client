@@ -1,4 +1,4 @@
-import { useState, useEffect, type CSSProperties } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import type { Settings } from '@shared/types'
 import { errorMessage, useApp } from '../context'
 import { Icon, PolarisMark, type IconName } from '../components/Icons'
@@ -44,14 +44,31 @@ export function SettingsPage(): JSX.Element {
     localStorage.setItem('polaris-space-theme', spaceTheme)
   }, [spaceTheme])
 
-  const setSetting = async (patch: Partial<Settings>): Promise<void> => {
+  const setSetting = useCallback(async (patch: Partial<Settings>): Promise<void> => {
     try {
       await api.updateSettings(patch)
       await refresh()
     } catch (error) {
       toast(errorMessage(error), 'error')
     }
-  }
+  }, [api, refresh, toast])
+
+  // One stable handler per boolean setting: rows can bail out of unrelated updates.
+  const toggles = useMemo(
+    () => ({
+      mirrorVanillaCache: (value: boolean) => void setSetting({ mirrorVanillaCache: value }), showSnapshots: (value: boolean) => void setSetting({ showSnapshots: value }),
+      autoUpdateMods: (value: boolean) => void setSetting({ autoUpdateMods: value }), inGameChat: (value: boolean) => void setSetting({ inGameChat: value }),
+      closeLauncherOnPlay: (value: boolean) => void setSetting({ closeLauncherOnPlay: value }), lowerLauncherPriority: (value: boolean) => void setSetting({ lowerLauncherPriority: value }),
+      pauseUiDuringGame: (value: boolean) => void setSetting({ pauseUiDuringGame: value }), wallpaperMotion: (value: boolean) => void setSetting({ wallpaperMotion: value }),
+      reduceMotion: (value: boolean) => void setSetting({ reduceMotion: value })
+    }),
+    [setSetting]
+  )
+
+  const selectTheme = useCallback((id: string): void => {
+    setSpaceTheme(id)
+    void setSetting({ wallpaper: (SPACE_THEME_TO_WALLPAPER[id] ?? 'nebula') as Settings['wallpaper'] })
+  }, [setSetting])
 
   const chooseJava = async (): Promise<void> => {
     setChoosingJava(true)
@@ -288,25 +305,25 @@ export function SettingsPage(): JSX.Element {
               title="Reuse official launcher cache"
               body="Hard-link matching libraries, assets and client jars from the official Minecraft cache. Saves bandwidth and disk."
               checked={boot.settings.mirrorVanillaCache}
-              onChange={(value) => void setSetting({ mirrorVanillaCache: value })}
+              onChange={toggles.mirrorVanillaCache}
             />
             <ToggleRow
               title="Show snapshots"
               body="Include snapshots and release candidates in version pickers."
               checked={boot.settings.showSnapshots}
-              onChange={(value) => void setSetting({ showSnapshots: value })}
+              onChange={toggles.showSnapshots}
             />
             <ToggleRow
               title="Check for mod updates automatically"
               body="Show available Modrinth updates when an instance is opened. Nothing is installed until you confirm."
               checked={boot.settings.autoUpdateMods}
-              onChange={(value) => void setSetting({ autoUpdateMods: value })}
+              onChange={toggles.autoUpdateMods}
             />
             <ToggleRow
               title="In-game chat mod"
               body="Install the bundled Polaris Chat mod in Fabric instances so friend messages appear in Minecraft. Turn off to remove it."
               checked={boot.settings.inGameChat !== false}
-              onChange={(value) => void setSetting({ inGameChat: value })}
+              onChange={toggles.inGameChat}
             />
           </div>
         </section>
@@ -325,19 +342,19 @@ export function SettingsPage(): JSX.Element {
               title="Minimize while playing"
               body="Get the launcher off-screen and restore it when the game exits."
               checked={boot.settings.closeLauncherOnPlay}
-              onChange={(value) => void setSetting({ closeLauncherOnPlay: value })}
+              onChange={toggles.closeLauncherOnPlay}
             />
             <ToggleRow
               title="Lower launcher priority"
               body="Run Polaris below normal priority while Minecraft is active."
               checked={boot.settings.lowerLauncherPriority}
-              onChange={(value) => void setSetting({ lowerLauncherPriority: value })}
+              onChange={toggles.lowerLauncherPriority}
             />
             <ToggleRow
               title="Pause UI during game"
               body="Stop launcher animations and timers while a session is running."
               checked={boot.settings.pauseUiDuringGame}
-              onChange={(value) => void setSetting({ pauseUiDuringGame: value })}
+              onChange={toggles.pauseUiDuringGame}
             />
           </div>
         </section>
@@ -429,23 +446,7 @@ export function SettingsPage(): JSX.Element {
               </div>
             </div>
           </div>
-          <div className="space-theme-grid">
-            {SPACE_THEMES.map((theme) => (
-              <button
-                key={theme.id}
-                className={`space-theme-card ${spaceTheme === theme.id ? 'active' : ''}`}
-                style={{ background: theme.preview, backgroundSize: theme.id === 'scifi' ? '24px 24px, 24px 24px, 100% 100%, 100% 100%' : undefined }}
-                onClick={() => {
-                  setSpaceTheme(theme.id)
-                  void setSetting({ wallpaper: (SPACE_THEME_TO_WALLPAPER[theme.id] ?? 'nebula') as any })
-                }}
-                aria-pressed={spaceTheme === theme.id}
-              >
-                <span className="space-theme-name">{theme.name}</span>
-                {spaceTheme === theme.id && <span className="space-theme-check"><Icon name="check" size={12} /></span>}
-              </button>
-            ))}
-          </div>
+          <ThemeGrid theme={spaceTheme} onSelect={selectTheme} />
 
           <div className="field">
             <label>Accent color</label>
@@ -511,13 +512,13 @@ export function SettingsPage(): JSX.Element {
               title="Animated wallpaper"
               body="Let built-in scenes and video wallpapers move."
               checked={boot.settings.wallpaperMotion}
-              onChange={(value) => void setSetting({ wallpaperMotion: value })}
+              onChange={toggles.wallpaperMotion}
             />
             <ToggleRow
               title="Reduce motion"
               body="Disable ambient rotation, page transitions, hover movement and wallpaper animation."
               checked={boot.settings.reduceMotion}
-              onChange={(value) => void setSetting({ reduceMotion: value })}
+              onChange={toggles.reduceMotion}
             />
           </div>
         </section>
@@ -576,7 +577,24 @@ export function SettingsPage(): JSX.Element {
   )
 }
 
-function ToggleRow({
+const ThemeGrid = memo(({ theme, onSelect }: { theme: string; onSelect: (id: string) => void }) => (
+  <div className="space-theme-grid">
+    {SPACE_THEMES.map((item) => (
+      <button
+        key={item.id}
+        className={`space-theme-card ${theme === item.id ? 'active' : ''}`}
+        style={{ background: item.preview, backgroundSize: item.id === 'scifi' ? '24px 24px, 24px 24px, 100% 100%, 100% 100%' : undefined }}
+        onClick={() => onSelect(item.id)}
+        aria-pressed={theme === item.id}
+      >
+        <span className="space-theme-name">{item.name}</span>
+        {theme === item.id && <span className="space-theme-check"><Icon name="check" size={12} /></span>}
+      </button>
+    ))}
+  </div>
+))
+
+const ToggleRow = memo(function ToggleRow({
   title,
   body,
   checked,
@@ -596,4 +614,4 @@ function ToggleRow({
       <Switch checked={checked} onChange={onChange} label={title} />
     </div>
   )
-}
+})

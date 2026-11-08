@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { errorMessage, useApp } from '../context'
 import { Icon } from '../components/Icons'
 import { Spinner } from '../components/Feedback'
@@ -10,19 +10,26 @@ type Connection = 'connecting' | 'connected' | 'disconnected'
 const MAX_MESSAGE = 800
 // Mirrors the Worker's history page size.
 const HISTORY_PAGE = 40
+const EMPTY_MESSAGES: ChatMessage[] = []
 
 function dayKey(timestamp: number): string {
   const date = new Date(timestamp)
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
 }
 
-function dayLabel(timestamp: number): string {
-  const date = new Date(timestamp)
+// Local-day keys are cheap (no Intl). Resolve them per render so the memo below
+// only rebuilds when the thread changes or the local day rolls over.
+function dayBounds(): { today: string; yesterday: string } {
   const now = new Date()
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
-  if (dayKey(timestamp) === dayKey(now.getTime())) return 'Today'
-  if (dayKey(timestamp) === dayKey(yesterday.getTime())) return 'Yesterday'
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return { today: dayKey(now.getTime()), yesterday: dayKey(yesterday.getTime()) }
+}
+
+function dayLabel(timestamp: number, today: string, yesterday: string): string {
+  const key = dayKey(timestamp)
+  if (key === today) return 'Today'
+  if (key === yesterday) return 'Yesterday'
+  return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 function clock(timestamp: number): string {
@@ -40,6 +47,87 @@ function shortStamp(timestamp: number): string {
   return date.toLocaleDateString(undefined, { year: '2-digit', month: 'short', day: 'numeric' })
 }
 
+type ComposerProps = {
+  friendCode: string
+  friendName: string
+  onSend: (friendCode: string, text: string) => Promise<boolean>
+  onTyping: (friendCode: string) => void
+}
+
+// Keyed by friend code: switching threads remounts the composer, clearing the
+// draft. Draft and sending state stay here so typing never re-renders the thread.
+const ChatComposer = memo(function ChatComposer({
+  friendCode,
+  friendName,
+  onSend,
+  onTyping
+}: ComposerProps): JSX.Element {
+  const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
+  const lastTypingSent = useRef(0)
+
+  const submit = async (): Promise<void> => {
+    const snapshot = draft
+    if (!snapshot.trim() || sending) return
+    setSending(true)
+    try {
+      if (!(await onSend(friendCode, snapshot))) return
+      // Do not erase text typed while the request was in flight.
+      setDraft((current) => (current === snapshot ? '' : current))
+      lastTypingSent.current = 0
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const change = (value: string): void => {
+    setDraft(value.slice(0, MAX_MESSAGE))
+    if (!value.trim()) return
+    const now = Date.now()
+    if (now - lastTypingSent.current < 2500) return
+    lastTypingSent.current = now
+    onTyping(friendCode)
+  }
+
+  return (
+    <>
+      <div className="chat-composer">
+        <textarea
+          value={draft}
+          onChange={(event) => change(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter during IME composition belongs to the input method.
+            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault()
+              void submit()
+            }
+          }}
+          placeholder={`Message ${friendName}`}
+          aria-label={`Message ${friendName}`}
+          rows={1}
+          maxLength={MAX_MESSAGE}
+        />
+        <button
+          className="btn btn-primary chat-send"
+          onClick={() => void submit()}
+          disabled={sending || !draft.trim()}
+          aria-label="Send message"
+        >
+          {sending ? <span className="spinner spinner-sm" /> : <Icon name="arrowUp" size={16} />}
+        </button>
+      </div>
+      <div className="chat-composer-hint">
+        <span>Enter to send · Shift + Enter for a new line</span>
+        {draft.length > MAX_MESSAGE - 120 && (
+          <span>
+            {draft.length}/{MAX_MESSAGE}
+          </span>
+        )}
+      </div>
+    </>
+  )
+})
+
 export function ChatPage(): JSX.Element {
   const { api, boot, toast, openAccount, navigate } = useApp()
   const [friends, setFriends] = useState<Friend[]>([])
@@ -50,8 +138,6 @@ export function ChatPage(): JSX.Element {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [connection, setConnection] = useState<Connection>('disconnected')
-  const [draft, setDraft] = useState('')
-  const [sending, setSending] = useState(false)
   const [typing, setTyping] = useState<{ from: string; name: string } | null>(null)
   const [filter, setFilter] = useState('')
 
@@ -61,7 +147,6 @@ export function ChatPage(): JSX.Element {
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const stickRef = useRef(true)
   const typingTimer = useRef<number | null>(null)
-  const lastTypingSent = useRef(0)
   const historySeq = useRef(0)
   const accountRef = useRef<string | null>(null)
 
@@ -74,7 +159,7 @@ export function ChatPage(): JSX.Element {
   }, [friends])
 
   const selectedFriend = selected ? friendByCode.get(selected) : undefined
-  const messages = selected ? (threads[selected] ?? []) : []
+  const messages = selected ? (threads[selected] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES
 
   const appendMessage = useCallback((message: ChatMessage, mine: boolean) => {
     // The sender's own socket echoes their message back, so the id check has
@@ -90,6 +175,28 @@ export function ChatPage(): JSX.Element {
       setUnread((current) => ({ ...current, [peer]: (current[peer] ?? 0) + 1 }))
     }
   }, [])
+
+  const sendMessage = useCallback(
+    async (friendCode: string, snapshot: string): Promise<boolean> => {
+      try {
+        const message = await api.chatSend(friendCode, snapshot.trim())
+        stickRef.current = true
+        appendMessage(message, true)
+        return true
+      } catch (error) {
+        toast(errorMessage(error), 'error')
+        return false
+      }
+    },
+    [api, toast, appendMessage]
+  )
+
+  const notifyTyping = useCallback(
+    (friendCode: string): void => {
+      void api.chatTyping(friendCode)
+    },
+    [api]
+  )
 
   const loadHistory = useCallback(
     async (friendCode: string, force = false): Promise<void> => {
@@ -201,9 +308,7 @@ export function ChatPage(): JSX.Element {
     })
     setTyping(null)
     setHistoryError(null)
-    // Never carry a half-written message into another friend's thread.
-    setDraft('')
-    lastTypingSent.current = 0
+    // The keyed composer remounts, so a half-written draft is never carried over.
     stickRef.current = true
     void loadHistory(friendCode)
   }
@@ -223,35 +328,24 @@ export function ChatPage(): JSX.Element {
     stickRef.current = distance < 90
   }
 
-  const send = async (): Promise<void> => {
-    const friendCode = selectedRef.current
-    const snapshot = draft
-    const text = snapshot.trim()
-    if (!friendCode || !text || sending) return
-    setSending(true)
-    try {
-      const message = await api.chatSend(friendCode, text)
-      // Do not erase text typed while the request was in flight.
-      setDraft((current) => (current === snapshot ? '' : current))
-      lastTypingSent.current = 0
-      stickRef.current = true
-      appendMessage(message, true)
-    } catch (error) {
-      toast(errorMessage(error), 'error')
-    } finally {
-      setSending(false)
-    }
-  }
-
-  const onDraftChange = (value: string): void => {
-    setDraft(value.slice(0, MAX_MESSAGE))
-    const friendCode = selectedRef.current
-    if (!friendCode || !value.trim()) return
-    const now = Date.now()
-    if (now - lastTypingSent.current < 2500) return
-    lastTypingSent.current = now
-    void api.chatTyping(friendCode)
-  }
+  // Bubbles are static once rendered; memoize the formatted model so typing,
+  // reconnect and unread updates elsewhere on the page do not rebuild the
+  // thread. Formatting (Date + Intl) happens only when the thread or day moves.
+  const { today: todayKey, yesterday: yesterdayKey } = dayBounds()
+  const renderedMessages = useMemo(() => {
+    let previousDay: string | null = null
+    return messages.map((message) => {
+      const key = dayKey(message.createdAt)
+      const newDay = key !== previousDay
+      previousDay = key
+      return {
+        message,
+        mine: message.from === myCode,
+        day: newDay ? dayLabel(message.createdAt, todayKey, yesterdayKey) : null,
+        time: clock(message.createdAt)
+      }
+    })
+  }, [messages, myCode, todayKey, yesterdayKey])
 
   const orderedFriends = useMemo(() => {
     const lastAt = (code: string): number => {
@@ -455,22 +549,17 @@ export function ChatPage(): JSX.Element {
                       No messages yet. Say hello to {selectedFriend.name}.
                     </p>
                   ) : (
-                    messages.map((message, index) => {
-                      const mine = message.from === myCode
-                      const previous = messages[index - 1]
-                      const newDay = !previous || dayKey(previous.createdAt) !== dayKey(message.createdAt)
-                      return (
-                        <div key={message.id}>
-                          {newDay && <div className="chat-day">{dayLabel(message.createdAt)}</div>}
-                          <div className={`chat-bubble-row${mine ? ' mine' : ''}`}>
-                            <div className={`chat-bubble${mine ? ' mine' : ''}`}>
-                              <span className="chat-bubble-text">{message.text}</span>
-                              <span className="chat-bubble-time">{clock(message.createdAt)}</span>
-                            </div>
+                    renderedMessages.map(({ message, mine, day, time }) => (
+                      <div key={message.id}>
+                        {day && <div className="chat-day">{day}</div>}
+                        <div className={`chat-bubble-row${mine ? ' mine' : ''}`}>
+                          <div className={`chat-bubble${mine ? ' mine' : ''}`}>
+                            <span className="chat-bubble-text">{message.text}</span>
+                            <span className="chat-bubble-time">{time}</span>
                           </div>
                         </div>
-                      )
-                    })
+                      </div>
+                    ))
                   )}
                   {typingInThread && (
                     <div className="chat-typing" aria-live="polite">
@@ -484,39 +573,13 @@ export function ChatPage(): JSX.Element {
                   )}
                 </div>
 
-                <div className="chat-composer">
-                  <textarea
-                    value={draft}
-                    onChange={(event) => onDraftChange(event.target.value)}
-                    onKeyDown={(event) => {
-                      // Enter during IME composition belongs to the input method.
-                      if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                        event.preventDefault()
-                        void send()
-                      }
-                    }}
-                    placeholder={`Message ${selectedFriend.name}`}
-                    aria-label={`Message ${selectedFriend.name}`}
-                    rows={1}
-                    maxLength={MAX_MESSAGE}
-                  />
-                  <button
-                    className="btn btn-primary chat-send"
-                    onClick={() => void send()}
-                    disabled={sending || !draft.trim()}
-                    aria-label="Send message"
-                  >
-                    {sending ? <span className="spinner spinner-sm" /> : <Icon name="arrowUp" size={16} />}
-                  </button>
-                </div>
-                <div className="chat-composer-hint">
-                  <span>Enter to send · Shift + Enter for a new line</span>
-                  {draft.length > MAX_MESSAGE - 120 && (
-                    <span>
-                      {draft.length}/{MAX_MESSAGE}
-                    </span>
-                  )}
-                </div>
+                <ChatComposer
+                  key={selectedFriend.code}
+                  friendCode={selectedFriend.code}
+                  friendName={selectedFriend.name}
+                  onSend={sendMessage}
+                  onTyping={notifyTyping}
+                />
               </>
             )}
           </section>

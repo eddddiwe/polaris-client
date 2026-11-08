@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { memo, useCallback, useEffect, useState, type CSSProperties } from 'react'
 import type { CosmeticItem, CosmeticSnapshot } from '@shared/types'
 import { errorMessage, formatPlaytime, useApp } from '../context'
 import { Icon } from '../components/Icons'
@@ -8,12 +8,106 @@ import { Spinner } from '../components/Feedback'
 
 type Filter = 'all' | 'badge' | 'cape'
 
+/** Memoized row: only rows whose owned/equipped/affordability state changed re-render after an action. */
+const CosmeticCard = memo(function CosmeticCard({
+  item,
+  owned,
+  equipped,
+  affordable,
+  hint,
+  busy,
+  disabled,
+  onEquip,
+  onUnlock
+}: {
+  item: CosmeticItem
+  owned: boolean
+  equipped: boolean
+  affordable: boolean
+  hint?: string
+  busy: boolean
+  disabled: boolean
+  onEquip: (item: CosmeticItem) => void
+  onUnlock: (item: CosmeticItem) => void
+}): JSX.Element {
+  const style = { '--c1': item.colors[0], '--c2': item.colors[1] } as CSSProperties
+  return (
+    <article className={`cosmetic-card rarity-${item.rarity} ${equipped ? 'equipped' : ''}`} style={style}>
+      <div className={`cosmetic-art ${item.kind === 'cape' ? 'cape' : 'badge'}`}>
+        <span className="cosmetic-glow" />
+        {item.kind === 'badge' ? <CosmeticBadge id={item.id} size={68} /> : <CapeArt item={item} />}
+      </div>
+      <div className="cosmetic-copy">
+        <div className="cosmetic-title-row">
+          <strong>{item.name}</strong>
+          <span className={`rarity rarity-${item.rarity}`}>{item.rarity}</span>
+        </div>
+        <p>{item.tagline}</p>
+        <div className="cosmetic-footer">
+          <span className="cosmetic-kind">
+            <Icon name={item.kind === 'badge' ? 'star' : 'shield'} size={12} />
+            {item.kind === 'badge' ? 'Profile badge' : 'Cape'}
+          </span>
+          {owned ? (
+            equipped ? (
+              <span className="cosmetic-equipped">
+                <Icon name="check" size={13} /> Equipped
+              </span>
+            ) : (
+              <button className="btn btn-soft btn-sm" disabled={disabled || busy} onClick={() => void onEquip(item)}>
+                {busy ? <span className="spinner spinner-sm" /> : 'Equip'}
+              </button>
+            )
+          ) : (
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={disabled || busy || !affordable}
+              title={hint}
+              onClick={() => void onUnlock(item)}
+            >
+              {busy ? (
+                <span className="spinner spinner-sm" />
+              ) : (
+                <>
+                  <Icon name="gem" size={13} /> {item.price}
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+    </article>
+  )
+})
+
+/** Claim spinner state stays local to the preview; the catalog grid is untouched. */
+const ClaimButton = memo(function ClaimButton({
+  claimable,
+  disabled,
+  onClaim
+}: {
+  claimable: number
+  disabled: boolean
+  onClaim: () => Promise<void>
+}): JSX.Element {
+  const [claiming, setClaiming] = useState(false)
+  const claim = async (): Promise<void> => {
+    setClaiming(true)
+    await onClaim().finally(() => setClaiming(false))
+  }
+  return (
+    <button className="btn btn-primary btn-sm" onClick={() => void claim()} disabled={disabled || claiming || claimable <= 0}>
+      {claiming ? <span className="spinner spinner-sm" /> : <Icon name="gem" size={14} />}
+      {claimable > 0 ? `Claim ${claimable} shards` : 'No shards to claim'}
+    </button>
+  )
+})
+
 export function StorePage(): JSX.Element {
   const { api, boot, refresh, toast, openAccount } = useApp()
   const [snapshot, setSnapshot] = useState<CosmeticSnapshot | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
   const [busy, setBusy] = useState<string | null>(null)
-  const [claiming, setClaiming] = useState(false)
   const active = boot.accounts.find((account) => account.id === boot.activeAccountId)
 
   useEffect(() => {
@@ -40,36 +134,41 @@ export function StorePage(): JSX.Element {
     })
   }, [api, toast])
 
-  const unlock = async (item: CosmeticItem): Promise<void> => {
-    setBusy(item.id)
-    try {
-      const next = await api.buyCosmetic(item.id)
-      setSnapshot(next)
-      await refresh()
-      toast(`${item.name} unlocked`, 'success')
-    } catch (error) {
-      toast(errorMessage(error), 'error')
-    } finally {
-      setBusy(null)
-    }
-  }
+  const unlock = useCallback(
+    async (item: CosmeticItem): Promise<void> => {
+      setBusy(item.id)
+      try {
+        const next = await api.buyCosmetic(item.id)
+        setSnapshot(next)
+        await refresh()
+        toast(`${item.name} unlocked`, 'success')
+      } catch (error) {
+        toast(errorMessage(error), 'error')
+      } finally {
+        setBusy(null)
+      }
+    },
+    [api, refresh, toast]
+  )
 
-  const equip = async (item: CosmeticItem): Promise<void> => {
-    setBusy(item.id)
-    try {
-      const next = await api.equipCosmetic(item.id)
-      setSnapshot(next)
-      await refresh()
-      toast(`${item.name} equipped`, 'success')
-    } catch (error) {
-      toast(errorMessage(error), 'error')
-    } finally {
-      setBusy(null)
-    }
-  }
+  const equip = useCallback(
+    async (item: CosmeticItem): Promise<void> => {
+      setBusy(item.id)
+      try {
+        const next = await api.equipCosmetic(item.id)
+        setSnapshot(next)
+        await refresh()
+        toast(`${item.name} equipped`, 'success')
+      } catch (error) {
+        toast(errorMessage(error), 'error')
+      } finally {
+        setBusy(null)
+      }
+    },
+    [api, refresh, toast]
+  )
 
-  const claim = async (): Promise<void> => {
-    setClaiming(true)
+  const claim = useCallback(async (): Promise<void> => {
     try {
       const result = await api.claimShards()
       setSnapshot(result.snapshot)
@@ -80,10 +179,8 @@ export function StorePage(): JSX.Element {
       )
     } catch (error) {
       toast(errorMessage(error), 'error')
-    } finally {
-      setClaiming(false)
     }
-  }
+  }, [api, refresh, toast])
 
   if (!snapshot) {
     return (
@@ -151,10 +248,7 @@ export function StorePage(): JSX.Element {
               <strong>{equippedCape?.name ?? 'Midnight'}</strong>
             </div>
           </div>
-          <button className="btn btn-primary btn-sm" onClick={() => void claim()} disabled={claiming || snapshot.claimable <= 0}>
-            {claiming ? <span className="spinner spinner-sm" /> : <Icon name="gem" size={14} />}
-            {snapshot.claimable > 0 ? `Claim ${snapshot.claimable} shards` : 'No shards to claim'}
-          </button>
+          <ClaimButton claimable={snapshot.claimable} disabled={busy !== null} onClaim={claim} />
         </div>
         <div className="store-earn">
           <span>
@@ -185,63 +279,24 @@ export function StorePage(): JSX.Element {
         <span className="panel-hint">Unlocks are stored locally · no real-money purchases</span>
       </div>
 
-            <div className="cosmetic-grid">
+      <div className="cosmetic-grid" aria-busy={busy !== null}>
         {items.map((item) => {
-          const owned = snapshot.owned.includes(item.id)
-          const equipped =
-            item.kind === 'badge' ? snapshot.equippedBadge === item.id : snapshot.equippedCape === item.id
           const affordable = snapshot.shards >= item.price
-          const style = { '--c1': item.colors[0], '--c2': item.colors[1] } as CSSProperties
           return (
-            <article key={item.id} className={`cosmetic-card rarity-${item.rarity} ${equipped ? 'equipped' : ''}`} style={style}>
-              <div className={`cosmetic-art ${item.kind === 'cape' ? 'cape' : 'badge'}`}>
-                <span className="cosmetic-glow" />
-                {item.kind === 'badge' ? (
-                  <CosmeticBadge id={item.id} size={68} />
-                ) : (
-                  <CapeArt item={item} />
-                )}
-              </div>
-              <div className="cosmetic-copy">
-                <div className="cosmetic-title-row">
-                  <strong>{item.name}</strong>
-                  <span className={`rarity rarity-${item.rarity}`}>{item.rarity}</span>
-                </div>
-                <p>{item.tagline}</p>
-                <div className="cosmetic-footer">
-                  <span className="cosmetic-kind">
-                    <Icon name={item.kind === 'badge' ? 'star' : 'shield'} size={12} />
-                    {item.kind === 'badge' ? 'Profile badge' : 'Cape'}
-                  </span>
-                  {owned ? (
-                    equipped ? (
-                      <span className="cosmetic-equipped">
-                        <Icon name="check" size={13} /> Equipped
-                      </span>
-                    ) : (
-                      <button className="btn btn-soft btn-sm" disabled={busy !== null} onClick={() => void equip(item)}>
-                        {busy === item.id ? <span className="spinner spinner-sm" /> : 'Equip'}
-                      </button>
-                    )
-                  ) : (
-                    <button
-                      className="btn btn-primary btn-sm"
-                      disabled={busy !== null || !affordable}
-                      title={affordable ? undefined : `Earn ${item.price - snapshot.shards} more shards by playing`}
-                      onClick={() => void unlock(item)}
-                    >
-                      {busy === item.id ? (
-                        <span className="spinner spinner-sm" />
-                      ) : (
-                        <>
-                          <Icon name="gem" size={13} /> {item.price}
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </article>
+            <CosmeticCard
+              key={item.id}
+              item={item}
+              owned={snapshot.owned.includes(item.id)}
+              equipped={
+                item.kind === 'badge' ? snapshot.equippedBadge === item.id : snapshot.equippedCape === item.id
+              }
+              affordable={affordable}
+              hint={affordable ? undefined : `Earn ${item.price - snapshot.shards} more shards by playing`}
+              busy={busy === item.id}
+              disabled={busy !== null}
+              onEquip={equip}
+              onUnlock={unlock}
+            />
           )
         })}
       </div>

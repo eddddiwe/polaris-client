@@ -1,11 +1,26 @@
-import type { CSSProperties } from 'react'
+import { useCallback, useMemo, type ChangeEvent, type CSSProperties, type MouseEvent } from 'react'
 import { packsFor } from '@shared/packs'
 import { formatPlaytime, formatRelative, useApp } from '../context'
 import { Icon, PolarisMark } from '../components/Icons'
 import { CosmeticBadge } from '../components/Cosmetics'
 import { EmptyState } from '../components/Feedback'
 
+// Constructing an Intl.DateTimeFormat is much pricier than using one, so build
+// it once at module scope.
+const DAY_FORMAT = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 
+// Static marketing chips: hoisted so a progress tick does not re-allocate them.
+const SERVER_CHIPS = [
+  ['Fabric API', 'chip-violet'],
+  ['Lithium', 'chip-cyan'],
+  ['Krypton', 'chip-pink']
+]
+
+const CLIENT_CHIPS = [
+  ['Sodium', 'chip-violet'],
+  ['Lithium', 'chip-cyan'],
+  ['FerriteCore', 'chip-pink']
+]
 
 export function HomePage(): JSX.Element {
   const {
@@ -27,15 +42,51 @@ export function HomePage(): JSX.Element {
 
   const active = activeInstance
   const isServer = active?.kind === 'server'
-  const profile = active?.perfProfile ?? 'balanced'
   const mods = detail?.mods.length ?? active?.modCount ?? 0
   const account = boot.accounts.find((item) => item.id === boot.activeAccountId)
-  const stackPacks = packsFor(active?.kind)
-  const serverChips = [
-    ['Fabric API', 'chip-violet'],
-    ['Lithium', 'chip-cyan'],
-    ['Krypton', 'chip-pink']
-  ]
+
+  // App rebuilds its context value on every progress tick, so this page renders
+  // several times a second while a download runs. The memoized values below are
+  // the ones that were actually expensive to recompute on each of those ticks.
+  const today = new Date()
+  const dayKey = today.toDateString()
+  const dateLabel = useMemo(() => DAY_FORMAT.format(today), [dayKey])
+
+  // Installed counts drive the pack cards. A slug set per pack makes this
+  // O(installed mods) instead of O(mods x pack mods) per render.
+  const packRows = useMemo(
+    () =>
+      packsFor(active?.kind).map((pack) => {
+        const slugs = new Set(pack.mods.map((entry) => entry.slug))
+        return {
+          pack,
+          installed: detail ? detail.mods.filter((mod) => slugs.has(mod.slug)).length : 0,
+          enabled: active?.packs.includes(pack.id) ?? false
+        }
+      }),
+    [active, detail]
+  )
+
+  // Stable handlers: cards and rows no longer allocate a fresh closure on every
+  // tick, so memoized children (or future ones) are not invalidated needlessly.
+  const openBuild = useCallback(() => {
+    if (active) navigate('instance', active.id)
+  }, [active, navigate])
+  const toggleRun = useCallback(() => {
+    void (gameRunning ? stop() : launch())
+  }, [gameRunning, launch, stop])
+  const selectActive = useCallback(
+    (event: ChangeEvent<HTMLSelectElement>) => selectInstance(event.target.value),
+    [selectInstance]
+  )
+  const playFromList = useCallback(
+    (event: MouseEvent<HTMLButtonElement>, id: string) => {
+      event.stopPropagation()
+      selectInstance(id)
+      void launch(id)
+    },
+    [launch, selectInstance]
+  )
 
   if (instances.length === 0) {
     return (
@@ -71,9 +122,7 @@ export function HomePage(): JSX.Element {
             {account && <CosmeticBadge id={boot.settings.equippedBadge} size={15} />}
           </b>
         </span>
-        <span className="home-date">
-          {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-        </span>
+        <span className="home-date">{dateLabel}</span>
       </div>
 
       {!account && (
@@ -110,7 +159,7 @@ export function HomePage(): JSX.Element {
               <span className="instance-select-mark" style={{ background: active?.accent }}>
                 {active?.name.slice(0, 1).toUpperCase()}
               </span>
-              <select value={activeInstanceId ?? ''} onChange={(event) => selectInstance(event.target.value)}>
+              <select value={activeInstanceId ?? ''} onChange={selectActive}>
                 {instances.map((instance) => (
                   <option key={instance.id} value={instance.id}>
                     {instance.name} · {instance.mcVersion} · {instance.loader === 'fabric' ? 'Fabric' : 'Vanilla'}
@@ -121,7 +170,7 @@ export function HomePage(): JSX.Element {
             </div>
             <button
               className={`btn btn-play ${gameRunning ? 'btn-stop' : ''}`}
-              onClick={() => (gameRunning ? void stop() : void launch())}
+              onClick={toggleRun}
               disabled={launchState.status === 'preparing'}
             >
               {launchState.status === 'preparing' ? (
@@ -139,7 +188,7 @@ export function HomePage(): JSX.Element {
                     ? 'Start server'
                     : 'Play'}
             </button>
-            <button className="btn btn-ghost" onClick={() => active && navigate('instance', active.id)}>
+            <button className="btn btn-ghost" onClick={openBuild}>
               Manage build
             </button>
           </div>
@@ -170,14 +219,7 @@ export function HomePage(): JSX.Element {
 
           </div>
           <div className="hero-chips">
-            {(isServer
-              ? serverChips
-              : [
-                  ['Sodium', 'chip-violet'],
-                  ['Lithium', 'chip-cyan'],
-                  ['FerriteCore', 'chip-pink']
-                ]
-            ).map(([name, color]) => (
+            {(isServer ? SERVER_CHIPS : CLIENT_CHIPS).map(([name, color]) => (
               <span key={name} className={`chip ${color}`}>
                 {name}
               </span>
@@ -228,20 +270,18 @@ export function HomePage(): JSX.Element {
             <span className="eyebrow">{isServer ? 'Server stack' : 'Client stack'}</span>
             <h2>Packs on this instance</h2>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={() => active && navigate('instance', active.id)}>
+          <button className="btn btn-ghost btn-sm" onClick={openBuild}>
             Open build <Icon name="chevron" size={14} />
           </button>
         </div>
         <div className="pack-grid">
-          {stackPacks.map((pack) => {
-            const installed = detail?.mods.filter((mod) => pack.mods.some((entry) => entry.slug === mod.slug)).length ?? 0
-            const enabled = active?.packs.includes(pack.id)
+          {packRows.map(({ pack, installed, enabled }) => {
             return (
               <button
                 key={pack.id}
                 className={`pack-card ${enabled ? 'enabled' : ''}`}
                 style={{ '--pack': pack.color } as CSSProperties}
-                onClick={() => active && navigate('instance', active.id)}
+                onClick={openBuild}
               >
                 <div className="pack-card-top">
                   <span className="pack-mark">
@@ -304,11 +344,7 @@ export function HomePage(): JSX.Element {
               <button
                 className="icon-btn play-mini"
                 aria-label={`${instance.kind === 'server' ? 'Start' : 'Play'} ${instance.name}`}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  selectInstance(instance.id)
-                  void launch(instance.id)
-                }}
+                onClick={(event) => playFromList(event, instance.id)}
               >
                 <Icon name={instance.kind === 'server' ? 'server' : 'play'} size={13} />
               </button>

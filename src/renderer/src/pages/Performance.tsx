@@ -1,8 +1,22 @@
-import { useEffect, useState, type CSSProperties } from 'react'
-import type { PerfPlan, PerfProfileId } from '@shared/types'
+import { memo, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import type { HardwareInfo, PerfPlan, PerfProfileId } from '@shared/types'
 import { errorMessage, useApp } from '../context'
 import { Icon } from '../components/Icons'
 import { EmptyState, Spinner, Switch } from '../components/Feedback'
+
+const PLAN_DEBOUNCE_MS = 120
+const TIERS = [
+  ['entry', 'Low tier', '4–8 GB · integrated or older GPU'],
+  ['mainstream', 'Mid tier', '8–16 GB · mainstream GPU'],
+  ['high', 'High tier', '16–24 GB · RTX 30 / RX 6000'],
+  ['enthusiast', 'Enthusiast', '24 GB+ · RTX 40/50 · RX 7000+']
+] as const
+
+const PROFILES = [
+  ['competitive', 'Competitive', 'Lowest input latency', 'Frames over fidelity: fog-free distance, minimal particles, no shadows.', 'zap'],
+  ['balanced', 'Balanced', 'Recommended', 'A stable high frame rate with vanilla visuals intact.', 'sliders'],
+  ['quality', 'Quality', 'Visual fidelity', 'More distance, shadows and particles. Shaders cost extra.', 'sparkles']
+] as const
 
 export function PerformancePage(): JSX.Element {
   const { detail, activeInstance, boot, hardware, api, refresh, reloadDetail, toast, gameRunning, openNewInstance, navigate } = useApp()
@@ -22,16 +36,32 @@ export function PerformancePage(): JSX.Element {
   useEffect(() => {
     if (!instance) return
     let cancelled = false
-    api
-      .planPerformance(instance.id, profile, memory)
-      .then((value) => {
-        if (!cancelled) setPlan(value)
-      })
-      .catch(() => undefined)
+    // Debounce so dragging the heap slider doesn't fire one IPC plan per step.
+    const timer = window.setTimeout(() => {
+      api
+        .planPerformance(instance.id, profile, memory)
+        .then((value) => {
+          if (!cancelled) setPlan(value)
+        })
+        .catch(() => undefined)
+    }, PLAN_DEBOUNCE_MS)
     return () => {
       cancelled = true
+      window.clearTimeout(timer)
     }
   }, [api, instance?.id, profile, memory])
+
+  const score = plan?.score ?? 0
+  const maxMemory = useMemo(() => Math.min(16384, Math.max(4096, Math.round((hardware.ramGb * 1024) / 2))), [hardware.ramGb])
+  const memoryGb = useMemo(() => Math.round(memory / 1024), [memory])
+  const jvmPreview = useMemo(() => (plan?.jvmArgs ?? []).join('\n') || 'Calculating…', [plan])
+  const planRows = useMemo(
+    () =>
+      plan
+        ? Object.entries(plan.options).map(([key, value]) => ({ key, label: optionLabel(key), value: optionValue(key, value) }))
+        : [],
+    [plan]
+  )
 
   const apply = async (): Promise<void> => {
     if (!instance) return
@@ -93,8 +123,6 @@ export function PerformancePage(): JSX.Element {
     )
   }
 
-  const score = plan?.score ?? 0
-
   return (
     <div className="perf-page">
       <div className="page-head">
@@ -110,23 +138,7 @@ export function PerformancePage(): JSX.Element {
         </button>
       </div>
 
-      <div className="tier-rail">
-        {(
-          [
-            ['entry', 'Low tier', '4–8 GB · integrated or older GPU'],
-            ['mainstream', 'Mid tier', '8–16 GB · mainstream GPU'],
-            ['high', 'High tier', '16–24 GB · RTX 30 / RX 6000'],
-            ['enthusiast', 'Enthusiast', '24 GB+ · RTX 40/50 · RX 7000+']
-          ] as const
-        ).map(([id, label, detail]) => (
-          <div key={id} className={`tier-cell ${hardware.tier === id ? 'active' : ''}`}>
-            <span className="tier-dot" />
-            <strong>{label}</strong>
-            <small>{detail}</small>
-            {hardware.tier === id && <em>This machine</em>}
-          </div>
-        ))}
-      </div>
+      <TierRail tier={hardware.tier} />
 
       <div className="hw-grid">
         <div className="hw-card">
@@ -175,34 +187,17 @@ export function PerformancePage(): JSX.Element {
               </div>
               <span className="panel-hint">Applies options.txt + JVM flags</span>
             </div>
-            <div className="profile-grid">
-              {(
-                [
-                  ['competitive', 'Competitive', 'Lowest input latency', 'Frames over fidelity: fog-free distance, minimal particles, no shadows.', 'zap'],
-                  ['balanced', 'Balanced', 'Recommended', 'A stable high frame rate with vanilla visuals intact.', 'sliders'],
-                  ['quality', 'Quality', 'Visual fidelity', 'More distance, shadows and particles. Shaders cost extra.', 'sparkles']
-                ] as const
-              ).map(([id, title, sub, body, icon]) => (
-                <button key={id} className={`profile-card tall ${profile === id ? 'active' : ''}`} onClick={() => setProfile(id)}>
-                  <span className="profile-icon">
-                    <Icon name={icon} size={18} />
-                  </span>
-                  <strong>{title}</strong>
-                  <span className="profile-sub">{sub}</span>
-                  <p>{body}</p>
-                </button>
-              ))}
-            </div>
+            <ProfileGrid profile={profile} onSelect={setProfile} />
 
             <div className="field">
               <label className="label-row">
                 <span>Heap allocation</span>
-                <b>{Math.round(memory / 1024)} GB</b>
+                <b>{memoryGb} GB</b>
               </label>
               <input
                 type="range"
                 min={2048}
-                max={Math.min(16384, Math.max(4096, Math.round((hardware.ramGb * 1024) / 2)))}
+                max={maxMemory}
                 step={512}
                 value={memory}
                 onChange={(event) => setMemory(Number(event.target.value))}
@@ -283,7 +278,7 @@ export function PerformancePage(): JSX.Element {
                 <h2>JVM flags</h2>
               </div>
             </div>
-            <pre className="jvm-preview">{(plan?.jvmArgs ?? []).join('\n') || 'Calculating…'}</pre>
+            <pre className="jvm-preview">{jvmPreview}</pre>
           </section>
 
           <section className="panel">
@@ -295,10 +290,10 @@ export function PerformancePage(): JSX.Element {
             </div>
             {plan ? (
               <div className="plan-options">
-                {Object.entries(plan.options).map(([key, value]) => (
-                  <div key={key} className="plan-option">
-                    <span>{optionLabel(key)}</span>
-                    <b>{optionValue(key, value)}</b>
+                {planRows.map((row) => (
+                  <div key={row.key} className="plan-option">
+                    <span>{row.label}</span>
+                    <b>{row.value}</b>
                   </div>
                 ))}
               </div>
@@ -321,6 +316,38 @@ export function PerformancePage(): JSX.Element {
     </div>
   )
 }
+
+const TierRail = memo(function TierRail({ tier }: { tier: HardwareInfo['tier'] }): JSX.Element {
+  return (
+    <div className="tier-rail">
+      {TIERS.map(([id, label, detail]) => (
+        <div key={id} className={`tier-cell ${tier === id ? 'active' : ''}`}>
+          <span className="tier-dot" />
+          <strong>{label}</strong>
+          <small>{detail}</small>
+          {tier === id && <em>This machine</em>}
+        </div>
+      ))}
+    </div>
+  )
+})
+
+const ProfileGrid = memo(function ProfileGrid({ profile, onSelect }: { profile: PerfProfileId; onSelect: (id: PerfProfileId) => void }): JSX.Element {
+  return (
+    <div className="profile-grid">
+      {PROFILES.map(([id, title, sub, body, icon]) => (
+        <button key={id} className={`profile-card tall ${profile === id ? 'active' : ''}`} onClick={() => onSelect(id)}>
+          <span className="profile-icon">
+            <Icon name={icon} size={18} />
+          </span>
+          <strong>{title}</strong>
+          <span className="profile-sub">{sub}</span>
+          <p>{body}</p>
+        </button>
+      ))}
+    </div>
+  )
+})
 
 function ToggleRow({
   title,

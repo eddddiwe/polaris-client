@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import type { DeviceCodeInfo, InstanceKind, LoaderType, PerfProfileId, VersionSummary } from '@shared/types'
 import { errorMessage, useApp, type ConfirmOptions } from '../context'
 import { Icon } from './Icons'
@@ -64,6 +64,18 @@ export function NewInstanceModal({
       .catch((err) => setError(errorMessage(err)))
   }, [api, settings.showSnapshots])
 
+  // The version list can hold hundreds of entries; keep it stable while the
+  // user edits unrelated fields (name, port, memory, packs).
+  const versionOptions = useMemo(
+    () =>
+      versions.map((version) => (
+        <option key={version.id} value={version.id}>
+          {version.id} {version.type !== 'release' ? `(${version.type})` : ''}
+        </option>
+      )),
+    [versions]
+  )
+
   const create = async (): Promise<void> => {
     if (!mcVersion) return
     setBusy(true)
@@ -124,6 +136,7 @@ export function NewInstanceModal({
       eyebrow={kind === 'server' ? 'New dedicated server' : 'New build'}
       onClose={onClose}
       width={680}
+      dismissible={!busy}
     >
       <div className="field">
         <label>Type</label>
@@ -153,11 +166,7 @@ export function NewInstanceModal({
         <div className="field">
           <label htmlFor="mc-version">Minecraft version</label>
           <select id="mc-version" value={mcVersion} onChange={(event) => setMcVersion(event.target.value)}>
-            {versions.map((version) => (
-              <option key={version.id} value={version.id}>
-                {version.id} {version.type !== 'release' ? `(${version.type})` : ''}
-              </option>
-            ))}
+            {versionOptions}
           </select>
         </div>
         <div className="field">

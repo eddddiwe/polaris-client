@@ -1,4 +1,19 @@
-@import url('https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&family=Geist:wght@300;400;500;600;700;800;900&family=Geist+Mono:wght@400;500;600&display=swap');
+/* Web fonts are linked from index.html (preconnect + stylesheet) instead of
+   @import here, so the font CSS is discovered by the preload scanner and does
+   not have to wait for this stylesheet. */
+
+/* Metric-matched fallback: keeps the pre-swap frame the same size as Geist.
+   Geist 400 metrics: upm 1000, ascent 1005, descent 295, line gap 0.
+   size-adjust is tuned to the average advance width of Geist vs Segoe UI
+   over the app's own UI strings (measured ratio 1.066). */
+@font-face {
+  font-family: 'Geist Fallback';
+  src: local('Segoe UI');
+  size-adjust: 106.5%;
+  ascent-override: 94.37%;
+  descent-override: 27.7%;
+  line-gap-override: 0%;
+}
 
 :root {
   color-scheme: dark;
@@ -25,7 +40,7 @@
   --cosmic-blue: #3b82f6;
   --radius: 12px;
   --radius-sm: 8px;
-  --font: 'Geist', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font: 'Geist', 'Geist Fallback', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-pixel: 'Pixelify Sans', 'Geist', monospace;
   --mono: 'Geist Mono', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
   --shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
@@ -3796,11 +3811,27 @@ input[type='range'] {
   }
 }
 
+/* Park the always-on cosmic backdrop whenever the launcher is meant to be
+   idle: while a game runs and while the window is hidden/occluded. */
 body[data-game-running='true'] .orbit-ring,
 body[data-game-running='true'] .orbit-core,
 body[data-game-running='true'] .splash-pulse,
-body[data-game-running='true'] .status-dot-live {
-  animation-play-state: paused;
+body[data-game-running='true'] .status-dot-live,
+body[data-game-running='true'] .star-field,
+body[data-game-running='true'] .shooting-star-2,
+body[data-game-running='true'] .polaris-star::before,
+body[data-game-running='true'] .polaris-star::after,
+body[data-game-running='true']::before,
+body[data-game-running='true']::after {
+  animation-play-state: paused !important;
+}
+
+body[data-window-hidden='true'] *,
+body[data-window-hidden='true'] *::before,
+body[data-window-hidden='true'] *::after,
+body[data-window-hidden='true']::before,
+body[data-window-hidden='true']::after {
+  animation-play-state: paused !important;
 }
 
 body[data-reduce-motion='true'] *,
@@ -3810,6 +3841,31 @@ body[data-reduce-motion='true'] *::after {
   animation-iteration-count: 1 !important;
   transition-duration: 0.001ms !important;
   scroll-behavior: auto !important;
+}
+
+/* Hold the decorative backdrop still rather than letting the override above
+   snap it to an animation end frame (which also shifts its hue/brightness). */
+body[data-reduce-motion='true'] .star-field,
+body[data-reduce-motion='true'] .shooting-star-2,
+body[data-reduce-motion='true'] .polaris-star::before,
+body[data-reduce-motion='true'] .polaris-star::after,
+body[data-reduce-motion='true']::before,
+body[data-reduce-motion='true']::after {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .star-field,
+  .shooting-star-2,
+  .polaris-star::before,
+  .polaris-star::after,
+  .wallpaper-art,
+  .wallpaper-art::before,
+  .wallpaper-art::after,
+  body::before,
+  body::after {
+    animation: none !important;
+  }
 }
 
 /* ---------- responsive ---------- */
@@ -5903,13 +5959,13 @@ input:focus, select:focus, textarea:focus {
 
 /* Clean typography */
 h1, h2, h3, .title, .heading {
-  font-family: 'Geist', system-ui, sans-serif;
+  font-family: 'Geist', 'Geist Fallback', system-ui, sans-serif;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 
 .eyebrow {
-  font-family: 'Geist', system-ui, sans-serif;
+  font-family: 'Geist', 'Geist Fallback', system-ui, sans-serif;
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -5922,7 +5978,7 @@ h1, h2, h3, .title, .heading {
   border-radius: 10px;
   border: 1px solid rgba(139, 92, 246, 0.3);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(139, 92, 246, 0.05), 0 0 12px rgba(139, 92, 246, 0.05);
-  font-family: 'Geist', system-ui, sans-serif;
+  font-family: 'Geist', 'Geist Fallback', system-ui, sans-serif;
   font-weight: 500;
   letter-spacing: -0.01em;
   transition: all 0.3s cubic-bezier(0.2, 0.7, 0.3, 1);
@@ -5994,7 +6050,7 @@ input, select, textarea {
   border-radius: 8px;
   border: 1px solid rgba(139, 92, 246, 0.25);
   background: rgba(7, 8, 13, 0.6);
-  font-family: 'Geist', system-ui, sans-serif;
+  font-family: 'Geist', 'Geist Fallback', system-ui, sans-serif;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
@@ -8350,5 +8406,57 @@ input[type='range']:focus-visible::-webkit-slider-thumb {
   .chat-list-time,
   .chat-composer-hint span:first-child {
     display: none;
+  }
+}
+
+/* ---------- reduced motion ---------- */
+
+/*
+  Users who ask the OS for less motion get the same layout and palette with
+  every decorative loop frozen instead of running for the lifetime of the
+  window. This also stops the permanent background compositing: the
+  full-screen hue-rotate/brightness filter on body::before, the starfield
+  twinkle, wallpaper drift, skeleton shimmer and the small decorative
+  rotations. Transitions collapse to a frame so hover/focus feedback stays
+  instant but state is never ambiguous.
+*/
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Full-screen ambience settles on its resting frame (no filter, no drift). */
+  body::before {
+    animation: none !important;
+  }
+
+  /* Transient shooting stars are hidden at rest; the static field stays. */
+  .shooting-star-2 {
+    animation: none !important;
+  }
+
+  .star-field,
+  .wallpaper-art,
+  .wallpaper-art::before,
+  .wallpaper-art::after {
+    animation: none !important;
+  }
+
+  /* Indeterminate progress keeps its fill, it just stops travelling. */
+  .splash-bar span {
+    animation: none !important;
+    transform: none;
+  }
+
+  /* Loading rings keep their accent segment so they still read as busy. */
+  .spinner {
+    animation: none !important;
   }
 }

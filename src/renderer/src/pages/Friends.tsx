@@ -1,9 +1,60 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { errorMessage, useApp } from '../context'
 import { Icon } from '../components/Icons'
 import { Modal, Spinner } from '../components/Feedback'
 import { SkinAvatar } from '../components/SkinAvatar'
 import type { Friend } from '@shared/types'
+
+type PresenceEntry = { server: string; lastSeen: number }
+type PendingRequest = { code: string; name: string; uuid?: string; createdAt: number }
+const EMPTY_PRESENCE: Record<string, PresenceEntry> = {}
+
+// Flat JSON-safe payloads: serialized equality never hides a rendered change.
+const samePayload = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+type BadgeProps = { server?: string; hasUuid: boolean; known: boolean }
+const PresenceBadge = memo(function PresenceBadge({ server, hasUuid, known }: BadgeProps): JSX.Element {
+  if (server !== undefined) return <span className="badge badge-online" title={`Seen on ${server}`}>Online</span>
+  if (hasUuid && known) return <span className="badge badge-offline" title="No fresh presence record">No presence</span>
+  return <span className="badge badge-warn" title="Presence could not be loaded">Unknown</span>
+})
+type FriendRowProps = { friend: Friend; server?: string; presenceKnown: boolean; removeDisabled: boolean; onRemove: (code: string, name: string) => void }
+const FriendRow = memo(function FriendRow({ friend, server, presenceKnown, removeDisabled, onRemove }: FriendRowProps): JSX.Element {
+  return (
+    <div className="friend-row">
+      <div className="friend-avatar"><SkinAvatar name={friend.name} uuid={friend.uuid} size={36} radius={10} /></div>
+      <div className="friend-info">
+        <strong>{friend.name}</strong>
+        {friend.code && <span className="friend-code-small muted">({friend.code})</span>}
+        {server !== undefined && <span className="friend-server">Playing on {server}</span>}
+      </div>
+      <PresenceBadge server={server} hasUuid={Boolean(friend.uuid)} known={presenceKnown} />
+      <button className="icon-btn" aria-label={`Remove ${friend.name}`} disabled={removeDisabled} onClick={() => onRemove(friend.code, friend.name)}>
+        <Icon name="trash" size={14} />
+      </button>
+    </div>
+  )
+})
+type RequestRowProps = { request: PendingRequest; onRespond: (code: string, action: 'accept' | 'decline') => void }
+const RequestRow = memo(function RequestRow({ request, onRespond }: RequestRowProps): JSX.Element {
+  return (
+    <div className="friend-row" style={{ borderColor: 'var(--accent-2)' }}>
+      <div className="friend-avatar"><SkinAvatar name={request.name} uuid={request.uuid} size={36} radius={10} /></div>
+      <div className="friend-info">
+        <strong>{request.name}</strong>
+        <span className="friend-code-small">{request.code}</span>
+      </div>
+      <span className="badge badge-violet">Pending</span>
+      <div className="icon-btn-group">
+        <button className="icon-btn" aria-label={`Accept ${request.name}`} onClick={() => onRespond(request.code, 'accept')}>
+          <Icon name="check" size={12} />
+        </button>
+        <button className="icon-btn" aria-label={`Decline ${request.name}`} onClick={() => onRespond(request.code, 'decline')}>
+          <Icon name="x" size={12} />
+        </button>
+      </div>
+    </div>
+  )
+})
 
 export function FriendsPage(): JSX.Element {
   const { api, boot, toast, openAccount, confirm } = useApp()
@@ -13,9 +64,9 @@ export function FriendsPage(): JSX.Element {
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [pendingRequests, setPendingRequests] = useState<Array<{ code: string; name: string; uuid?: string; createdAt: number }>>([])
+  const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([])
   const [requestsLoading, setRequestsLoading] = useState(false)
-  const [presence, setPresence] = useState<Record<string, { server: string; lastSeen: number }>>({})
+  const [presence, setPresence] = useState<Record<string, PresenceEntry>>(EMPTY_PRESENCE)
   const [presenceKnown, setPresenceKnown] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
   const pollBusy = useRef(false)
@@ -26,34 +77,35 @@ export function FriendsPage(): JSX.Element {
   const myCode = active?.friendCode ?? null
   const accountRef = useRef(myCode)
 
-  const refresh = async (silent = false): Promise<void> => {
+  const refresh = useCallback(async (silent = false): Promise<void> => {
     const seq = ++refreshSeq.current
     try {
       const list = await api.friendsList()
       if (seq !== refreshSeq.current) return
-      setFriends(list)
+      setFriends((current) => (samePayload(current, list) ? current : list))
       const uuids = list.map((friend) => friend.uuid).filter((uuid): uuid is string => Boolean(uuid))
       if (!uuids.length) {
-        setPresence({})
+        setPresence(EMPTY_PRESENCE)
         setPresenceKnown(true)
         return
       }
       const next = await api.friendsPresence(uuids)
       if (seq !== refreshSeq.current) return
-      setPresence(next ?? {})
+      const nextPresence = next ?? EMPTY_PRESENCE
+      setPresence((current) => (samePayload(current, nextPresence) ? current : nextPresence))
       setPresenceKnown(next !== null)
     } catch (error) {
       if (seq !== refreshSeq.current) return
-      setPresence({})
+      setPresence(EMPTY_PRESENCE)
       setPresenceKnown(false)
       if (!silent) toast(errorMessage(error), 'error')
     } finally {
       // A silent poll can be the request that settles the initial spinner.
       if (seq === refreshSeq.current) setLoading(false)
     }
-  }
+  }, [api, toast])
 
-  const loadRequests = async (silent = false): Promise<void> => {
+  const loadRequests = useCallback(async (silent = false): Promise<void> => {
     if (!myCode) {
       setPendingRequests([])
       return
@@ -63,14 +115,14 @@ export function FriendsPage(): JSX.Element {
     try {
       const requests = await api.friendsGetRequests()
       if (seq !== requestsSeq.current) return
-      setPendingRequests(requests)
+      setPendingRequests((current) => (samePayload(current, requests) ? current : requests))
     } catch {
       if (seq !== requestsSeq.current) return
       if (!silent) setPendingRequests([])
     } finally {
       if (seq === requestsSeq.current) setRequestsLoading(false)
     }
-  }
+  }, [api, myCode])
 
   useEffect(() => {
     // The page stays mounted across account switches. Invalidate in-flight
@@ -81,7 +133,7 @@ export function FriendsPage(): JSX.Element {
     requestsSeq.current += 1
     setFriends([])
     setPendingRequests([])
-    setPresence({})
+    setPresence(EMPTY_PRESENCE)
     setPresenceKnown(false)
     setRemoving(null)
     if (!myCode) {
@@ -92,7 +144,7 @@ export function FriendsPage(): JSX.Element {
     setLoading(true)
     void refresh()
     void loadRequests()
-  }, [api, myCode])
+  }, [api, loadRequests, myCode, refresh])
 
   // Keep the Friends tab live: poll requests and the friend list, and refresh
   // immediately when the window regains focus.
@@ -116,7 +168,7 @@ export function FriendsPage(): JSX.Element {
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [api, myCode])
+  }, [api, loadRequests, myCode, refresh])
 
   const copyCode = async (): Promise<void> => {
     if (!myCode) return
@@ -191,6 +243,14 @@ export function FriendsPage(): JSX.Element {
     }
   }
 
+  // Latest handlers behind stable callbacks keep memoized row props unchanged.
+  const handlers = useRef({ remove: removeFriend, respond: respondRequest })
+  useEffect(() => {
+    handlers.current = { remove: removeFriend, respond: respondRequest }
+  })
+  const handleRemove = useCallback((code: string, name: string) => void handlers.current.remove(code, name), [])
+  const handleRespond = useCallback((code: string, action: 'accept' | 'decline') => void handlers.current.respond(code, action), [])
+
   if (!active || !myCode) {
     return (
       <div className="friends-page">
@@ -261,24 +321,7 @@ export function FriendsPage(): JSX.Element {
         ) : (
           <div>
             {pendingRequests.map((req) => (
-              <div key={req.code} className="friend-row" style={{ borderColor: 'var(--accent-2)' }}>
-                <div className="friend-avatar">
-                  <SkinAvatar name={req.name} uuid={req.uuid} size={36} radius={10} />
-                </div>
-                <div className="friend-info">
-                  <strong>{req.name}</strong>
-                  <span className="friend-code-small">{req.code}</span>
-                </div>
-                <span className="badge badge-violet">Pending</span>
-                <div className="icon-btn-group">
-                  <button className="icon-btn" aria-label={`Accept ${req.name}`} onClick={() => void respondRequest(req.code, 'accept')}>
-                    <Icon name="check" size={12} />
-                  </button>
-                  <button className="icon-btn" aria-label={`Decline ${req.name}`} onClick={() => void respondRequest(req.code, 'decline')}>
-                    <Icon name="x" size={12} />
-                  </button>
-                </div>
-              </div>
+              <RequestRow key={req.code} request={req} onRespond={handleRespond} />
             ))}
           </div>
         )}
@@ -297,50 +340,16 @@ export function FriendsPage(): JSX.Element {
           <p className="empty-line">No friends yet. Share your code to get started.</p>
         ) : (
           <div className="friends-list">
-            {friends.map((friend) => {
-              const friendPresence = friend.uuid
-                ? presence[friend.uuid.toLowerCase()]
-                : undefined
-              return (
-                <div key={friend.code} className="friend-row">
-                  <div className="friend-avatar">
-                    <SkinAvatar name={friend.name} uuid={friend.uuid} size={36} radius={10} />
-                  </div>
-                  <div className="friend-info">
-                    <strong>{friend.name}</strong>
-                    {friend.code && (
-                      <span className="friend-code-small muted">({friend.code})</span>
-                    )}
-                    {friendPresence && (
-                      <span className="friend-server">
-                        Playing on {friendPresence.server}
-                      </span>
-                    )}
-                  </div>
-                  {friendPresence ? (
-                    <span className="badge badge-online" title={`Seen on ${friendPresence.server}`}>
-                      Online
-                    </span>
-                  ) : friend.uuid && presenceKnown ? (
-                    <span className="badge badge-offline" title="No fresh presence record">
-                      No presence
-                    </span>
-                  ) : (
-                    <span className="badge badge-warn" title="Presence could not be loaded">
-                      Unknown
-                    </span>
-                  )}
-                  <button
-                    className="icon-btn"
-                    aria-label={`Remove ${friend.name}`}
-                    disabled={removing !== null}
-                    onClick={() => void removeFriend(friend.code, friend.name)}
-                  >
-                    <Icon name="trash" size={14} />
-                  </button>
-                </div>
-              )
-            })}
+            {friends.map((friend) => (
+              <FriendRow
+                key={friend.code}
+                friend={friend}
+                server={friend.uuid ? presence[friend.uuid.toLowerCase()]?.server : undefined}
+                presenceKnown={presenceKnown}
+                removeDisabled={removing !== null}
+                onRemove={handleRemove}
+              />
+            ))}
           </div>
         )}
       </section>

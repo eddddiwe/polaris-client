@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import type { ModCategory, ModrinthSearchHit, ModSortIndex } from '@shared/types'
 import { compactNumber, errorMessage, useApp } from '../context'
 import { Icon } from '../components/Icons'
@@ -37,7 +37,9 @@ export function DiscoverPage(): JSX.Element {
   const [hits, setHits] = useState<ModrinthSearchHit[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [searching, setSearching] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
+  const searchSeq = useRef(0)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [projectRef, setProjectRef] = useState<string | null>(null)
@@ -66,43 +68,57 @@ export function DiscoverPage(): JSX.Element {
   useEffect(() => {
     setCategories([])
     setSort('downloads')
+    // A card means something different for mods and modpacks, so drop the old
+    // list instead of showing it as the other kind while the new search runs.
+    setHits([])
+    setTotal(0)
+    setLoading(true)
   }, [type])
 
   useEffect(() => {
-    let cancelled = false
-    setLoading(true)
+    // Every input change invalidates whatever request is still in flight, so a
+    // slow response for an older query can never overwrite a newer one.
+    const seq = ++searchSeq.current
     setError('')
+    setSearching(true)
+    setLoadingMore(false)
     const timer = window.setTimeout(() => {
       api
         .searchMods(query, type, instance?.id ?? null, 0, { sort, categories })
         .then((result) => {
-          if (cancelled) return
+          if (seq !== searchSeq.current) return
           setHits(result.hits)
           setTotal(result.total)
+          setLoading(false)
         })
         .catch((err) => {
-          if (!cancelled) setError(errorMessage(err))
+          if (seq !== searchSeq.current) return
+          setError(errorMessage(err))
+          setLoading(false)
         })
         .finally(() => {
-          if (!cancelled) setLoading(false)
+          if (seq === searchSeq.current) setSearching(false)
         })
     }, 300)
     return () => {
-      cancelled = true
       window.clearTimeout(timer)
+      // Invalidate any in-flight response when the effect is torn down too.
+      searchSeq.current += 1
     }
     // categoriesKey keeps the effect stable across array identities.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, instance?.id, query, type, sort, categoriesKey])
 
   const loadMore = async (): Promise<void> => {
+    const seq = searchSeq.current
     setLoadingMore(true)
     try {
       const result = await api.searchMods(query, type, instance?.id ?? null, hits.length, { sort, categories })
+      if (seq !== searchSeq.current) return
       setHits((current) => [...current, ...result.hits])
       setTotal(result.total)
     } catch (err) {
-      toast(errorMessage(err), 'error')
+      if (seq === searchSeq.current) toast(errorMessage(err), 'error')
     } finally {
       setLoadingMore(false)
     }
@@ -227,7 +243,7 @@ export function DiscoverPage(): JSX.Element {
           </select>
         </label>
         <span className="filter-count">
-          {loading ? 'Searching…' : `${total.toLocaleString()} ${type === 'mod' ? 'mods' : 'modpacks'}`}
+          {searching ? 'Searching…' : `${total.toLocaleString()} ${type === 'mod' ? 'mods' : 'modpacks'}`}
         </span>
       </div>
 
@@ -302,7 +318,7 @@ export function DiscoverPage(): JSX.Element {
               const blocked = !isPack && (!instance || !isFabric)
               return (
                 <article key={hit.projectId} className="result-card">
-                  <ProjectIcon hit={hit} />
+                  <ProjectIcon projectId={hit.projectId} title={hit.title} iconUrl={hit.iconUrl} />
                   <div className="result-copy">
                     <div className="result-title">
                       <h3>
@@ -354,7 +370,7 @@ export function DiscoverPage(): JSX.Element {
           </div>
           {hits.length < total && (
             <div className="load-more">
-              <button className="btn btn-ghost" onClick={() => void loadMore()} disabled={loadingMore}>
+              <button className="btn btn-ghost" onClick={() => void loadMore()} disabled={loadingMore || searching}>
                 {loadingMore ? <Spinner /> : 'Load more'}
               </button>
             </div>
@@ -383,16 +399,60 @@ export function DiscoverPage(): JSX.Element {
   )
 }
 
-function ProjectIcon({ hit }: { hit: ModrinthSearchHit }): JSX.Element {
+// Search results are replaced on every filter/query change. Pinning the first
+// icon URL seen per project keeps the <img> src stable across those refreshes,
+// and remembering failures stops a broken icon from being re-requested when its
+// card remounts.
+const ICON_CACHE_LIMIT = 400
+type IconCacheEntry = { src: string; failed: boolean }
+const iconCache = new Map<string, IconCacheEntry>()
+
+function cachedIcon(projectId: string, iconUrl: string | undefined): IconCacheEntry | null {
+  if (!iconUrl) return null
+  const entry = iconCache.get(projectId)
+  if (entry) return entry
+  if (iconCache.size >= ICON_CACHE_LIMIT) {
+    const oldest = iconCache.keys().next().value
+    if (oldest !== undefined) iconCache.delete(oldest)
+  }
+  const created: IconCacheEntry = { src: iconUrl, failed: false }
+  iconCache.set(projectId, created)
+  return created
+}
+
+const ProjectIcon = memo(function ProjectIcon({
+  projectId,
+  title,
+  iconUrl
+}: {
+  projectId: string
+  title: string
+  iconUrl?: string
+}): JSX.Element {
   const [failed, setFailed] = useState(false)
-  const initials = hit.title
+  const entry = cachedIcon(projectId, iconUrl)
+  const initials = title
     .split(/\s+/)
     .slice(0, 2)
     .map((word) => word[0])
     .join('')
     .toUpperCase()
-  if (!hit.iconUrl || failed) {
+  if (!entry || entry.failed || failed) {
     return <span className="result-icon result-icon-fallback">{initials}</span>
   }
-  return <img className="result-icon" src={hit.iconUrl} alt="" loading="lazy" onError={() => setFailed(true)} />
-}
+  return (
+    <img
+      className="result-icon"
+      src={entry.src}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      draggable={false}
+      onError={() => {
+        // Persist the failure so a remount goes straight to the fallback.
+        entry.failed = true
+        setFailed(true)
+      }}
+    />
+  )
+})

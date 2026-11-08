@@ -1,4 +1,4 @@
-import { useId, type SVGProps } from 'react'
+import { memo, useId, type SVGProps } from 'react'
 
 export type IconName =
   | 'home'
@@ -51,7 +51,7 @@ export type IconName =
   | 'gem'
   | 'bag'
 
-export function Icon({
+export const Icon = memo(function Icon({
   name,
   size = 18,
   ...props
@@ -72,9 +72,23 @@ export function Icon({
       {glyph(name)}
     </svg>
   )
-}
+})
+
+// Glyph elements are static and immutable, so build each one once and reuse it.
+// When a large list re-renders, React sees the same child element/props and can
+// skip reconciling the SVG path tree instead of rebuilding it per icon.
+const glyphCache = new Map<IconName, JSX.Element>()
 
 function glyph(name: IconName): JSX.Element {
+  let element = glyphCache.get(name)
+  if (!element) {
+    element = buildGlyph(name)
+    glyphCache.set(name, element)
+  }
+  return element
+}
+
+function buildGlyph(name: IconName): JSX.Element {
   switch (name) {
     case 'home':
       return (

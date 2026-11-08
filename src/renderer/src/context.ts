@@ -6,7 +6,6 @@ import type {
   InstanceSummary,
   JavaInfo,
   LaunchState,
-  ProgressEvent,
   Settings
 } from '@shared/types'
 import type { PolarisAPI } from '@shared/api'
@@ -59,7 +58,6 @@ export interface AppContextValue {
   stop: () => Promise<void>
   toast: (message: string, kind?: ToastKind) => void
   confirm: ConfirmFn
-  progress: ProgressEvent | null
   openNewInstance: () => void
   openAccount: () => void
 }

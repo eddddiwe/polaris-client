@@ -1,4 +1,5 @@
-import { useMemo, useState, type CSSProperties } from 'react'
+import { memo, useCallback, useMemo, useState, type CSSProperties, type MouseEvent } from 'react'
+import type { InstanceSummary } from '@shared/types'
 import { useApp, formatRelative, errorMessage } from '../context'
 import { Icon } from '../components/Icons'
 import { EmptyState } from '../components/Feedback'
@@ -19,22 +20,35 @@ export function InstancesPage(): JSX.Element {
     [instances, query]
   )
 
-  const remove = async (id: string, name: string): Promise<void> => {
-    const confirmed = await confirm({
-      title: 'Delete instance?',
-      message: `“${name}” and its saves, mods and configuration will be removed. This cannot be undone.`,
-      confirmLabel: 'Delete instance',
-      danger: true
-    })
-    if (!confirmed) return
-    try {
-      await api.deleteInstance(id)
-      await refresh()
-      toast('Instance deleted')
-    } catch (error) {
-      toast(errorMessage(error), 'error')
-    }
-  }
+  const openInstance = useCallback((id: string) => navigate('instance', id), [navigate])
+
+  const startInstance = useCallback(
+    (instance: InstanceSummary) => {
+      selectInstance(instance.id)
+      if (!instance.running) void launch(instance.id)
+    },
+    [launch, selectInstance]
+  )
+
+  const remove = useCallback(
+    async (id: string, name: string): Promise<void> => {
+      const confirmed = await confirm({
+        title: 'Delete instance?',
+        message: `“${name}” and its saves, mods and configuration will be removed. This cannot be undone.`,
+        confirmLabel: 'Delete instance',
+        danger: true
+      })
+      if (!confirmed) return
+      try {
+        await api.deleteInstance(id)
+        await refresh()
+        toast('Instance deleted')
+      } catch (error) {
+        toast(errorMessage(error), 'error')
+      }
+    },
+    [api, confirm, refresh, toast]
+  )
   const [importing, setImporting] = useState(false)
 
   const importModpack = async () => {
@@ -156,73 +170,97 @@ export function InstancesPage(): JSX.Element {
       ) : (
         <div className="instance-grid">
           {filtered.map((instance) => (
-            <article
+            <InstanceCard
               key={instance.id}
-              className={`instance-card ${instance.running ? 'running' : ''}`}
-              style={{ '--card-accent': instance.accent } as CSSProperties}
-              onClick={() => navigate('instance', instance.id)}
-            >
-              <div className="instance-banner">
-                <span className="instance-glow" />
-                <span className="instance-glyph">{instance.icon || instance.name.slice(0, 1).toUpperCase()}</span>
-                <div className="instance-badges">
-                  <span className="badge">{instance.mcVersion}</span>
-                  <span className={`badge ${instance.loader === 'fabric' ? 'badge-violet' : 'badge-plain'}`}>
-                    {instance.loader === 'fabric' ? 'Fabric' : 'Vanilla'}
-                  </span>
-                  {instance.kind === 'server' && (
-                    <span className="badge">
-                      <Icon name="server" size={11} /> Server
-                    </span>
-                  )}
-                </div>
-                {instance.running && (
-                  <span className="badge badge-live">
-                    <span className="status-dot status-dot-live" /> Running
-                  </span>
-                )}
-              </div>
-              <div className="instance-body">
-                <div className="instance-title">
-                  <div>
-                    <h3>{instance.name}</h3>
-                    <span>
-                      {instance.kind === 'server'
-                        ? `${instance.modCount} mods · port ${instance.port ?? 25565}`
-                        : `${instance.modCount} mods · ${Math.round(instance.memoryMb / 1024)} GB heap`}
-                    </span>
-                  </div>
-                  <button
-                    className="icon-btn"
-                    aria-label={`Delete ${instance.name}`}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      void remove(instance.id, instance.name)
-                    }}
-                  >
-                    <Icon name="trash" size={15} />
-                  </button>
-                </div>
-                <div className="instance-foot">
-                  <span className="instance-last">{formatRelative(instance.lastPlayed)}</span>
-                  <button
-                    className={`btn btn-sm ${instance.running ? 'btn-ghost' : 'btn-soft'}`}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      selectInstance(instance.id)
-                      if (!instance.running) void launch(instance.id)
-                    }}
-                    disabled={gameRunning && !instance.running}
-                  >
-                    <Icon name={instance.running ? 'monitor' : instance.kind === 'server' ? 'server' : 'play'} size={12} />
-                    {instance.running ? 'Running' : instance.kind === 'server' ? 'Start' : 'Play'}
-                  </button>
-                </div>
-              </div>
-            </article>
+              instance={instance}
+              gameRunning={gameRunning}
+              onOpen={openInstance}
+              onRemove={remove}
+              onLaunch={startInstance}
+            />
           ))}
         </div>
       )}
     </div>
   )
 }
+
+interface InstanceCardProps {
+  instance: InstanceSummary
+  gameRunning: boolean
+  onOpen: (id: string) => void
+  onRemove: (id: string, name: string) => Promise<void>
+  onLaunch: (instance: InstanceSummary) => void
+}
+
+const InstanceCard = memo(function InstanceCard({
+  instance,
+  gameRunning,
+  onOpen,
+  onRemove,
+  onLaunch
+}: InstanceCardProps): JSX.Element {
+  const handleRemove = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    void onRemove(instance.id, instance.name)
+  }
+  const handleLaunch = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    onLaunch(instance)
+  }
+
+  return (
+    <article
+      className={`instance-card ${instance.running ? 'running' : ''}`}
+      style={{ '--card-accent': instance.accent } as CSSProperties}
+      onClick={() => onOpen(instance.id)}
+    >
+      <div className="instance-banner">
+        <span className="instance-glow" />
+        <span className="instance-glyph">{instance.icon || instance.name.slice(0, 1).toUpperCase()}</span>
+        <div className="instance-badges">
+          <span className="badge">{instance.mcVersion}</span>
+          <span className={`badge ${instance.loader === 'fabric' ? 'badge-violet' : 'badge-plain'}`}>
+            {instance.loader === 'fabric' ? 'Fabric' : 'Vanilla'}
+          </span>
+          {instance.kind === 'server' && (
+            <span className="badge">
+              <Icon name="server" size={11} /> Server
+            </span>
+          )}
+        </div>
+        {instance.running && (
+          <span className="badge badge-live">
+            <span className="status-dot status-dot-live" /> Running
+          </span>
+        )}
+      </div>
+      <div className="instance-body">
+        <div className="instance-title">
+          <div>
+            <h3>{instance.name}</h3>
+            <span>
+              {instance.kind === 'server'
+                ? `${instance.modCount} mods · port ${instance.port ?? 25565}`
+                : `${instance.modCount} mods · ${Math.round(instance.memoryMb / 1024)} GB heap`}
+            </span>
+          </div>
+          <button className="icon-btn" aria-label={`Delete ${instance.name}`} onClick={handleRemove}>
+            <Icon name="trash" size={15} />
+          </button>
+        </div>
+        <div className="instance-foot">
+          <span className="instance-last">{formatRelative(instance.lastPlayed)}</span>
+          <button
+            className={`btn btn-sm ${instance.running ? 'btn-ghost' : 'btn-soft'}`}
+            onClick={handleLaunch}
+            disabled={gameRunning && !instance.running}
+          >
+            <Icon name={instance.running ? 'monitor' : instance.kind === 'server' ? 'server' : 'play'} size={12} />
+            {instance.running ? 'Running' : instance.kind === 'server' ? 'Start' : 'Play'}
+          </button>
+        </div>
+      </div>
+    </article>
+  )
+})

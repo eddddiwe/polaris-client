@@ -1,8 +1,10 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { Activity, memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import type {
   GameUiOptions,
   GameUiSnapshot,
+  InstanceDetail,
   JvmPresetId,
+  LaunchState,
   ModUpdateInfo,
   PackDefinition,
   PerfPlan,
@@ -10,16 +12,23 @@ import type {
 } from '@shared/types'
 import { packsFor } from '@shared/packs'
 import type { PolarisAPI } from '@shared/api'
-import { errorMessage, formatBytes, formatPlaytime, formatRelative, useApp } from '../context'
+import { errorMessage, formatBytes, formatPlaytime, formatRelative, useApp, type AppContextValue } from '../context'
 import { Icon } from '../components/Icons'
 import { EmptyState, Spinner, Switch } from '../components/Feedback'
 
 type Tab = 'overview' | 'mods' | 'performance' | 'logs'
+type ModsTabApp = Pick<AppContextValue, 'detail' | 'api' | 'reloadDetail' | 'refresh' | 'toast' | 'gameRunning' | 'confirm'>
 
 export function InstancePage(): JSX.Element {
-  const { detail, activeInstance, navigate, launch, stop, gameRunning, launchState, api, refresh, reloadDetail, toast, boot } =
+  const { detail, activeInstance, navigate, launch, stop, gameRunning, launchState, api, refresh, reloadDetail, toast, boot, confirm } =
     useApp()
   const [tab, setTab] = useState<Tab>('overview')
+  // Mount on first open, then keep the body's DOM/state and hide its effects.
+  const [visited, setVisited] = useState<ReadonlySet<Tab>>(() => new Set<Tab>(['overview']))
+  const selectTab = (next: Tab): void => {
+    setVisited((current) => (current.has(next) ? current : new Set(current).add(next)))
+    setTab(next)
+  }
 
   if (!detail) {
     return (
@@ -100,21 +109,44 @@ export function InstancePage(): JSX.Element {
             ['logs', 'Logs']
           ] as [Tab, string][]
         ).map(([id, label]) => (
-          <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
+          <button key={id} className={tab === id ? 'active' : ''} onClick={() => selectTab(id)}>
             {label}
           </button>
         ))}
       </nav>
 
-      {tab === 'overview' && <Overview instance={instance} detail={detail} reloadDetail={reloadDetail} refresh={refresh} toast={toast} />}
-      {tab === 'mods' && <ModsTab navigate={navigate} />}
-      {tab === 'performance' && <PerformanceTab />}
-      {tab === 'logs' && <LogsTab />}
+      <Activity mode={tab === 'overview' ? 'visible' : 'hidden'}>
+        <Overview instance={instance} detail={detail} reloadDetail={reloadDetail} refresh={refresh} toast={toast} />
+      </Activity>
+      {visited.has('mods') && (
+        <Activity mode={tab === 'mods' ? 'visible' : 'hidden'}>
+          <ModsTab
+            navigate={navigate}
+            detail={detail}
+            api={api}
+            reloadDetail={reloadDetail}
+            refresh={refresh}
+            toast={toast}
+            gameRunning={gameRunning}
+            confirm={confirm}
+          />
+        </Activity>
+      )}
+      {visited.has('performance') && (
+        <Activity mode={tab === 'performance' ? 'visible' : 'hidden'}>
+          <PerformanceTab />
+        </Activity>
+      )}
+      {visited.has('logs') && (
+        <Activity mode={tab === 'logs' ? 'visible' : 'hidden'}>
+          <LogsTab detail={detail} api={api} toast={toast} launchState={launchState} refresh={refresh} />
+        </Activity>
+      )}
     </div>
   )
 }
 
-function Overview({
+const Overview = memo(function Overview({
   instance,
   detail,
   reloadDetail,
@@ -135,6 +167,13 @@ function Overview({
   const [saving, setSaving] = useState(false)
   const [port, setPort] = useState(instance.port ?? 25565)
   const [savingPort, setSavingPort] = useState(false)
+  // Keep the draft, but adopt a heap changed by another tab.
+  const lastMemoryMb = useRef(instance.memoryMb)
+  useEffect(() => {
+    if (lastMemoryMb.current === instance.memoryMb) return
+    lastMemoryMb.current = instance.memoryMb
+    setMemory(instance.memoryMb)
+  }, [instance.memoryMb])
   const isServer = instance.kind === 'server'
   const running = Boolean(activeInstance?.running && gameRunning)
 
@@ -500,7 +539,7 @@ function Overview({
       </aside>
     </div>
   )
-}
+})
 
 function DeleteButton({ id, name }: { id: string; name: string }): JSX.Element {
   const { api, refresh, navigate, toast, gameRunning, confirm } = useApp()
@@ -531,8 +570,8 @@ function DeleteButton({ id, name }: { id: string; name: string }): JSX.Element {
   )
 }
 
-function ModsTab({ navigate }: { navigate: (page: 'discover') => void }): JSX.Element {
-  const { detail, api, reloadDetail, refresh, toast, gameRunning, confirm } = useApp()
+const ModsTab = memo(function ModsTab({ navigate, ...app }: ModsTabApp & { navigate: (page: 'discover') => void }): JSX.Element {
+  const { detail, api, reloadDetail, refresh, toast, gameRunning, confirm } = app
   const [busy, setBusy] = useState<string | null>(null)
   const [updates, setUpdates] = useState<ModUpdateInfo[] | null>(null)
   const [checking, setChecking] = useState(false)
@@ -777,7 +816,7 @@ function ModsTab({ navigate }: { navigate: (page: 'discover') => void }): JSX.El
       </div>
     </section>
   )
-}
+})
 
 const JVM_PRESETS: { id: JvmPresetId; name: string; sub: string }[] = [
   { id: 'aikar', name: 'Aikar', sub: 'G1 · throughput' },
@@ -797,6 +836,22 @@ const LOG_LEVELS: Record<string, string> = {
 const LOG_MESSAGE_COLOR = '#c9d1e8'
 const LOG_MUTED_COLOR = '#5f6a86'
 const LOG_TIME_COLOR = '#8a93b3'
+/** Hard render cap so a larger tail can never turn into an unbounded DOM list. */
+const LOG_WINDOW = 400
+
+function boundedLogTail(next: string[]): string[] {
+  return next.length > LOG_WINDOW ? next.slice(next.length - LOG_WINDOW) : next
+}
+
+function sameLogLines(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((line, index) => line === b[index])
+}
+
+/** Keep the previous array when a poll has no new lines, so React can bail out. */
+function mergeLogLines(current: string[], incoming: string[]): string[] {
+  const bounded = boundedLogTail(incoming)
+  return sameLogLines(current, bounded) ? current : bounded
+}
 
 function logSegments(line: string): { text: string; color: string }[] {
   const level = line.match(/\/(INFO|WARN|ERROR|DEBUG|FATAL|TRACE):/)
@@ -827,7 +882,33 @@ function logSegments(line: string): { text: string; color: string }[] {
   return segments
 }
 
-function PerformanceTab(): JSX.Element {
+/** One log line: segments are recomputed only when the line text changes. */
+const LogLine = memo(function LogLine({ line, last }: { line: string; last: boolean }): JSX.Element {
+  return (
+    <span className="log-line">
+      {logSegments(line).map((segment, segmentIndex) => (
+        <span key={segmentIndex} style={{ color: segment.color }}>
+          {segment.text}
+        </span>
+      ))}
+      {last ? '' : '\n'}
+    </span>
+  )
+})
+
+/** Memoized list: unrelated LogsTab re-renders (command input, context ticks) skip it. */
+const LogLines = memo(function LogLines({ lines }: { lines: string[] }): JSX.Element {
+  if (lines.length === 0) return <>No log yet. Launch the instance to generate one.</>
+  return (
+    <>
+      {lines.map((line, index) => (
+        <LogLine key={index} line={line} last={index === lines.length - 1} />
+      ))}
+    </>
+  )
+})
+
+const PerformanceTab = memo(function PerformanceTab(): JSX.Element {
   const { detail, api, reloadDetail, refresh, toast, gameRunning, hardware } = useApp()
   const [profile, setProfile] = useState<PerfProfileId>(detail?.instance.perfProfile ?? 'balanced')
   const [memory, setMemory] = useState(detail?.instance.memoryMb ?? 8192)
@@ -840,6 +921,58 @@ function PerformanceTab(): JSX.Element {
   const [uiBusy, setUiBusy] = useState(false)
   const instanceId = detail?.instance.id
   const isServer = detail?.instance.kind === 'server'
+
+  // This tab stays mounted while hidden (Activity), so its draft state must
+  // adopt values saved from another tab instead of silently overwriting them
+  // with the values it first mounted with.
+  const lastInstanceValues = useRef({
+    id: detail?.instance.id,
+    memoryMb: detail?.instance.memoryMb,
+    perfProfile: detail?.instance.perfProfile,
+    jvmPreset: detail?.instance.jvmPreset,
+    customJvmArgs: detail?.instance.customJvmArgs
+  })
+  useLayoutEffect(() => {
+    const instance = detail?.instance
+    if (!instance) return
+    const last = lastInstanceValues.current
+    // A different instance must never inherit this tab's drafts, even if the
+    // saved values happen to match.
+    if (last.id !== instance.id) {
+      last.id = instance.id
+      last.memoryMb = instance.memoryMb
+      last.perfProfile = instance.perfProfile
+      last.jvmPreset = instance.jvmPreset
+      last.customJvmArgs = instance.customJvmArgs
+      setMemory(instance.memoryMb)
+      setProfile(instance.perfProfile)
+      setPreset(instance.jvmPreset)
+      setCustomArgs(instance.customJvmArgs ?? '')
+      return
+    }
+    if (last.memoryMb !== instance.memoryMb) {
+      last.memoryMb = instance.memoryMb
+      setMemory(instance.memoryMb)
+    }
+    if (last.perfProfile !== instance.perfProfile) {
+      last.perfProfile = instance.perfProfile
+      setProfile(instance.perfProfile)
+    }
+    if (last.jvmPreset !== instance.jvmPreset) {
+      last.jvmPreset = instance.jvmPreset
+      setPreset(instance.jvmPreset)
+    }
+    if (last.customJvmArgs !== instance.customJvmArgs) {
+      last.customJvmArgs = instance.customJvmArgs
+      setCustomArgs(instance.customJvmArgs ?? '')
+    }
+  }, [
+    detail?.instance.id,
+    detail?.instance.memoryMb,
+    detail?.instance.perfProfile,
+    detail?.instance.jvmPreset,
+    detail?.instance.customJvmArgs
+  ])
 
   useEffect(() => {
     if (!instanceId) return
@@ -1189,10 +1322,15 @@ function PerformanceTab(): JSX.Element {
       </aside>
     </div>
   )
-}
+})
 
-function LogsTab(): JSX.Element {
-  const { detail, api, toast, launchState, refresh } = useApp()
+const LogsTab = memo(function LogsTab({ detail, api, toast, launchState, refresh }: {
+  detail: InstanceDetail | null
+  api: PolarisAPI
+  toast: (message: string, kind?: 'info' | 'success' | 'error') => void
+  launchState: LaunchState
+  refresh: () => Promise<void>
+}): JSX.Element {
   const [lines, setLines] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [command, setCommand] = useState('')
@@ -1202,8 +1340,8 @@ function LogsTab(): JSX.Element {
     let cancelled = false
     const load = async (): Promise<void> => {
       try {
-        const value = await api.tailLogs(detail.instance.id, 400)
-        if (!cancelled) setLines(value)
+        const value = await api.tailLogs(detail.instance.id, LOG_WINDOW)
+        if (!cancelled) setLines((current) => mergeLogLines(current, value))
       } catch (error) {
         if (!cancelled) toast(errorMessage(error), 'error')
       } finally {
@@ -1220,9 +1358,6 @@ function LogsTab(): JSX.Element {
     }
   }, [api, detail, launchState.status, toast])
 
-  if (!detail) return <Spinner />
-  const isServer = detail.instance.kind === 'server'
-
   const [crashes, setCrashes] = useState<{ name: string; path: string; size: number; modified: number }[]>([])
   const [safeMode, setSafeMode] = useState(false)
 
@@ -1230,6 +1365,9 @@ function LogsTab(): JSX.Element {
     if (!detail) return
     void api.listCrashReports(detail.instance.id).then(setCrashes).catch(() => {})
   }, [api, detail])
+
+  if (!detail) return <Spinner />
+  const isServer = detail.instance.kind === 'server'
 
   const disableMods = async (): Promise<void> => {
     try {
@@ -1265,7 +1403,11 @@ function LogsTab(): JSX.Element {
           </button>
           <button
             className="btn btn-ghost btn-sm"
-            onClick={() => void api.tailLogs(detail.instance.id, 400).then(setLines)}
+            onClick={() =>
+              void api
+                .tailLogs(detail.instance.id, LOG_WINDOW)
+                .then((next) => setLines((current) => mergeLogLines(current, next)))
+            }
           >
             <Icon name="refresh" size={14} /> Refresh
           </button>
@@ -1275,20 +1417,7 @@ function LogsTab(): JSX.Element {
         <Spinner label="Reading log" />
       ) : (
         <pre className="log-view">
-          {lines.length === 0 ? (
-            'No log yet. Launch the instance to generate one.'
-          ) : (
-            lines.map((line, index) => (
-              <span key={index} className="log-line">
-                {logSegments(line).map((segment, segmentIndex) => (
-                  <span key={segmentIndex} style={{ color: segment.color }}>
-                    {segment.text}
-                  </span>
-                ))}
-                {index < lines.length - 1 ? '\n' : ''}
-              </span>
-            ))
-          )}
+          <LogLines lines={lines} />
         </pre>
       )}
       {crashes.length > 0 && (
@@ -1333,7 +1462,7 @@ function LogsTab(): JSX.Element {
       )}
     </section>
   )
-}
+})
 
 function optionLabel(key: string): string {
   const labels: Record<string, string> = {
