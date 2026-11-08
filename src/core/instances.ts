@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { copyFile, readdir, rm, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import type { CreateInstanceInput, InstanceConfig, InstanceSummary } from '../shared/types'
 import { assertSafeSegment, dirSize, ensureDir, hashFile, isSafeSegment, pathExists, readJson, writeJson } from './fsutil'
 import { ensureServersDat } from './nbt'
@@ -17,8 +17,37 @@ const POLARIS_CHAT_MODERN = 'polaris-chat-1.0.0-modern.jar'
 const POLARIS_CHAT_OFFICIAL = 'polaris-chat-1.0.0-official.jar'
 const POLARIS_CHAT_PATTERN = /^polaris-chat-.*\.jar$/i
 
-/** Cache source-jar hashes; the same bundled jar is compared for every instance. */
+/** Cache jar hashes; the same bundled jar is compared for every instance. */
 const bundledModHashes = new Map<string, { size: number; mtimeMs: number; hash: string }>()
+
+/** Recursive instance-dir sizes, revalidated by immediate-child stamps. */
+const dirBytesCache = new Map<string, { stamp: string; at: number; bytes: number }>()
+const DIR_BYTES_TTL_MS = 10_000
+/** Growing files (logs, saves) keep a directory's mtime, so the TTL bounds staleness. */
+const INSTANCE_SUBDIRS = ['mods', 'config', 'logs', 'saves', 'resourcepacks', 'shaderpacks', 'screenshots', 'natives']
+
+async function statStamp(path: string): Promise<string> {
+  try {
+    const info = await stat(path)
+    return `${info.mtimeMs}:${info.size}`
+  } catch {
+    return '-'
+  }
+}
+
+/** A directory's mtime moves when entries are added, removed or renamed. */
+async function dirStamp(dir: string): Promise<string> {
+  const stamps = await Promise.all(INSTANCE_SUBDIRS.map((name) => statStamp(join(dir, name))))
+  return stamps.join('|')
+}
+
+async function cachedHash(path: string, info: { size: number; mtimeMs: number }): Promise<string> {
+  const cached = bundledModHashes.get(path)
+  if (cached && cached.size === info.size && cached.mtimeMs === info.mtimeMs) return cached.hash
+  const hash = await hashFile(path, 'sha256')
+  bundledModHashes.set(path, { size: info.size, mtimeMs: info.mtimeMs, hash })
+  return hash
+}
 
 function polarisConfigFile(mcVersion: string): string {
   const [major = 0, minor = 0, patch = 0] = mcVersion.split('.').map(Number)
@@ -71,23 +100,40 @@ export class InstanceStore {
     } catch {
       return []
     }
-    const summaries: InstanceSummary[] = []
-    for (const id of ids) {
-      if (!isSafeSegment(id)) continue
-      const config = await readJson<InstanceConfig | null>(this.configPath(id), null)
-      if (!config) continue
-      await this.syncPolarisConfig(config, false)
-      const modsDir = join(this.dir(id), 'mods')
-      const modFiles = await safeReaddir(modsDir)
-      summaries.push({
-        ...config,
-        modCount: modFiles.filter((file) => file.endsWith('.jar')).length,
-        running: isRunning(id),
-        installed: await this.isInstalled(config),
-        diskBytes: await dirSize(this.dir(id))
+    const summaries = await Promise.all(
+      ids.map(async (id): Promise<InstanceSummary | null> => {
+        if (!isSafeSegment(id)) return null
+        const config = await readJson<InstanceConfig | null>(this.configPath(id), null)
+        if (!config) return null
+        await this.syncPolarisConfig(config, false)
+        const modFiles = await safeReaddir(join(this.dir(id), 'mods'))
+        const [installed, diskBytes] = await Promise.all([
+          this.isInstalled(config),
+          this.diskBytes(id)
+        ])
+        return {
+          ...config,
+          modCount: modFiles.filter((file) => file.endsWith('.jar')).length,
+          running: isRunning(id),
+          installed,
+          diskBytes
+        }
       })
-    }
-    return summaries.sort((a, b) => (b.lastPlayed ?? b.createdAt) - (a.lastPlayed ?? a.createdAt))
+    )
+    return summaries
+      .filter((summary): summary is InstanceSummary => summary !== null)
+      .sort((a, b) => (b.lastPlayed ?? b.createdAt) - (a.lastPlayed ?? a.createdAt))
+  }
+
+  /** Full trees are expensive to walk; reuse the last total while the layout holds. */
+  private async diskBytes(id: string): Promise<number> {
+    const dir = this.dir(id)
+    const stamp = await dirStamp(dir)
+    const cached = dirBytesCache.get(id)
+    if (cached && cached.stamp === stamp && Date.now() - cached.at < DIR_BYTES_TTL_MS) return cached.bytes
+    const bytes = await dirSize(dir)
+    dirBytesCache.set(id, { stamp, at: Date.now(), bytes })
+    return bytes
   }
 
   async listIds(): Promise<string[]> {
@@ -168,6 +214,11 @@ export class InstanceStore {
 
   async remove(id: string): Promise<void> {
     await rm(this.dir(id), { recursive: true, force: true })
+    dirBytesCache.delete(id)
+    const prefix = this.dir(id) + sep
+    for (const key of bundledModHashes.keys()) {
+      if (key.startsWith(prefix)) bundledModHashes.delete(key)
+    }
   }
 
   async ensureLayout(id: string): Promise<void> {
@@ -255,20 +306,11 @@ export class InstanceStore {
     ])
     let matches = false
     if (destStat && destStat.size === sourceStat.size) {
-      const cached = bundledModHashes.get(source)
-      let sourceHash =
-        cached && cached.size === sourceStat.size && cached.mtimeMs === sourceStat.mtimeMs
-          ? cached.hash
-          : ''
-      if (!sourceHash) {
-        sourceHash = await hashFile(source, 'sha256')
-        bundledModHashes.set(source, {
-          size: sourceStat.size,
-          mtimeMs: sourceStat.mtimeMs,
-          hash: sourceHash
-        })
-      }
-      matches = sourceHash === (await hashFile(dest, 'sha256'))
+      // Cache only the immutable bundled source. The destination lives in a
+      // user/mod-writable instance dir, so it is re-hashed every startup: a jar
+      // replaced in place (same size/mtime) must never be trusted or keep
+      // receiving the friend secret at launch.
+      matches = (await cachedHash(source, sourceStat)) === (await hashFile(dest, 'sha256'))
     }
     if (!matches) {
       await copyFile(source, dest)

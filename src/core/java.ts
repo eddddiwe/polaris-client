@@ -190,6 +190,26 @@ function inferVersionFromPath(home: string): { major: number; version: string } 
   return { version: match[1], major: parseMajor(match[1]) }
 }
 
+interface InspectCacheEntry {
+  signature: string
+  info: JavaInfo
+}
+
+// Reuse the result of spawning `java -version` until the binary itself changes.
+// A reinstall or update rewrites the file, so mtime/ctime/size no longer match.
+const inspectCache = new Map<string, InspectCacheEntry>()
+const INSPECT_CACHE_LIMIT = 64
+const INSPECT_CONCURRENCY = 4
+
+async function binarySignature(path: string): Promise<string | null> {
+  try {
+    const info = await stat(path)
+    return `${info.size}:${info.mtimeMs}:${info.ctimeMs}:${info.ino}`
+  } catch {
+    return null
+  }
+}
+
 export async function inspectJava(home: string, source = 'detected'): Promise<JavaInfo | null> {
   const binDir = join(home, 'bin')
   const java = join(binDir, isWindows ? 'java.exe' : 'java')
@@ -197,14 +217,24 @@ export async function inspectJava(home: string, source = 'detected'): Promise<Ja
   const executable = (await exists(java)) ? java : javaw
   if (!executable || !(await exists(executable))) return null
 
+  const cacheKey = normalizePath(executable)
+  const signature = await binarySignature(executable)
+  const cached = signature ? inspectCache.get(cacheKey) : undefined
+  if (cached && cached.signature === signature) {
+    const path = isWindows && javaw && (await exists(javaw)) ? javaw : executable
+    return { ...cached.info, path, source }
+  }
+
   let version = ''
   let vendor = ''
+  let spawned = false
   try {
     const { stderr, stdout } = await execFileAsync(executable, ['-XshowSettings:properties', '-version'], {
       timeout: 8000,
       windowsHide: true,
       maxBuffer: 1024 * 1024
     })
+    spawned = true
     const output = `${stdout}\n${stderr}`
     version = output.match(/java\.version\s*=\s*([^\s]+)/)?.[1] ?? ''
     vendor = output.match(/java\.vendor\s*=\s*([^\r\n]+)/)?.[1]?.trim() ?? ''
@@ -218,26 +248,49 @@ export async function inspectJava(home: string, source = 'detected'): Promise<Ja
   }
   const major = parseMajor(version)
   if (!major || major < 6) return null
-  return {
+  const info: JavaInfo = {
     path: isWindows && (await exists(javaw)) ? javaw : executable,
     major,
     version,
     vendor: vendor || 'Unknown',
     source
   }
+  // Only cache real spawns: a transient timeout should be retried on rescan.
+  if (spawned && signature) {
+    if (inspectCache.size >= INSPECT_CACHE_LIMIT) {
+      const oldest = inspectCache.keys().next().value
+      if (oldest !== undefined) inspectCache.delete(oldest)
+    }
+    inspectCache.set(cacheKey, { signature, info })
+  }
+  return info
+}
+
+/** Inspect homes with a small worker pool so scans do not serialize JVM startups. */
+async function inspectHomes(homes: string[]): Promise<(JavaInfo | null)[]> {
+  const results: (JavaInfo | null)[] = new Array(homes.length).fill(null)
+  let next = 0
+  const worker = async (): Promise<void> => {
+    while (next < homes.length) {
+      const index = next++
+      results[index] = await inspectJava(homes[index])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(INSPECT_CONCURRENCY, homes.length) }, worker))
+  return results
 }
 
 export async function scanJava(extraPaths: string[] = []): Promise<JavaInfo[]> {
   const homes = await detectJavaHomes(extraPaths)
-  const results: JavaInfo[] = []
   const seen = new Set<string>()
+  const unique: string[] = []
   for (const home of homes) {
     const key = normalizePath(home)
     if (seen.has(key)) continue
     seen.add(key)
-    const info = await inspectJava(home)
-    if (info) results.push(info)
+    unique.push(home)
   }
+  const results = (await inspectHomes(unique)).filter((info): info is JavaInfo => info !== null)
   return results.sort((a, b) => b.major - a.major || b.version.localeCompare(a.version))
 }
 

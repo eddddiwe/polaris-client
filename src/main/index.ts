@@ -145,9 +145,70 @@ function isLoopbackDevUrl(value: string): boolean {
 }
 
 function wireServices(services: AppServices, win: BrowserWindow): void {
-  services.on('progress', (event) => send(win, EVENTS.progress, event))
+  // `closeLauncherOnPlay` minimizes the window for the whole game session, and
+  // installs keep running while the launcher is minimized too. Waking the
+  // renderer for high-frequency events nobody can see only schedules work on a
+  // surface Chromium is not painting. Coalesce those two channels while the
+  // window is hidden and flush the latest state when it is visible again.
+  // State events (launch, account, chat) stay immediate: they are infrequent
+  // and deferring them would leave the UI stale.
+  const hidden = (): boolean => !win.isDestroyed() && (win.isMinimized() || !win.isVisible())
+  let pendingProgress: unknown = null
+  let pendingLog: Array<{ instanceId: string; lines: string[] }> = []
+  let pendingLogLines = 0
+  // The renderer reloads the log from disk with `tailLogs`, so a bounded
+  // backlog is enough; a minimized window must not accumulate a whole session.
+  const MAX_PENDING_LOG_LINES = 2000
+
+  const flushPending = (): void => {
+    if (win.isDestroyed()) return
+    if (pendingProgress !== null) {
+      send(win, EVENTS.progress, pendingProgress)
+      pendingProgress = null
+    }
+    if (pendingLog.length === 0) return
+    const merged = new Map<string, string[]>()
+    for (const { instanceId, lines } of pendingLog) {
+      const existing = merged.get(instanceId)
+      if (existing) existing.push(...lines)
+      else merged.set(instanceId, [...lines])
+    }
+    pendingLog = []
+    pendingLogLines = 0
+    for (const [instanceId, lines] of merged) send(win, EVENTS.gameLog, { instanceId, lines })
+  }
+
+  win.on('show', flushPending)
+  win.on('restore', flushPending)
+  // Some window managers restore without a show/restore event; focus covers them.
+  win.on('focus', flushPending)
+
+  services.on('progress', (event) => {
+    if (hidden()) pendingProgress = event
+    else send(win, EVENTS.progress, event)
+  })
   services.on('launch-state', (state) => send(win, EVENTS.launchState, state))
-  services.on('game-log', (chunk) => send(win, EVENTS.gameLog, chunk))
+  services.on('game-log', (chunk: { instanceId: string; lines: string[] }) => {
+    if (!hidden()) {
+      send(win, EVENTS.gameLog, chunk)
+      return
+    }
+    pendingLog.push({ instanceId: chunk.instanceId, lines: Array.isArray(chunk.lines) ? chunk.lines : [] })
+    pendingLogLines += pendingLog[pendingLog.length - 1].lines.length
+    // Keep exactly the newest lines. If a single chunk is larger than the
+    // backlog bound, trim its head instead of dropping the whole chunk.
+    while (pendingLogLines > MAX_PENDING_LOG_LINES && pendingLog.length > 0) {
+      const oldest = pendingLog[0]
+      const overflow = pendingLogLines - MAX_PENDING_LOG_LINES
+      if (oldest.lines.length <= overflow) {
+        pendingLog.shift()
+        pendingLogLines -= oldest.lines.length
+      } else {
+        oldest.lines = oldest.lines.slice(overflow)
+        pendingLogLines -= overflow
+      }
+    }
+  })
   services.on('device-code', (info) => send(win, EVENTS.deviceCode, info))
   services.on('account-changed', (snapshot) => send(win, EVENTS.accountChanged, snapshot))
   services.on('account-error', (message) => send(win, EVENTS.accountError, message))

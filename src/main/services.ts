@@ -70,7 +70,7 @@ import { ensureDir, hashFile, pathExists } from '../core/fsutil'
 import { ServerService } from '../core/server'
 import { LaunchService } from '../core/launch'
 import { PACKS, packById } from '../core/packs'
-import { detectHardware, makePlan, applyOptions, readGameUi, writeGameUi } from '../core/performance'
+import { detectHardware, warmHardwareProbe, makePlan, applyOptions, readGameUi, writeGameUi } from '../core/performance'
 import { CosmeticsService } from '../core/cosmetics'
 import { FriendStore } from '../core/friends'
 import { ChatService } from '../core/chat'
@@ -194,7 +194,8 @@ export class AppServices extends EventEmitter {
       void this.syncShardGrants()
       this.shardTimer = setInterval(() => void this.syncShardGrants(), 15_000)
 
-      // Scan Java and detect hardware in parallel with latest release
+      // Start the GPU probe now; the Java scan below runs while it is in flight.
+      warmHardwareProbe()
       // Scan Java (needed for hardware detection) in parallel with latest release
       const [java] = await Promise.all([
         scanJava(settings.javaPath ? [settings.javaPath] : []),
@@ -622,7 +623,7 @@ export class AppServices extends EventEmitter {
 
   async scanPerformance(): Promise<PerfScanResult> {
     this.java = await scanJava(this.settingsStore.get().javaPath ? [this.settingsStore.get().javaPath] : [])
-    this.hardware = await detectHardware(this.java)
+    this.hardware = await detectHardware(this.java, { refreshGpu: true })
     return { hardware: this.hardware, java: this.java }
   }
 

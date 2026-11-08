@@ -3,9 +3,14 @@ import { EVENTS, IPC } from '../shared/ipc'
 import type { PolarisAPI } from '../shared/api'
 
 function subscribe<T>(channel: string, callback: (payload: T) => void): () => void {
-  const listener = (_event: Electron.IpcRendererEvent, payload: T): void => callback(payload)
+  let handler: ((payload: T) => void) | null = callback
+  const listener = (_event: Electron.IpcRendererEvent, payload: T): void => handler?.(payload)
   ipcRenderer.on(channel, listener)
-  return () => ipcRenderer.removeListener(channel, listener)
+  return () => {
+    if (handler === null) return
+    handler = null
+    ipcRenderer.removeListener(channel, listener)
+  }
 }
 
 const api: PolarisAPI & { platform: NodeJS.Platform } = {

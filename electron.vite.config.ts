@@ -53,6 +53,9 @@ export default defineConfig({
       }
     },
     build: {
+      // electron-vite defaults renderer minification off; React DOM is 82% of
+      // the entry chunk, so minify the production bundles (Vite's default).
+      minify: 'esbuild',
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/renderer/index.html') },
         output: {

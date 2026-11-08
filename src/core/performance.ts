@@ -17,12 +17,36 @@ import { pathExists, writeTextAtomic } from './fsutil'
 
 const execFileAsync = promisify(execFile)
 
-export async function detectHardware(java: JavaInfo[]): Promise<HardwareInfo> {
-  const cpu = os.cpus()[0]?.model?.trim() ?? 'Unknown CPU'
-  const threads = os.cpus().length
+type GpuInfo = { name: string; vendor: string }
+
+/**
+ * GPU detection spawns PowerShell/system_profiler/lspci and can take seconds.
+ * The answer is stable for the life of the process, so share a single probe
+ * between startup warming and detectHardware(). An explicit refresh reruns it.
+ */
+let gpuProbe: Promise<GpuInfo> | null = null
+
+/** Start the GPU probe early so it overlaps Java scanning during startup. */
+export function warmHardwareProbe(): void {
+  void probeGpu()
+}
+
+function probeGpu(refresh = false): Promise<GpuInfo> {
+  if (refresh) gpuProbe = null
+  gpuProbe ??= detectGpu().catch(() => ({ name: 'Unknown GPU', vendor: 'Unknown' }))
+  return gpuProbe
+}
+
+export async function detectHardware(
+  java: JavaInfo[],
+  options: { refreshGpu?: boolean } = {}
+): Promise<HardwareInfo> {
+  const cpus = os.cpus()
+  const cpu = cpus[0]?.model?.trim() ?? 'Unknown CPU'
+  const threads = cpus.length
   const physicalCores = Math.max(1, Math.round(threads / 2))
   const ramGb = Math.round((os.totalmem() / 1024 ** 3) * 10) / 10
-  const gpu = await detectGpu()
+  const gpu = await probeGpu(options.refreshGpu)
   const tier = classify(cpu, gpu, threads, ramGb)
   return {
     cpu,

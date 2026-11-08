@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, type Hash } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
 import { rename, rm, stat } from 'node:fs/promises'
 import { lookup } from 'node:dns/promises'
@@ -6,7 +6,7 @@ import { isIP } from 'node:net'
 import { dirname, join } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
-import { copyOrLink, ensureDir, hashFile, pathExists } from './fsutil'
+import { copyOrLink, ensureDir, hashFile } from './fsutil'
 import { Logger } from './logger'
 
 export const USER_AGENT = 'PolarisClient/0.1.0 (open-source Minecraft launcher)'
@@ -123,9 +123,10 @@ export class Downloader {
     const startedAt = Date.now()
 
     const report = (detail: string) => {
+      if (!onProgress) return
       const elapsed = Math.max(1, Date.now() - startedAt)
       const rate = completedBytes / (elapsed / 1000)
-      onProgress?.({
+      onProgress({
         current: completedBytes,
         total,
         filesDone,
@@ -134,11 +135,10 @@ export class Downloader {
       })
     }
 
-    const queue = [...unique]
+    let next = 0
     const worker = async (): Promise<void> => {
-      for (;;) {
-        const item = queue.shift()
-        if (!item) return
+      while (next < unique.length) {
+        const item = unique[next++]
         const result = await this.downloadOne(item)
         if (result === 'reused') reused++
         else downloaded++
@@ -239,10 +239,14 @@ export class Downloader {
             : declared
           : 0
 
-    await pipeline(
-      Readable.fromWeb(response.body as never),
-      createWriteStream(partial, { flags: resumed ? 'a' : 'w' })
-    )
+    const hasher = opts.sha256 && offset === 0 ? createHash('sha256') : null
+    const sink = createWriteStream(partial, { flags: resumed ? 'a' : 'w' })
+    const source = Readable.fromWeb(response.body as never)
+    if (hasher) {
+      await pipeline(source, digestTap([hasher]), sink)
+    } else {
+      await pipeline(source, sink)
+    }
 
     const written = (await stat(partial)).size
     if (expected > 0 && written !== expected) {
@@ -251,21 +255,22 @@ export class Downloader {
       throw new Error(`Incomplete download: expected ${expected} bytes, received ${written}`)
     }
 
-    return await this.finalizeDownload(partial, dest, opts)
+    return await this.finalizeDownload(partial, dest, opts, hasher?.digest('hex'))
   }
 
   private async finalizeDownload(
     partial: string,
     dest: string,
-    opts: { expectedSize?: number; sha256?: string }
+    opts: { expectedSize?: number; sha256?: string },
+    digest?: string
   ): Promise<number> {
     const written = (await stat(partial)).size
     if (opts.expectedSize && opts.expectedSize > 0 && written !== opts.expectedSize) {
       throw new Error(`Incomplete download: expected ${opts.expectedSize} bytes, received ${written}`)
     }
     if (opts.sha256) {
-      const digest = await hashFile(partial, 'sha256')
-      if (digest.toLowerCase() !== opts.sha256.toLowerCase()) {
+      const actual = digest ?? (await hashFile(partial, 'sha256'))
+      if (actual.toLowerCase() !== opts.sha256.toLowerCase()) {
         await rm(partial, { force: true })
         throw new Error('Downloaded installer failed its SHA-256 check')
       }
@@ -295,10 +300,18 @@ export class Downloader {
       )
       await ensureDir(dirname(item.dest))
       if (!response.body) throw new Error('Empty response body')
+      const sha1 = item.sha1 ? createHash('sha1') : null
+      const sha512 = item.sha512 ? createHash('sha512') : null
+      const hashers = [sha1, sha512].filter((hasher): hasher is Hash => hasher !== null)
       const source = Readable.fromWeb(response.body as never)
       const sink = createWriteStream(tmp)
-      if (item.maxBytes && item.maxBytes > 0) {
-        await pipeline(source, byteLimit(item.maxBytes, item.label ?? item.url), sink)
+      const limit = item.maxBytes && item.maxBytes > 0 ? byteLimit(item.maxBytes, item.label ?? item.url) : null
+      if (hashers.length && limit) {
+        await pipeline(source, digestTap(hashers), limit, sink)
+      } else if (hashers.length) {
+        await pipeline(source, digestTap(hashers), sink)
+      } else if (limit) {
+        await pipeline(source, limit, sink)
       } else {
         await pipeline(source, sink)
       }
@@ -306,15 +319,15 @@ export class Downloader {
       if (item.size && written !== item.size) {
         throw new Error(`Incomplete download: expected ${item.size} bytes, received ${written}`)
       }
-      if (item.sha1) {
-        const digest = await hashFile(tmp, 'sha1')
-        if (digest.toLowerCase() !== item.sha1.toLowerCase()) {
+      if (sha1) {
+        const digest = sha1.digest('hex')
+        if (digest.toLowerCase() !== item.sha1?.toLowerCase()) {
           throw new Error(`Checksum mismatch for ${item.label ?? item.url}`)
         }
       }
-      if (item.sha512) {
-        const digest = await hashFile(tmp, 'sha512')
-        if (digest.toLowerCase() !== item.sha512.toLowerCase()) {
+      if (sha512) {
+        const digest = sha512.digest('hex')
+        if (digest.toLowerCase() !== item.sha512?.toLowerCase()) {
           throw new Error(`SHA-512 mismatch for ${item.label ?? item.url}`)
         }
       }
@@ -332,7 +345,6 @@ export class Downloader {
   }
 
   private async isValid(path: string, sha1?: string, sha512?: string): Promise<boolean> {
-    if (!(await pathExists(path))) return false
     try {
       const s = await stat(path)
       if (s.size <= 0) return false
@@ -373,6 +385,15 @@ export function dedupeByDest(items: DownloadItem[]): DownloadItem[] {
     if (!existing || nextStrength > existingStrength) seen.set(key, item)
   }
   return [...seen.values()]
+}
+
+function digestTap(hashers: Hash[]): Transform {
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      for (const hasher of hashers) hasher.update(chunk)
+      callback(null, chunk)
+    }
+  })
 }
 
 function byteLimit(maxBytes: number, label: string): Transform {

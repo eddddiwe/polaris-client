@@ -136,3 +136,74 @@ describe('Downloader.downloadFile', () => {
     )
   })
 })
+
+describe('Downloader.downloadAll', () => {
+  it('verifies streamed SHA-1 and SHA-512 digests', async () => {
+    const body = 'library-body'
+    await withServer(
+      (_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream' })
+        res.end(body)
+      },
+      async (baseUrl, dir) => {
+        const downloader = new Downloader(1, new Logger(dir))
+        const dest = join(dir, 'library.jar')
+        const result = await downloader.downloadAll([
+          {
+            url: `${baseUrl}/library.jar`,
+            dest,
+            size: body.length,
+            sha1: createHash('sha1').update(body).digest('hex'),
+            sha512: createHash('sha512').update(body).digest('hex')
+          }
+        ])
+        expect(result).toEqual({ downloaded: 1, reused: 0 })
+        expect(await readFile(dest, 'utf8')).toBe(body)
+      }
+    )
+  })
+
+  it('rejects a streamed SHA-1 mismatch and removes the partial file', async () => {
+    await withServer(
+      (_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream' })
+        res.end('library-body')
+      },
+      async (baseUrl, dir) => {
+        const downloader = new Downloader(1, new Logger(dir))
+        const dest = join(dir, 'library.jar')
+        await expect(
+          downloader.downloadAll([
+            { url: `${baseUrl}/library.jar`, dest, sha1: '0'.repeat(40), label: 'library.jar' }
+          ])
+        ).rejects.toThrow(/Checksum mismatch/)
+        await expect(readFile(dest)).rejects.toThrow()
+        await expect(readFile(`${dest}.part`)).rejects.toThrow()
+      }
+    )
+  })
+
+  it('enforces maxBytes while hashing the stream', async () => {
+    await withServer(
+      (_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream' })
+        res.end('x'.repeat(4096))
+      },
+      async (baseUrl, dir) => {
+        const downloader = new Downloader(1, new Logger(dir))
+        const dest = join(dir, 'library.jar')
+        await expect(
+          downloader.downloadAll([
+            {
+              url: `${baseUrl}/library.jar`,
+              dest,
+              maxBytes: 1024,
+              sha1: createHash('sha1').update('x'.repeat(4096)).digest('hex')
+            }
+          ])
+        ).rejects.toThrow(/exceeded/)
+        await expect(readFile(dest)).rejects.toThrow()
+      }
+    )
+  })
+})

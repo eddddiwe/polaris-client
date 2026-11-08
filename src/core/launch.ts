@@ -347,35 +347,55 @@ export class LaunchService {
         this.setState({ message: 'Server ready — players can connect' })
       }
       this.logBuffer.push(line)
-      if (this.logBuffer.length > 4000) this.logBuffer.splice(0, this.logBuffer.length - 4000)
+      // Trim in chunks: splicing one line at a time on every line is O(n²)
+      // once the buffer is full and dominates high-volume output.
+      if (this.logBuffer.length > 4096) this.logBuffer.splice(0, this.logBuffer.length - 4000)
     }
 
+    const batchMs = 250
+    const maxBatch = 2048
     let pending: string[] = []
     let timer: NodeJS.Timeout | null = null
     const flush = () => {
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
       if (pending.length === 0) return
-      this.hooks.onLog?.(instance.id, pending)
+      const lines = pending
       pending = []
-      timer = null
+      this.hooks.onLog?.(instance.id, lines)
+    }
+
+    const enqueue = (line: string) => {
+      push(line)
+      // Send the first line of an idle burst immediately, then keep the
+      // window open so the rest of the burst is coalesced.
+      if (pending.length === 0 && !timer) {
+        this.hooks.onLog?.(instance.id, [line])
+        timer = setTimeout(flush, batchMs)
+        return
+      }
+      pending.push(line)
+      if (pending.length >= maxBatch) flush()
+      else if (!timer) timer = setTimeout(flush, batchMs)
     }
 
     for (const source of [child.stdout, child.stderr]) {
       if (!source) continue
       const rl = readline.createInterface({ input: source })
-      rl.on('line', (line) => {
-        push(line)
-        pending.push(line)
-        if (!timer) timer = setTimeout(flush, 120)
-      })
+      rl.on('line', enqueue)
     }
-    child.once('exit', () => {
+    // 'exit' can fire before stdio is drained; flush what we have for latency,
+    // then flush again after 'close' has delivered the final buffered lines.
+    child.once('exit', flush)
+    child.once('close', () => {
+      flush()
       try {
         stream.end()
       } catch {
         // stream may already be closed
       }
-      if (timer) clearTimeout(timer)
-      flush()
     })
   }
 

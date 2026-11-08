@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { rm, writeFile, readFile, stat } from 'node:fs/promises'
+import os from 'node:os'
 import AdmZip from 'adm-zip'
 import type { DownloadItem, Downloader } from './http'
 import { ProgressHub } from './events'
@@ -95,6 +96,7 @@ export class Installer {
         join(instanceDir, '.args-cache.json'),
         JSON.stringify({
           flagsVersion: JVM_FLAGS_VERSION,
+          systemRamMb: systemRamMb(),
           memoryMb: instance.memoryMb,
           jvmPreset: instance.jvmPreset,
           customJvmArgs: instance.customJvmArgs,
@@ -108,17 +110,17 @@ export class Installer {
   }
 
   /**
-   * Load pre-computed JVM args when the cache is fresh and still matches the
-   * instance settings and Java runtime. Any mismatch rebuilds the flags, so a
-   * fix to the flag builder (or a memory/preset change) takes effect on the
-   * very next launch instead of reusing crash-causing cache entries.
+   * Load pre-computed JVM args when every input still matches. The cache is
+   * content-addressed rather than time-based: a re-launch with unchanged
+   * settings never rebuilds, while a flag-builder change (JVM_FLAGS_VERSION),
+   * instance setting, Java runtime, or machine RAM change invalidates it.
    */
   async loadCachedArgs(instanceDir: string, instance?: InstanceConfig, javaMajor?: number): Promise<string[] | null> {
     const cachePath = join(instanceDir, '.args-cache.json')
-    if (!(await pathExists(cachePath))) return null
     try {
       const cached = JSON.parse(await readFile(cachePath, 'utf8'))
-      if (Date.now() - cached.computedAt > 3600000) return null // stale after 1 hour
+      // Old caches have no systemRamMb, so they rebuild once after upgrade.
+      if (cached.systemRamMb !== systemRamMb()) return null
       const { JVM_FLAGS_VERSION } = await import('./performance')
       if (cached.flagsVersion !== JVM_FLAGS_VERSION) return null
       if (instance) {
@@ -127,7 +129,24 @@ export class Installer {
         if ((cached.customJvmArgs ?? '') !== (instance.customJvmArgs ?? '')) return null
         if (javaMajor !== undefined && cached.javaMajor !== javaMajor) return null
       }
-      return Array.isArray(cached.jvmTuning) ? cached.jvmTuning : null
+      const tuning = cached.jvmTuning
+      if (!Array.isArray(tuning) || !tuning.every((arg) => typeof arg === 'string')) return null
+      // Treat the cache as untrusted input: it lives in the instance dir (which
+      // mods and imported packs can write) and feeds spawn argv. Re-deriving the
+      // pure flag list is microseconds and rejects any tampered or stale entry.
+      if (instance) {
+        const { buildJvmFlags } = await import('./performance')
+        const expected = buildJvmFlags(
+          cached.memoryMb,
+          cached.jvmPreset,
+          cached.customJvmArgs ?? '',
+          cached.javaMajor
+        )
+        if (tuning.length !== expected.length || tuning.some((arg, index) => arg !== expected[index])) {
+          return null
+        }
+      }
+      return tuning
     } catch {
       return null
     }
@@ -281,6 +300,11 @@ export class Installer {
       }
     }
   }
+}
+
+/** Total physical RAM in MiB, matching the heap clamp in performance.buildJvmFlags. */
+function systemRamMb(): number {
+  return Math.floor(os.totalmem() / 1024 ** 2)
 }
 
 function vanillaCache(): string {
