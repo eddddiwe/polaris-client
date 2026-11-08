@@ -3,7 +3,7 @@ main = "worker.js"
 compatibility_date = "2024-12-01"
 
 [vars]
-CURRENT_VERSION = "0.4.4"
+CURRENT_VERSION = "0.4.5"
 MIN_VERSION = "0.4.2"
 REPO = "eddddiwe/polaris-client"
 
