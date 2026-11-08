@@ -11,4 +11,11 @@ public interface Paint {
     default void centered(String text, int centerX, int y, int color) {
         text(text, centerX - width(text) / 2, y, color);
     }
+
+    /** Restricts drawing to a rectangle. Adapters implement this with the game's scissor. */
+    default void clip(int x1, int y1, int x2, int y2) {
+    }
+
+    default void unclip() {
+    }
 }

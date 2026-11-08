@@ -346,10 +346,13 @@ public final class ChatUi {
         } else if (cards.isEmpty()) {
             paint.text("No messages yet. Say hello.", contentX, messagesY + size(4), DIM);
         } else {
+            paint.clip(contentX, messagesY, contentX + contentW, messagesY + messagesH);
             for (Card card : cards) {
-                if (card.top() < windowTop || card.top() + card.height() > windowBottom) continue;
-                drawCard(paint, card, contentX, messagesY + card.top() - windowTop, contentW);
+                int cardY = messagesY + card.top() - windowTop;
+                if (cardY + card.height() <= messagesY || cardY >= messagesY + messagesH) continue;
+                drawCard(paint, card, contentX, cardY, contentW);
             }
+            paint.unclip();
         }
 
         int hintY = composerY - size(14);
@@ -548,6 +551,10 @@ public final class ChatUi {
 
     Rect closeBox() {
         return closeButton;
+    }
+
+    Rect messagesBox() {
+        return messagesBox;
     }
 
     private int size(float value) {

@@ -96,6 +96,39 @@ class ChatUiTest {
     }
 
     @Test
+    void everyPartOfALongMessageIsReachable() throws Exception {
+        PolarisChat.INSTANCE.stop();
+        System.setProperty("polaris.chat.demo", "1");
+        PolarisChat chat = PolarisChat.INSTANCE;
+        chat.start();
+
+        String longText = "This is a long message that must remain readable. ".repeat(12);
+        Method merge = PolarisChat.class.getDeclaredMethod("merge", String.class, List.class);
+        merge.setAccessible(true);
+        merge.invoke(chat, "POLARIS-ZX89-QW23", List.of(new ChatMessage(
+                "b1111111-1111-4111-8111-111111111112",
+                "POLARIS-ZX89-QW23",
+                "POLARIS-AB34-CD56",
+                "Nova",
+                longText,
+                System.currentTimeMillis())));
+
+        RecordingPaint paint = new RecordingPaint();
+        ChatUi ui = new ChatUi();
+        ChatInput input = new ChatInput();
+        ui.render(paint, chat, input, 427, 240, 0, 0, 0L);
+        ChatUi.Rect box = ui.messagesBox();
+        boolean found = paint.texts.stream().anyMatch(text -> text.startsWith("This is a long"));
+        for (int step = 0; step < 30 && !found; step++) {
+            ui.scroll(box.centerX(), box.centerY(), 100);
+            paint.texts.clear();
+            ui.render(paint, chat, input, 427, 240, 0, 0, 0L);
+            found = paint.texts.stream().anyMatch(text -> text.startsWith("This is a long"));
+        }
+        assertTrue(found);
+    }
+
+    @Test
     void composerTextIsSentOnlyThroughTheSendButton() {
         PolarisChat.INSTANCE.stop();
         System.setProperty("polaris.chat.demo", "1");

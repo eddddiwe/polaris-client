@@ -45,6 +45,16 @@ public final class PolarisChatScreen extends Screen {
             public int width(String text) {
                 return textRenderer.getWidth(text);
             }
+
+            @Override
+            public void clip(int x1, int y1, int x2, int y2) {
+                context.enableScissor(x1, y1, x2, y2);
+            }
+
+            @Override
+            public void unclip() {
+                context.disableScissor();
+            }
         };
         ui.render(paint, PolarisChat.INSTANCE, input, width, height, mouseX, mouseY, System.currentTimeMillis());
     }

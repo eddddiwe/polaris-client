@@ -55,6 +55,16 @@ public final class PolarisChatScreen extends Screen {
             public void centered(String text, int centerX, int y, int color) {
                 extractor.centeredText(textFont, text, centerX, y, color);
             }
+
+            @Override
+            public void clip(int x1, int y1, int x2, int y2) {
+                extractor.enableScissor(x1, y1, x2, y2);
+            }
+
+            @Override
+            public void unclip() {
+                extractor.disableScissor();
+            }
         };
         ui.render(paint, PolarisChat.INSTANCE, input, width, height, mouseX, mouseY, System.currentTimeMillis());
     }
