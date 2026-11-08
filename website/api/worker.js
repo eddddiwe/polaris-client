@@ -27,6 +27,8 @@ const CHAT_TOKEN_RE = /^pc_[0-9a-f-]{36}$/i
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const SHARD_ID_RE = /^[0-9a-f-]{36}$/i
 const MAX_FRIENDS = 200
+// Workers KV bulk reads take at most 100 keys and count as one operation.
+const KV_BULK_LIMIT = 100
 const MAX_PENDING = 100
 const REQUEST_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const PRESENCE_TTL_SECONDS = 120
@@ -38,7 +40,7 @@ const CHAT_MESSAGE_TTL_SECONDS = 30 * 24 * 60 * 60
 const MAX_CHAT_CHARS = 800
 const MAX_SOCKETS_PER_INBOX = 8
 // Keeps a history request well under the Workers 50-subrequest limit:
-// auth + isFriend + list + one read per message <= 43 KV operations.
+// auth + isFriend + list + one bulk read for the newest page.
 const MAX_HISTORY_MESSAGES = 40
 const MAX_BODY_BYTES = 4096
 
@@ -168,15 +170,52 @@ function sameHex(a, b) {
   return diff === 0
 }
 
+function parseFriend(value) {
+  let parsed = value
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed)
+    } catch {
+      return null
+    }
+  }
+  return parsed && typeof parsed === 'object' ? parsed : null
+}
+
 async function readFriend(kv, code) {
-  const raw = await kv.get(`friend:${code}`)
-  if (!raw) return null
+  return parseFriend(await kv.get(`friend:${code}`))
+}
+
+/**
+ * Read many friend records with KV bulk gets (one operation per 100 keys).
+ * Returns null when the binding does not implement bulk reads so the caller
+ * can fall back to individual reads.
+ */
+async function readFriendMap(kv, codes) {
+  const unique = [...new Set(codes)]
+  // A bulk call for a single key is not cheaper than a direct read.
+  if (unique.length < 2) return null
+  const chunks = []
+  for (let i = 0; i < unique.length; i += KV_BULK_LIMIT) {
+    chunks.push(unique.slice(i, i + KV_BULK_LIMIT))
+  }
+  let results
   try {
-    const parsed = JSON.parse(raw)
-    return parsed && typeof parsed === 'object' ? parsed : null
+    results = await Promise.all(
+      chunks.map((chunk) => kv.get(chunk.map((code) => `friend:${code}`)))
+    )
   } catch {
     return null
   }
+  if (results.some((values) => !(values instanceof Map))) return null
+  const friends = new Map()
+  for (const values of results) {
+    for (const [key, raw] of values) {
+      const info = parseFriend(raw)
+      if (info) friends.set(key.slice('friend:'.length), info)
+    }
+  }
+  return friends
 }
 
 /**
@@ -268,6 +307,36 @@ async function readList(kv, key) {
 async function isFriend(kv, code, friendCode) {
   if (!code || !friendCode || code === friendCode) return false
   return (await readList(kv, `friends:${code}`)).includes(friendCode)
+}
+
+/**
+ * Read a bounded set of keys in one KV operation. Workers KV bulk reads
+ * return a Map and count as a single request; local emulators and older
+ * runtimes that only accept one key keep the per-key fallback.
+ */
+async function readMany(kv, keys) {
+  if (keys.length === 0) return []
+  if (keys.length === 1) return [await kv.get(keys[0])]
+  // Workers KV bulk get() accepts at most 100 keys. Chunk larger reads (the
+  // friend list can hold up to MAX_FRIENDS) and merge the maps in input order.
+  const unique = [...new Set(keys)]
+  const chunks = []
+  for (let i = 0; i < unique.length; i += KV_BULK_LIMIT) {
+    chunks.push(unique.slice(i, i + KV_BULK_LIMIT))
+  }
+  try {
+    const maps = await Promise.all(chunks.map((chunk) => kv.get(chunk)))
+    if (maps.every((values) => values instanceof Map)) {
+      const merged = new Map()
+      for (const values of maps) {
+        for (const [key, value] of values) merged.set(key, value)
+      }
+      return keys.map((key) => merged.get(key) ?? null)
+    }
+  } catch {
+    // Fall through to single-key reads.
+  }
+  return await Promise.all(keys.map((key) => kv.get(key)))
 }
 
 async function writeList(kv, key, list) {
@@ -491,32 +560,37 @@ export default {
         if (requested.size > 100) return fail(400, 'too many uuids')
 
         const codes = await readList(kv, `friends:${auth.code}`)
+        // Bulk reads replace one point read per friend in each phase.
+        const profileKeys = codes.map((code) => `friend:${code}`)
+        const profiles = await readMany(kv, profileKeys)
+        const lookups = []
+        for (let index = 0; index < codes.length; index++) {
+          const info = parseFriend(profiles[index])
+          const uuid = normalizeUuid(info?.uuid)
+          if (!uuid || !requested.has(uuid)) continue
+          lookups.push({ code: codes[index], uuid, key: `presenceUuid:${uuid}:${codes[index]}` })
+        }
+        const records = await readMany(kv, lookups.map((entry) => entry.key))
         const presence = {}
         const now = Date.now()
-        const profiles = await Promise.all(
-          codes.map(async (code) => ({ code, info: await readFriend(kv, code) }))
-        )
-        await Promise.all(
-          profiles.map(async ({ code, info }) => {
-            const uuid = normalizeUuid(info?.uuid)
-            if (!uuid || !requested.has(uuid)) return
-            const raw = await kv.get(`presenceUuid:${uuid}:${code}`)
-            if (!raw) return
-            let record
-            try {
-              record = JSON.parse(raw)
-            } catch {
-              return
-            }
-            if (record.code !== code) return
-            if (normalizeUuid(record.uuid) !== uuid) return
-            if (now - Number(record.lastSeen || 0) > PRESENCE_FRESH_MS) return
-            presence[uuid] = {
-              server: cleanText(record.server, 200),
-              lastSeen: Number(record.lastSeen) || 0
-            }
-          })
-        )
+        for (let index = 0; index < lookups.length; index++) {
+          const { code, uuid } = lookups[index]
+          const raw = records[index]
+          if (!raw) continue
+          let record
+          try {
+            record = JSON.parse(raw)
+          } catch {
+            continue
+          }
+          if (record.code !== code) continue
+          if (normalizeUuid(record.uuid) !== uuid) continue
+          if (now - Number(record.lastSeen || 0) > PRESENCE_FRESH_MS) continue
+          presence[uuid] = {
+            server: cleanText(record.server, 200),
+            lastSeen: Number(record.lastSeen) || 0
+          }
+        }
         return json({ presence })
       }
 
@@ -606,7 +680,12 @@ export default {
         // Keys are stored newest-first, so the first page is the newest
         // messages and older history never masks a fresh message.
         const listed = await kv.list({ prefix: `chat:${room}:`, limit: MAX_HISTORY_MESSAGES })
-        const raws = await Promise.all((listed.keys || []).map((entry) => kv.get(entry.name)))
+        // One bulk read keeps the newest page while staying at a single KV
+        // request instead of one per message.
+        const raws = await readMany(
+          kv,
+          (listed.keys || []).map((entry) => entry.name)
+        )
         const messages = []
         for (const raw of raws) {
           if (!raw) continue
@@ -725,6 +804,12 @@ export default {
       if (path === '/v1/friends/list' && request.method === 'GET') {
         limitOrThrow(request, 'friends-list', 120, 60_000)
         const codes = await readList(kv, `friends:${auth.code}`)
+        const profiles = await readFriendMap(kv, codes)
+        if (profiles) {
+          return json({
+            friends: codes.map((code) => publicFriend(code, profiles.get(code) || null))
+          })
+        }
         const friends = await Promise.all(
           codes.map(async (code) => publicFriend(code, await readFriend(kv, code)))
         )

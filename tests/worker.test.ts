@@ -5,8 +5,16 @@ import worker from '../website/api/worker.js'
 class FakeKV {
   readonly values = new Map<string, string>()
   readonly puts: { key: string; options?: { expirationTtl?: number } }[] = []
+  /** Toggle to exercise the per-key fallback used by local/older runtimes. */
+  bulk = true
+  bulkGets = 0
 
-  async get(key: string): Promise<string | null> {
+  async get(key: string | string[]): Promise<string | Map<string, string | null> | null> {
+    if (Array.isArray(key)) {
+      if (!this.bulk) return null
+      this.bulkGets += 1
+      return new Map(key.map((name) => [name, this.values.get(name) ?? null]))
+    }
     return this.values.get(key) ?? null
   }
 
@@ -60,6 +68,9 @@ const BOB_SECRET = 'b'.repeat(43)
 const MALLORY_SECRET = 'c'.repeat(43)
 const ALICE_UUID = '11111111-1111-4111-8111-111111111111'
 const BOB_UUID = '22222222-2222-4222-8222-222222222222'
+const CAROL = 'POLARIS-DDDD-DDDD'
+const CAROL_SECRET = 'd'.repeat(43)
+const CAROL_UUID = '44444444-4444-4444-8444-444444444444'
 
 async function register(code: string, secret: string, name: string, uuid: string): Promise<void> {
   const response = await call('/v1/friends/register', {
@@ -173,6 +184,54 @@ describe('Polaris Worker auth', () => {
       { code: ALICE, secret: ALICE_SECRET }
     )).json()
     expect(strangerPresence.presence).toEqual({})
+  })
+
+  it('returns identical lists and presence with KV bulk reads and the per-key fallback', async () => {
+    // Bulk reads only engage with two or more keys, so add a second friend for
+    // this check and remove it again before the friendship-removal test.
+    await register(CAROL, CAROL_SECRET, 'Carol', CAROL_UUID)
+    await call('/v1/friends/request', {
+      method: 'POST',
+      code: ALICE,
+      secret: ALICE_SECRET,
+      body: { friendCode: CAROL }
+    })
+    await call('/v1/friends/respond', {
+      method: 'POST',
+      code: CAROL,
+      secret: CAROL_SECRET,
+      body: { friendCode: ALICE, action: 'accept' }
+    })
+    const presenceQuery = `uuids=${BOB_UUID},${CAROL_UUID}`
+    try {
+      const bulkCalls = kv.bulkGets
+      const bulkList = await (await call('/v1/friends/list', { code: ALICE, secret: ALICE_SECRET })).json()
+      const bulkPresence = await (await call(`/v1/presence/friends?${presenceQuery}`, {
+        code: ALICE,
+        secret: ALICE_SECRET
+      })).json()
+      expect(bulkList.friends.map((entry: { code: string }) => entry.code)).toEqual([BOB, CAROL])
+      expect(kv.bulkGets).toBeGreaterThan(bulkCalls)
+
+      kv.bulk = false
+      const fallbackCalls = kv.bulkGets
+      const pointList = await (await call('/v1/friends/list', { code: ALICE, secret: ALICE_SECRET })).json()
+      const pointPresence = await (await call(`/v1/presence/friends?${presenceQuery}`, {
+        code: ALICE,
+        secret: ALICE_SECRET
+      })).json()
+      expect(pointList).toEqual(bulkList)
+      expect(pointPresence).toEqual(bulkPresence)
+      expect(kv.bulkGets).toBe(fallbackCalls)
+    } finally {
+      kv.bulk = true
+      await call('/v1/friends/remove-mutual', {
+        method: 'POST',
+        code: ALICE,
+        secret: ALICE_SECRET,
+        body: { friendCode: CAROL }
+      })
+    }
   })
 
   it('returns and acknowledges authenticated shard grants', async () => {
