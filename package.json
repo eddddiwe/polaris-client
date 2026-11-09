@@ -16,10 +16,8 @@
   "private": true,
   "scripts": {
     "dev": "electron-vite dev",
-    "dev:tauri": "cargo tauri dev",
     "dev:web": "vite --config vite.web.config.ts",
     "build": "electron-vite build",
-    "build:tauri": "cargo tauri build",
     "build:web": "vite build --config vite.web.config.ts",
     "site": "vite --config vite.site.config.ts",
     "build:site": "vite build --config vite.site.config.ts",
@@ -36,6 +34,7 @@
     "dist:linux:deb": "node scripts/dist.cjs linux-deb",
     "dist:linux:rpm": "node scripts/dist.cjs linux-rpm",
     "sync:download": "node scripts/sync-site-download.cjs",
+    "check:release": "node scripts/check-release-metadata.cjs",
     "release:win": "npm run dist:win && npm run sync:download && npm run build:site",
     "release:site": "npm run sync:download && npm run build:site"
   },

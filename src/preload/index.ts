@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { EVENTS, IPC } from '../shared/ipc'
 import type { PolarisAPI } from '../shared/api'
+import type { JavaInfo } from '../shared/types'
 
 function subscribe<T>(channel: string, callback: (payload: T) => void): () => void {
   let handler: ((payload: T) => void) | null = callback
@@ -68,7 +69,14 @@ const api: PolarisAPI & { platform: NodeJS.Platform } = {
   updateSettings: (patch) => ipcRenderer.invoke(IPC.settingsUpdate, patch),
   chooseJava: () => ipcRenderer.invoke(IPC.settingsChooseJava),
   rescanJava: () => ipcRenderer.invoke(IPC.settingsRescanJava),
-  downloadJava: (major: number) => ipcRenderer.invoke(IPC.settingsDownloadJava, major),
+  downloadJava: async (major: number): Promise<JavaInfo[]> => {
+    // Main returns JavaInfo[]; also accept the older { java } envelope so a
+    // preload/main version mismatch degrades instead of reporting success as [].
+    const result = (await ipcRenderer.invoke(IPC.settingsDownloadJava, major)) as
+      | JavaInfo[]
+      | { java?: JavaInfo[] }
+    return Array.isArray(result) ? result : (result?.java ?? [])
+  },
   settingsSnapshot: () => ipcRenderer.invoke(IPC.settingsSnapshot),
   friendsList: () => ipcRenderer.invoke(IPC.friendsList),
   friendsRemoveMutual: (friendCode: string) => ipcRenderer.invoke(IPC.friendsRemoveMutual, friendCode),

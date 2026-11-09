@@ -53,6 +53,7 @@ import { FabricMeta } from '../core/fabric'
 import { Installer } from '../core/install'
 import { AccountStore, offlineAccount, type StoredAccount } from '../core/accounts'
 import { SafeStorageCipher } from './safeStorageCipher'
+import { resetUpdateTask } from './updateTask'
 import { AuthService } from '../core/auth'
 import { SettingsStore } from '../core/settings'
 import { InstanceStore } from '../core/instances'
@@ -167,6 +168,11 @@ export class AppServices extends EventEmitter {
   }
 
   private async initialize(): Promise<void> {
+    // The data root, settings and accounts are required for every operation.
+    // Keep `ready` rejected when they fail: bootstrap() awaits it, so the
+    // renderer shows its fatal-start screen instead of treating an empty,
+    // half-initialized client as healthy.
+    let settings: Settings = this.settingsStore.get()
     try {
       // Create directories in parallel
       await Promise.all([
@@ -184,17 +190,26 @@ export class AppServices extends EventEmitter {
         ].map((dir) => ensureDir(dir))
       ])
       // Load settings and accounts in parallel
-      const [settings] = await Promise.all([
+      const [loaded] = await Promise.all([
         this.settingsStore.load(),
         this.accounts.load(),
         this.friends.load()
       ])
+      settings = loaded
       // Apply the persisted in-game chat choice before any instance sync.
       this.instances.setChatModEnabled(settings.inGameChat !== false)
       this.logger.info('Polaris starting', { version: app.getVersion(), dataDir: this.paths.root })
       void this.syncShardGrants()
       this.shardTimer = setInterval(() => void this.syncShardGrants(), 15_000)
+    } catch (error) {
+      this.logger.error('Initialization failed', String(error))
+      throw error
+    }
 
+    // Java and GPU detection are best effort: the launcher remains usable
+    // without a runtime (Settings -> Java can rescan), so a failed scan keeps
+    // the fallback hardware rather than failing startup.
+    try {
       // Start the GPU probe now; the Java scan below runs while it is in flight.
       warmHardwareProbe()
       // Scan Java (needed for hardware detection) in parallel with latest release
@@ -212,7 +227,7 @@ export class AppServices extends EventEmitter {
         java: this.java.map((j) => j.version)
       })
     } catch (error) {
-      this.logger.error('Initialization failed', String(error))
+      this.logger.warn('Environment detection failed; using fallback hardware', String(error))
     }
   }
 
@@ -857,7 +872,10 @@ export class AppServices extends EventEmitter {
       await this.launchWindowsInstaller(installerPath, info.downloadSha256)
     } else {
       // macOS DMG / Linux AppImage: let the desktop open the downloaded file.
-      await shell.openPath(installerPath)
+      const openError = await shell.openPath(installerPath)
+      if (openError) {
+        throw new Error(`Could not open the installer: ${openError}`)
+      }
     }
 
     // Give the IPC reply time to reach the renderer, then hand the app over
@@ -975,6 +993,15 @@ export class AppServices extends EventEmitter {
     )
 
     try {
+      // `/Create /F` replaces the task definition but does not stop an
+      // already running helper. With IgnoreNew, `/Run` would then report
+      // success without starting this attempt, and the old helper's cleanup
+      // would delete the new registration. Clear the stale instance first.
+      await resetUpdateTask(
+        (command, args, timeoutMs) => this.runProcess(command, args, timeoutMs),
+        taskName
+      )
+
       const created = await this.runProcess('schtasks.exe', [
         '/Create',
         '/TN',
@@ -987,10 +1014,7 @@ export class AppServices extends EventEmitter {
         this.logger.warn('Could not register the update helper task; opening the verified installer directly', {
           code: created
         })
-        if ((await hashFile(installerPath, 'sha256')).toLowerCase() !== sha256.toLowerCase()) {
-          throw new Error('Installer changed after verification; refusing to run it')
-        }
-        await shell.openPath(installerPath)
+        await this.openVerifiedInstaller(installerPath, sha256)
         return
       }
 
@@ -999,10 +1023,10 @@ export class AppServices extends EventEmitter {
         this.logger.warn('Could not start the update helper task; opening the verified installer directly', {
           code: started
         })
-        if ((await hashFile(installerPath, 'sha256')).toLowerCase() !== sha256.toLowerCase()) {
-          throw new Error('Installer changed after verification; refusing to run it')
-        }
-        await shell.openPath(installerPath)
+        // A task registered but never started would otherwise stay behind
+        // forever because the helper that normally deletes it never ran.
+        await this.runProcess('schtasks.exe', ['/Delete', '/TN', taskName, '/F'])
+        await this.openVerifiedInstaller(installerPath, sha256)
         return
       }
 
@@ -1011,6 +1035,22 @@ export class AppServices extends EventEmitter {
       // The task has already read its XML. Do not leave predictable update
       // files in the user's data directory.
       await rm(tempDir, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }
+
+  /**
+   * Open the already-verified installer without Task Scheduler. Re-check the
+   * digest immediately before ShellExecute so a replaced file is still
+   * refused, and surface ShellExecute failures instead of quitting the
+   * launcher while nothing is installing.
+   */
+  private async openVerifiedInstaller(installerPath: string, sha256: string): Promise<void> {
+    if ((await hashFile(installerPath, 'sha256')).toLowerCase() !== sha256.toLowerCase()) {
+      throw new Error('Installer changed after verification; refusing to run it')
+    }
+    const error = await shell.openPath(installerPath)
+    if (error) {
+      throw new Error(`Could not open the installer: ${error}`)
     }
   }
 

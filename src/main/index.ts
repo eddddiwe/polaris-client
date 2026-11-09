@@ -4,10 +4,13 @@ import { join } from 'node:path'
 import { EVENTS } from '../shared/ipc'
 import { AppServices } from './services'
 import { registerIpc } from './ipc'
+import { focusWhenReady, focusWindow } from './singleInstance'
 
 const isMac = process.platform === 'darwin'
 let mainWindow: BrowserWindow | null = null
+let services: AppServices | null = null
 let quitting = false
+let secondInstancePending = false
 
 // Performance: disable unnecessary Chromium features
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService,TranslateUI,BlinkGenPropertyTrees')
@@ -33,10 +36,25 @@ if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    if (!mainWindow) return
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.show()
-    mainWindow.focus()
+    // The event can arrive before whenReady has created the window, and on
+    // macOS it can arrive after the last window was destroyed while the app
+    // stayed alive. Never touch a destroyed BrowserWindow: queue the focus
+    // request or recreate the window, otherwise the new launch is dropped.
+    if (quitting) return
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      // A window still loading must not be shown before its first paint; a
+      // window that has finished loading (even minimized/hidden) can be
+      // restored and focused immediately.
+      if (mainWindow.webContents.isLoading()) focusWhenReady(mainWindow)
+      else focusWindow(mainWindow)
+      return
+    }
+    if (services) {
+      mainWindow = createWindow(services)
+      focusWhenReady(mainWindow)
+      return
+    }
+    secondInstancePending = true
   })
 
   app.whenReady().then(async () => {
@@ -50,15 +68,25 @@ if (!app.requestSingleInstanceLock()) {
     app.on('web-contents-created', (_event, contents) => {
       contents.on('will-attach-webview', (event) => event.preventDefault())
     })
-    const services = new AppServices()
-    registerIpc(services)
-    mainWindow = createWindow(services)
-    await services.ready
-    mainWindow?.webContents.send(EVENTS.instanceChanged, {})
+    const appServices = new AppServices()
+    services = appServices
+    registerIpc(appServices)
+    mainWindow = createWindow(appServices)
+    if (secondInstancePending) {
+      secondInstancePending = false
+      focusWhenReady(mainWindow)
+    }
+    // Register before awaiting readiness so closing the starting window still
+    // lets a dock activate recreate it while bootstrap is in flight.
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow(services)
+      if (BrowserWindow.getAllWindows().length === 0) {
+        mainWindow = createWindow(appServices)
+        focusWhenReady(mainWindow)
+      }
     })
-  })
+    await appServices.ready
+    if (mainWindow) send(mainWindow, EVENTS.instanceChanged, {})
+  }).catch(reportStartupFailure)
 }
 
 function createWindow(services: AppServices): BrowserWindow {
@@ -119,7 +147,11 @@ function createWindow(services: AppServices): BrowserWindow {
       })
   })
 
-  wireServices(services, win)
+  const disposeServices = wireServices(services, win)
+  win.once('closed', () => {
+    disposeServices()
+    if (mainWindow === win) mainWindow = null
+  })
 
   // electron-vite sets this during development. A packaged build must never
   // load a remote renderer: it would receive the preload API.
@@ -144,7 +176,36 @@ function isLoopbackDevUrl(value: string): boolean {
   }
 }
 
-function wireServices(services: AppServices, win: BrowserWindow): void {
+/**
+ * Surface a failure that happened before the window could report it. When a
+ * live window exists, its bootstrap() awaits the same rejected `ready` promise
+ * and renders the fatal-start screen, so only a missing/destroyed window needs
+ * a native dialog and a non-zero exit.
+ */
+function reportStartupFailure(error: unknown): void {
+  try {
+    console.error('Startup failed', error)
+  } catch {
+    // stdio can be closed when the app is launched detached
+  }
+  if (quitting || (mainWindow && !mainWindow.isDestroyed())) return
+  try {
+    dialog.showErrorBox('Polaris could not start', error instanceof Error ? error.message : String(error))
+  } catch {
+    // no graphical session available
+  }
+  app.exit(1)
+}
+
+function wireServices(services: AppServices, win: BrowserWindow): () => void {
+  // Listeners capture their window. Without an explicit detach, every macOS
+  // `activate` re-create would stack another set on the long-lived services
+  // emitter and keep sending into destroyed windows.
+  const listeners: Array<{ event: string; listener: (...args: any[]) => void }> = []
+  const listen = (event: string, listener: (...args: any[]) => void): void => {
+    services.on(event, listener)
+    listeners.push({ event, listener })
+  }
   // `closeLauncherOnPlay` minimizes the window for the whole game session, and
   // installs keep running while the launcher is minimized too. Waking the
   // renderer for high-frequency events nobody can see only schedules work on a
@@ -183,12 +244,12 @@ function wireServices(services: AppServices, win: BrowserWindow): void {
   // Some window managers restore without a show/restore event; focus covers them.
   win.on('focus', flushPending)
 
-  services.on('progress', (event) => {
+  listen('progress', (event) => {
     if (hidden()) pendingProgress = event
     else send(win, EVENTS.progress, event)
   })
-  services.on('launch-state', (state) => send(win, EVENTS.launchState, state))
-  services.on('game-log', (chunk: { instanceId: string; lines: string[] }) => {
+  listen('launch-state', (state) => send(win, EVENTS.launchState, state))
+  listen('game-log', (chunk: { instanceId: string; lines: string[] }) => {
     if (!hidden()) {
       send(win, EVENTS.gameLog, chunk)
       return
@@ -209,15 +270,15 @@ function wireServices(services: AppServices, win: BrowserWindow): void {
       }
     }
   })
-  services.on('device-code', (info) => send(win, EVENTS.deviceCode, info))
-  services.on('account-changed', (snapshot) => send(win, EVENTS.accountChanged, snapshot))
-  services.on('account-error', (message) => send(win, EVENTS.accountError, message))
-  services.on('shards-changed', () => send(win, EVENTS.shardsChanged, {}))
-  services.on('chat-message', (message) => send(win, EVENTS.chatMessage, message))
-  services.on('chat-typing', (typing) => send(win, EVENTS.chatTyping, typing))
-  services.on('chat-state', (state) => send(win, EVENTS.chatState, state))
+  listen('device-code', (info) => send(win, EVENTS.deviceCode, info))
+  listen('account-changed', (snapshot) => send(win, EVENTS.accountChanged, snapshot))
+  listen('account-error', (message) => send(win, EVENTS.accountError, message))
+  listen('shards-changed', () => send(win, EVENTS.shardsChanged, {}))
+  listen('chat-message', (message) => send(win, EVENTS.chatMessage, message))
+  listen('chat-typing', (typing) => send(win, EVENTS.chatTyping, typing))
+  listen('chat-state', (state) => send(win, EVENTS.chatState, state))
 
-  services.on('game-started', ({ instanceId }: { instanceId: string }) => {
+  listen('game-started', ({ instanceId }: { instanceId: string }) => {
     const settings = services.settingsStore.get()
     send(win, EVENTS.gameState, { running: true, instanceId })
     if (settings.lowerLauncherPriority) {
@@ -230,7 +291,7 @@ function wireServices(services: AppServices, win: BrowserWindow): void {
     if (settings.closeLauncherOnPlay && !win.isDestroyed()) win.minimize()
   })
 
-  services.on('game-exited', () => {
+  listen('game-exited', () => {
     const settings = services.settingsStore.get()
     send(win, EVENTS.gameState, { running: false, instanceId: null })
     if (settings.lowerLauncherPriority) {
@@ -246,10 +307,16 @@ function wireServices(services: AppServices, win: BrowserWindow): void {
       win.focus()
     }
   })
+
+  return () => {
+    for (const { event, listener } of listeners) services.off(event, listener)
+    listeners.length = 0
+  }
 }
 
 function send(win: BrowserWindow, channel: string, payload: unknown): void {
-  if (!win.isDestroyed()) win.webContents.send(channel, payload)
+  if (win.isDestroyed() || win.webContents.isDestroyed()) return
+  win.webContents.send(channel, payload)
 }
 
 app.on('before-quit', () => {

@@ -324,8 +324,7 @@ export function registerIpc(services: AppServices): void {
   })
 
   handle(IPC.settingsRescanJava, async () => services.rescanJava())
-  handle(IPC.settingsDownloadJava, async (major: number) => {
-    const java = await services.downloadJava(major)
-    return { path: java[0]?.path ?? '', java }
-  })
+  // PolarisAPI.downloadJava (src/shared/api.ts) returns JavaInfo[]; wrapping the
+  // list in an object made the renderer report a successful install as failed.
+  handle(IPC.settingsDownloadJava, async (major: number) => services.downloadJava(major))
 }
