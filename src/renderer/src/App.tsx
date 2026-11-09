@@ -252,6 +252,8 @@ export default function App(): JSX.Element {
     })
     const offGame = api.onGameState((state) => setGameRunning(state.running))
     const offAccount = api.onAccountChanged((snapshot) => {
+      // Invalidate a bootstrap that started before the account changed.
+      refreshSeq.current += 1
       setBoot((current) =>
         current ? { ...current, accounts: snapshot.accounts, activeAccountId: snapshot.activeAccountId } : current
       )

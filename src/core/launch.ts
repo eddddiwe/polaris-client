@@ -70,6 +70,11 @@ export class LaunchService {
     return instanceId ? this.state.instanceId === instanceId && this.state.status === 'running' : this.state.status === 'running'
   }
 
+  /** True while launch preparation (install/auth/mod sync) is still in flight. */
+  isPreparing(instanceId?: string): boolean {
+    return this.launching && (instanceId === undefined || this.state.instanceId === instanceId)
+  }
+
   private setState(patch: Partial<LaunchState>): void {
     this.state = { ...this.state, ...patch }
     for (const listener of this.listeners) listener(this.getState())

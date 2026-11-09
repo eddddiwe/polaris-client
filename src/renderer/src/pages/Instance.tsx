@@ -543,11 +543,12 @@ const Overview = memo(function Overview({
 })
 
 function DeleteButton({ id, name }: { id: string; name: string }): JSX.Element {
-  const { api, refresh, navigate, toast, gameRunning, confirm } = useApp()
+  const { api, refresh, navigate, toast, gameRunning, launchState, confirm } = useApp()
+  const preparing = launchState.status === 'preparing' && launchState.instanceId === id
   return (
     <button
       className="btn btn-danger btn-sm"
-      disabled={gameRunning}
+      disabled={gameRunning || preparing}
       onClick={async () => {
         const confirmed = await confirm({
           title: 'Delete instance?',

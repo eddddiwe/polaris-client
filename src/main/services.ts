@@ -107,6 +107,8 @@ export class AppServices extends EventEmitter {
   ready: Promise<void>
   private initialized = false
   private updateInFlight: Promise<InstallUpdateResult> | null = null
+  /** Set once the helper has been launched; a second click must not reset it. */
+  private updateHandoffVersion = ''
   private shardSync: Promise<void> | null = null
   private shardSyncAccount: string | null = null
   private shardSyncAgain = false
@@ -709,7 +711,11 @@ export class AppServices extends EventEmitter {
   async downloadJava(major: number, onProgress?: (progress: any) => void): Promise<JavaInfo[]> {
     const { downloadJava } = await import('../core/java')
     const dest = join(this.paths.java, `temurin-${major}`)
-    const javaPath = await downloadJava(major, dest, onProgress)
+    const home = await downloadJava(major, dest, onProgress)
+    // The settings field and selectJava() compare executable paths, while the
+    // installer returns a Java home. Resolve it before persisting.
+    const info = await inspectJava(home)
+    const javaPath = info?.path ?? home
     await this.settingsStore.update({ javaPath })
     this.java = await scanJava([javaPath])
     this.hardware = { ...this.hardware, java: this.java }
@@ -772,6 +778,17 @@ export class AppServices extends EventEmitter {
   async checkForUpdates(): Promise<UpdateInfo> {
     const currentVersion = app.getVersion()
     const repo = 'eddddiwe/polaris-client'
+    if (process.platform !== 'win32') {
+      // The published updater asset is a Windows NSIS installer. Offer nothing
+      // on platforms whose package would not install it.
+      return {
+        hasUpdate: false,
+        currentVersion,
+        latestVersion: currentVersion,
+        downloadUrl: '',
+        publishedAt: new Date().toISOString()
+      }
+    }
     try {
       const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
         headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Polaris-Client' },
@@ -845,6 +862,9 @@ export class AppServices extends EventEmitter {
    * and `.part` rename failures) and no installer ever ran.
    */
   installUpdate(): Promise<InstallUpdateResult> {
+    if (this.updateHandoffVersion) {
+      return Promise.resolve({ status: 'installing', version: this.updateHandoffVersion })
+    }
     if (this.updateInFlight) return this.updateInFlight
     const run = this.performInstallUpdate().finally(() => {
       this.updateInFlight = null
@@ -881,6 +901,7 @@ export class AppServices extends EventEmitter {
     // Give the IPC reply time to reach the renderer, then hand the app over
     // to the installer. The helper waits for this process to exit before it
     // touches the installation directory.
+    this.updateHandoffVersion = info.latestVersion
     setTimeout(() => {
       app.quit()
       setTimeout(() => app.exit(0), 2000)

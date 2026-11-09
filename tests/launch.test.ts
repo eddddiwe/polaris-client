@@ -139,6 +139,8 @@ describe('LaunchService lifecycle', () => {
       const first = service.launch(instance, settings, [])
       first.catch(() => undefined)
       await installEntered
+      expect(service.isPreparing(instance.id)).toBe(true)
+      expect(service.isPreparing('another-instance')).toBe(false)
 
       const second = service.launch(instance, settings, [])
       releaseInstall()
@@ -146,6 +148,7 @@ describe('LaunchService lifecycle', () => {
       await expect(second).rejects.toThrow('A game is already running.')
       await expect(first).rejects.toThrow('No compatible Java runtime found')
       expect(installCalls()).toBe(1)
+      expect(service.isPreparing(instance.id)).toBe(false)
 
       // A failed launch must not leave the in-flight flag latched.
       await expect(service.launch(instance, settings, [])).rejects.toThrow('No compatible Java runtime found')

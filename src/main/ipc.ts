@@ -223,7 +223,9 @@ export function registerIpc(services: AppServices): void {
   handle(IPC.instanceCreate, async (input) => services.createInstance(input))
   handle(IPC.instanceUpdate, async (id: string, patch) => services.updateInstance(id, patch))
   handle(IPC.instanceDelete, async (id: string) => {
-    if (services.launcher.isRunning(id)) throw new Error('Stop the game before deleting this instance.')
+    if (services.launcher.isRunning(id) || services.launcher.isPreparing(id)) {
+      throw new Error('Wait for the launch to finish or stop the game before deleting this instance.')
+    }
     await services.instances.remove(id)
   })
 
