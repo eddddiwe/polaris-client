@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({
   app: {
     getVersion: () => '0.0.0-test',
-    getPath: () => ''
+    getPath: () => '',
+    getAppPath: () => process.cwd()
   },
   shell: { openPath: vi.fn() },
   safeStorage: {

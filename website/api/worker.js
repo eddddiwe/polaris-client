@@ -24,6 +24,7 @@ const REPO = 'eddddiwe/polaris-client'
 const FRIEND_CODE_RE = /^POLARIS-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/
 const SECRET_RE = /^[A-Za-z0-9_-]{32,128}$/
 const CHAT_TOKEN_RE = /^pc_[0-9a-f-]{36}$/i
+const PRESENCE_TOKEN_RE = /^ps_[0-9a-f-]{36}$/i
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const SHARD_ID_RE = /^[0-9a-f-]{36}$/i
 const MAX_FRIENDS = 200
@@ -36,6 +37,7 @@ const PRESENCE_FRESH_MS = 90_000
 const IP_TTL_SECONDS = 30 * 24 * 60 * 60
 const CHAT_TICKET_TTL_SECONDS = 90
 const CHAT_TOKEN_TTL_SECONDS = 12 * 60 * 60
+const PRESENCE_TOKEN_TTL_SECONDS = 12 * 60 * 60
 const CHAT_MESSAGE_TTL_SECONDS = 30 * 24 * 60 * 60
 const MAX_CHAT_CHARS = 800
 const MAX_SOCKETS_PER_INBOX = 8
@@ -253,6 +255,35 @@ async function authenticateChat(kv, request) {
     }
     const code = normalizeCode(data?.code)
     if (!code) return null
+    // Older tokens may not carry expiresAt; KV TTL remains the backstop.
+    if (data?.expiresAt !== undefined && Number(data.expiresAt) <= Date.now()) return null
+    const info = await readFriend(kv, code)
+    if (!info) return null
+    return { code, secret: '', info }
+  }
+  return await authenticate(kv, request)
+}
+
+/**
+ * Presence-scoped token. The bundled PolarisConfig build sends its secret as
+ * `X-Polaris-Secret`; a `ps_` token is accepted only here, so a game process
+ * never needs the master friend credential.
+ */
+async function authenticatePresence(kv, request) {
+  const secret = String(request.headers.get('X-Polaris-Secret') || '').trim()
+  if (PRESENCE_TOKEN_RE.test(secret)) {
+    const digest = await sha256Hex(secret)
+    const raw = await kv.get(`presenceToken:${digest}`)
+    if (!raw) return null
+    let data
+    try {
+      data = JSON.parse(raw)
+    } catch {
+      return null
+    }
+    const code = normalizeCode(data?.code)
+    if (!code) return null
+    if (data?.expiresAt !== undefined && Number(data.expiresAt) <= Date.now()) return null
     const info = await readFriend(kv, code)
     if (!info) return null
     return { code, secret: '', info }
@@ -304,9 +335,21 @@ async function readList(kv, key) {
   }
 }
 
-async function isFriend(kv, code, friendCode) {
+/**
+ * Chat requires both edges of the friendship. A one-sided read made removal
+ * fail open: if the second KV write was lost, the removed friend could still
+ * send. Removal also writes tombstones so a partially applied remove cannot
+ * be bypassed by the remaining edge.
+ */
+async function isMutualFriend(kv, code, friendCode) {
   if (!code || !friendCode || code === friendCode) return false
-  return (await readList(kv, `friends:${code}`)).includes(friendCode)
+  if (await kv.get(`block:${code}:${friendCode}`)) return false
+  if (await kv.get(`block:${friendCode}:${code}`)) return false
+  const [mine, theirs] = await Promise.all([
+    readList(kv, `friends:${code}`),
+    readList(kv, `friends:${friendCode}`)
+  ])
+  return mine.includes(friendCode) && theirs.includes(code)
 }
 
 /**
@@ -483,7 +526,7 @@ export default {
       // ---------- Presence ----------
       if (path === '/v1/presence') {
         limitOrThrow(request, 'presence', 120, 60_000)
-        const auth = await authenticate(kv, request)
+        const auth = await authenticatePresence(kv, request)
         if (!auth) return fail(401, 'Authentication required')
 
         if (request.method === 'POST') {
@@ -548,7 +591,7 @@ export default {
       // list. This prevents arbitrary UUID interrogation and spoofed records.
       if (path === '/v1/presence/friends' && request.method === 'GET') {
         limitOrThrow(request, 'presence-friends', 120, 60_000)
-        const auth = await authenticate(kv, request)
+        const auth = await authenticatePresence(kv, request)
         if (!auth) return fail(401, 'Authentication required')
         const requested = new Set(
           String(url.searchParams.get('uuids') || '')
@@ -634,9 +677,20 @@ export default {
         const master = await authenticate(kv, request)
         if (!master) return fail(401, 'Authentication required')
         const token = `pc_${crypto.randomUUID()}`
-        await kv.put(`chatToken:${await sha256Hex(token)}`, JSON.stringify({ code: master.code }), {
+        const digest = await sha256Hex(token)
+        await kv.put(`chatToken:${digest}`, JSON.stringify({
+          code: master.code,
+          expiresAt: Date.now() + CHAT_TOKEN_TTL_SECONDS * 1000
+        }), {
           expirationTtl: CHAT_TOKEN_TTL_SECONDS
         })
+        // Index the digest so the owner can revoke every live token.
+        const issued = await readList(kv, `chatTokens:${master.code}`)
+        await writeList(
+          kv,
+          `chatTokens:${master.code}`,
+          [digest, ...issued.filter((value) => value !== digest)].slice(0, 32)
+        )
         return json({
           token,
           code: master.code,
@@ -644,9 +698,51 @@ export default {
         })
       }
 
+      if (path === '/v1/chat/revoke' && request.method === 'POST') {
+        limitOrThrow(request, 'chat-revoke', 10, 60_000)
+        const master = await authenticate(kv, request)
+        if (!master) return fail(401, 'Authentication required')
+        const chatDigests = await readList(kv, `chatTokens:${master.code}`)
+        const presenceDigests = await readList(kv, `presenceTokens:${master.code}`)
+        await Promise.all([
+          ...chatDigests.map((digest) => kv.delete(`chatToken:${digest}`)),
+          ...presenceDigests.map((digest) => kv.delete(`presenceToken:${digest}`))
+        ])
+        await kv.delete(`chatTokens:${master.code}`)
+        await kv.delete(`presenceTokens:${master.code}`)
+        return json({ revoked: chatDigests.length + presenceDigests.length })
+      }
+
+      if (path === '/v1/presence/token' && request.method === 'POST') {
+        limitOrThrow(request, 'presence-token', 20, 60_000)
+        const master = await authenticate(kv, request)
+        if (!master) return fail(401, 'Authentication required')
+        const token = `ps_${crypto.randomUUID()}`
+        const digest = await sha256Hex(token)
+        await kv.put(`presenceToken:${digest}`, JSON.stringify({
+          code: master.code,
+          expiresAt: Date.now() + PRESENCE_TOKEN_TTL_SECONDS * 1000
+        }), {
+          expirationTtl: PRESENCE_TOKEN_TTL_SECONDS
+        })
+        const issued = await readList(kv, `presenceTokens:${master.code}`)
+        await writeList(
+          kv,
+          `presenceTokens:${master.code}`,
+          [digest, ...issued.filter((value) => value !== digest)].slice(0, 32)
+        )
+        return json({
+          token,
+          code: master.code,
+          expiresAt: Date.now() + PRESENCE_TOKEN_TTL_SECONDS * 1000
+        })
+      }
+
       // Chat accepts a short-lived scoped token; every other endpoint requires
       // the account secret.
       const isChatRoute = path.startsWith('/v1/chat/')
+      // Bound unauthenticated churn before the token lookup hits KV.
+      if (isChatRoute) limitOrThrow(request, 'chat-auth', 120, 60_000)
       const auth = isChatRoute ? await authenticateChat(kv, request) : await authenticate(kv, request)
       if (!auth) return fail(401, 'Authentication required')
 
@@ -675,7 +771,7 @@ export default {
         limitOrThrow(request, 'chat-history', 120, 60_000)
         const friendCode = normalizeCode(url.searchParams.get('friendCode'))
         if (!friendCode) return fail(400, 'Invalid friend code')
-        if (!(await isFriend(kv, auth.code, friendCode))) return fail(403, 'Chat is limited to friends')
+        if (!(await isMutualFriend(kv, auth.code, friendCode))) return fail(403, 'Chat is limited to friends')
         const room = chatRoom(auth.code, friendCode)
         // Keys are stored newest-first, so the first page is the newest
         // messages and older history never masks a fresh message.
@@ -721,7 +817,7 @@ export default {
         const text = cleanMessage(body.text, MAX_CHAT_CHARS)
         if (!friendCode) return fail(400, 'Invalid friend code')
         if (!text) return fail(400, 'Message is empty')
-        if (!(await isFriend(kv, auth.code, friendCode))) return fail(403, 'Chat is limited to friends')
+        if (!(await isMutualFriend(kv, auth.code, friendCode))) return fail(403, 'Chat is limited to friends')
         const message = {
           id: crypto.randomUUID(),
           from: auth.code,
@@ -750,7 +846,7 @@ export default {
         const body = await readJson(request)
         const friendCode = normalizeCode(body.friendCode)
         if (!friendCode) return fail(400, 'Invalid friend code')
-        if (!(await isFriend(kv, auth.code, friendCode))) return fail(403, 'Chat is limited to friends')
+        if (!(await isMutualFriend(kv, auth.code, friendCode))) return fail(403, 'Chat is limited to friends')
         await pushChat(env, friendCode, {
           type: 'typing',
           from: auth.code,
@@ -892,6 +988,10 @@ export default {
           if (!theirFriends.includes(auth.code)) {
             await writeList(kv, `friends:${friendCode}`, [...theirFriends, auth.code])
           }
+          await Promise.all([
+            kv.delete(`block:${auth.code}:${friendCode}`),
+            kv.delete(`block:${friendCode}:${auth.code}`)
+          ])
         }
         await deleteRequest(kv, friendCode, auth.code)
         return json({ ok: true, action })
@@ -904,13 +1004,24 @@ export default {
         if (!friendCode) return fail(400, 'Invalid friend code')
         if (friendCode === auth.code) return fail(400, 'Cannot remove yourself')
 
-        const mine = await readList(kv, `friends:${auth.code}`)
+        const [mine, theirs] = await Promise.all([
+          readList(kv, `friends:${auth.code}`),
+          readList(kv, `friends:${friendCode}`)
+        ])
+        if (!mine.includes(friendCode) && !theirs.includes(auth.code)) {
+          // Nothing to remove. Do not rewrite the other list or plant tombstones.
+          return json({ ok: true, removedFromBoth: true })
+        }
+        // Tombstone first: if either edge write below is lost or delayed, chat
+        // still fails closed for this pair. The TTL heals a delete/put race
+        // where an accept lands between these writes.
+        await kv.put(`block:${auth.code}:${friendCode}`, '1', { expirationTtl: 300 })
+        await kv.put(`block:${friendCode}:${auth.code}`, '1', { expirationTtl: 300 })
         await writeList(
           kv,
           `friends:${auth.code}`,
           mine.filter((code) => code !== friendCode)
         )
-        const theirs = await readList(kv, `friends:${friendCode}`)
         await writeList(
           kv,
           `friends:${friendCode}`,

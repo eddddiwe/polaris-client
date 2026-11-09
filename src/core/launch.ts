@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createWriteStream, readFileSync } from 'node:fs'
-import { readFile, readdir } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import readline from 'node:readline'
 import os from 'node:os'
@@ -12,7 +12,8 @@ import type { AccountStore } from './accounts'
 import type { AuthService } from './auth'
 import { mintChatSession, type ChatService } from './chat'
 import type { FriendStore } from './friends'
-import { supportsInGameChat } from './instances'
+import { polarisChatFile, polarisConfigFile, supportsInGameChat } from './instances'
+import { isVerifiedBundledMod } from './bundledTrust'
 import { selectJava } from './java'
 import { buildJvmFlags } from './performance'
 import { requiredJavaMajor } from './version'
@@ -47,6 +48,7 @@ export class LaunchService {
 
   constructor(
     private readonly paths: Paths,
+    private readonly appPath: string,
     private readonly installer: Installer,
     private readonly accounts: AccountStore,
     private readonly auth: AuthService,
@@ -129,22 +131,30 @@ export class LaunchService {
       const account = await this.auth.refreshIfNeeded(stored)
       const args = this.buildArguments(instance, settings, installed.version, installed.classpath, installed.assetIndexId, nativesDir, account, java, jvmTuning)
       const gameEnv: NodeJS.ProcessEnv = { ...process.env, POLARIS_CLIENT: '1' }
-      // Only Fabric instances that actually contain the bundled mods receive
-      // credentials. Presence still needs the account secret because the
-      // shipped PolarisConfig build reads it; chat gets a scoped token.
+      // Only Fabric instances that contain verified bundled mods receive
+      // credentials. The game process never gets the master account secret:
+      // config gets a presence-scoped token, chat a chat-scoped token.
       if (instance.loader === 'fabric' && account.friendCode) {
-        const installedMods = await readdir(join(instanceDir, 'mods')).catch(() => [] as string[])
-        const hasPresence = installedMods.some((name) =>
-          /^polaris-config-1\.2\.1(-modern|-official)?\.jar$/i.test(name)
-        )
-        const hasChat = installedMods.some((name) =>
-          /^polaris-chat-1\.0\.0(-modern|-official)?\.jar$/i.test(name)
-        )
+        const configName = polarisConfigFile(instance.mcVersion)
+        const hasPresence =
+          configName !== '' && (await isVerifiedBundledMod(this.appPath, instanceDir, configName))
         if (hasPresence && account.friendSecret) {
-          gameEnv.POLARIS_FRIEND_CODE = account.friendCode
-          gameEnv.POLARIS_FRIEND_SECRET = account.friendSecret
+          const presenceToken = await this.friends.mintPresenceToken({
+            code: account.friendCode,
+            secret: account.friendSecret
+          })
+          if (presenceToken) {
+            gameEnv.POLARIS_FRIEND_CODE = account.friendCode
+            gameEnv.POLARIS_FRIEND_SECRET = presenceToken
+          }
         }
-        if (settings.inGameChat !== false && supportsInGameChat(instance.mcVersion) && hasChat && account.friendSecret) {
+        const chatName = polarisChatFile(instance.mcVersion)
+        const hasChat =
+          settings.inGameChat !== false &&
+          supportsInGameChat(instance.mcVersion) &&
+          chatName !== '' &&
+          (await isVerifiedBundledMod(this.appPath, instanceDir, chatName))
+        if (hasChat && account.friendSecret) {
           // The Worker only mints a chat token for a registered profile.
           // Users can launch without ever opening Chat or Friends, so bind
           // the account first (best effort; the token request decides).

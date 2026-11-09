@@ -27,7 +27,7 @@ import {
 } from '../src/core/performance'
 import { CosmeticsService } from '../src/core/cosmetics'
 import { SettingsStore, defaultSettings, normalizeSettings } from '../src/core/settings'
-import { polarisChatFile, supportsInGameChat } from '../src/core/instances'
+import { polarisChatFile, polarisConfigFile, supportsInGameChat } from '../src/core/instances'
 import { assertSafeSegment, isSafeSegment, readJson, writeJson } from '../src/core/fsutil'
 import { ServerService } from '../src/core/server'
 import { ProgressHub } from '../src/core/events'
@@ -350,10 +350,20 @@ describe('bundled chat compatibility', () => {
     expect(supportsInGameChat('1.21.9')).toBe(false)
     expect(supportsInGameChat('1.21.10')).toBe(false)
     expect(supportsInGameChat('1.21.11')).toBe(true)
+    expect(supportsInGameChat('26.1')).toBe(false)
+    expect(supportsInGameChat('26.2')).toBe(false)
     expect(supportsInGameChat('26.3')).toBe(true)
+    expect(supportsInGameChat('26.4')).toBe(false)
     expect(polarisChatFile('1.21.1')).toBe('polaris-chat-1.0.0.jar')
     expect(polarisChatFile('1.21.11')).toBe('polaris-chat-1.0.0-modern.jar')
     expect(polarisChatFile('26.3')).toBe('polaris-chat-1.0.0-official.jar')
+    expect(polarisChatFile('26.1')).toBe('')
+    // 1.21.9 changed mouse input; the intermediary screen accepts no clicks there.
+    expect(polarisConfigFile('1.21.8')).toBe('polaris-config-1.2.1.jar')
+    expect(polarisConfigFile('1.21.9')).toBe('polaris-config-1.2.1-modern.jar')
+    expect(polarisConfigFile('1.21.11')).toBe('polaris-config-1.2.1-modern.jar')
+    expect(polarisConfigFile('26.3')).toBe('polaris-config-1.2.1-official.jar')
+    expect(polarisConfigFile('26.2')).toBe('')
   })
 })
 

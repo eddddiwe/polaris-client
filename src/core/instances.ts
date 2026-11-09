@@ -49,17 +49,21 @@ async function cachedHash(path: string, info: { size: number; mtimeMs: number })
   return hash
 }
 
-function polarisConfigFile(mcVersion: string): string {
+export function polarisConfigFile(mcVersion: string): string {
   const [major = 0, minor = 0, patch = 0] = mcVersion.split('.').map(Number)
-  if (major >= 26) return POLARIS_CONFIG_OFFICIAL
-  // 1.21.11 changed mouse/key input to event objects.
-  if (major === 1 && (minor > 21 || (minor === 21 && patch >= 11))) return POLARIS_CONFIG_MODERN
+  if (major >= 26) return major === 26 && minor === 3 ? POLARIS_CONFIG_OFFICIAL : ''
+  // 1.21.9 changed mouse/key input to event objects; the modern screen covers
+  // 1.21.9 through 1.21.11. The intermediary screen only accepts clicks up to
+  // 1.21.8.
+  if (major === 1 && (minor > 21 || (minor === 21 && patch >= 9))) return POLARIS_CONFIG_MODERN
   return POLARIS_CONFIG_INTERMEDIARY
 }
 
 export function supportsInGameChat(mcVersion: string): boolean {
   const [major = 0, minor = 0, patch = 0] = mcVersion.split('.').map(Number)
-  if (major >= 26) return true
+  // The official entrypoint/screen is a 26.3 port; 26.1/26.2 use APIs that do
+  // not exist there. Do not claim the whole 26.x line until each minor is built.
+  if (major >= 26) return major === 26 && minor === 3
   if (major !== 1) return false
   if (minor > 21) return true
   if (minor !== 21) return false
@@ -68,6 +72,7 @@ export function supportsInGameChat(mcVersion: string): boolean {
 }
 
 export function polarisChatFile(mcVersion: string): string {
+  if (!supportsInGameChat(mcVersion)) return ''
   const [major = 0, minor = 0, patch = 0] = mcVersion.split('.').map(Number)
   if (major >= 26) return POLARIS_CHAT_OFFICIAL
   if (major === 1 && (minor > 21 || (minor === 21 && patch >= 11))) return POLARIS_CHAT_MODERN
@@ -270,13 +275,22 @@ export class InstanceStore {
       const chatExisting = chatEntries.filter((name) => !name.endsWith('.disabled'))
       const chatDisabled = chatEntries.some((name) => name.endsWith('.disabled'))
       const hasFabricApi = modFiles.some((name) => /^fabric-api-.*\.jar$/i.test(name))
-      await this.syncBundledMod(
-        app.getAppPath(),
-        modsDir,
-        polarisConfigFile(config.mcVersion),
-        POLARIS_CONFIG_PATTERN,
-        configExisting.length > 0 || installIfMissing
-      )
+      const configName = polarisConfigFile(config.mcVersion)
+      if (configName) {
+        await this.syncBundledMod(
+          app.getAppPath(),
+          modsDir,
+          configName,
+          POLARIS_CONFIG_PATTERN,
+          configExisting.length > 0 || installIfMissing
+        )
+      } else {
+        // No verified build for this Minecraft line (26.1/26.2): remove the
+        // bundled copy instead of leaving a jar whose menu cannot open.
+        for (const name of configExisting) {
+          await rm(join(modsDir, name), { force: true })
+        }
+      }
 
       if (
         !this.chatModEnabled ||
@@ -316,6 +330,7 @@ export class InstanceStore {
     pattern: RegExp,
     installIfMissing: boolean
   ): Promise<void> {
+    if (!sourceName) return
     const source = join(appPath, 'resources', 'mods', sourceName)
     if (!(await pathExists(source))) return
     const existing = (await safeReaddir(modsDir)).filter((name) => pattern.test(name))
@@ -331,7 +346,7 @@ export class InstanceStore {
       // Cache only the immutable bundled source. The destination lives in a
       // user/mod-writable instance dir, so it is re-hashed every startup: a jar
       // replaced in place (same size/mtime) must never be trusted or keep
-      // receiving the friend secret at launch.
+      // receiving a launch credential.
       matches = (await cachedHash(source, sourceStat)) === (await hashFile(dest, 'sha256'))
     }
     if (!matches) {

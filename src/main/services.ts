@@ -144,6 +144,7 @@ export class AppServices extends EventEmitter {
     )
     this.launcher = new LaunchService(
       this.paths,
+      app.getAppPath(),
       this.installer,
       this.accounts,
       this.auth,
@@ -648,26 +649,49 @@ export class AppServices extends EventEmitter {
   async addOffline(name: string): Promise<AccountSnapshot> {
     const clean = name.trim()
     if (!/^[A-Za-z0-9_]{3,16}$/.test(clean)) throw new Error('Username must be 3–16 characters: letters, numbers or underscore.')
+    const previous = this.accounts.activeStored()
     await this.accounts.add(offlineAccount(clean))
+    if (previous && previous.friendCode && previous.friendSecret) {
+      this.chat.stop()
+      await this.friends.revokeChat({ code: previous.friendCode, secret: previous.friendSecret })
+    }
     return this.accountSnapshot()
   }
 
   async setActiveAccount(id: string): Promise<AccountSnapshot> {
+    const previous = this.accounts.activeStored()
     await this.accounts.setActive(id)
+    if (previous && previous.id !== id) {
+      this.chat.stop()
+      if (previous.friendCode && previous.friendSecret) {
+        await this.friends.revokeChat({ code: previous.friendCode, secret: previous.friendSecret })
+      }
+    }
     void this.syncShardGrants()
     return this.accountSnapshot()
   }
 
   async removeAccount(id: string): Promise<AccountSnapshot> {
+    const removed = this.accounts.stored(id)
+    const wasActive = this.accounts.activeStored()?.id === id
+    if (wasActive) this.chat.stop()
     await this.accounts.remove(id)
+    if (removed?.friendCode && removed.friendSecret) {
+      await this.friends.revokeChat({ code: removed.friendCode, secret: removed.friendSecret })
+    }
     return this.accountSnapshot()
   }
 
   async beginMicrosoftLogin(): Promise<import('../shared/types').DeviceCodeInfo> {
     const clientId = this.settingsStore.get().msClientId || '09aa1d05-9369-4725-bdb8-a46e54149e71'
+    const previous = this.accounts.activeStored()
     return await this.auth.beginDeviceLogin(clientId, {
       onDeviceCode: (info) => this.emit('device-code', info),
       onAccount: (account) => {
+        this.chat.stop()
+        if (previous && previous.friendCode && previous.friendSecret) {
+          void this.friends.revokeChat({ code: previous.friendCode, secret: previous.friendSecret })
+        }
         void this.syncShardGrants()
         this.emit('account-changed', this.accountSnapshot())
       },
@@ -679,6 +703,16 @@ export class AppServices extends EventEmitter {
     const updated = await this.settingsStore.update(patch)
     if (Object.prototype.hasOwnProperty.call(patch, 'inGameChat')) {
       this.instances.setChatModEnabled(updated.inGameChat !== false)
+      if (updated.inGameChat === false) {
+        this.chat.stop()
+        const revocations = this.accounts.list().map((account) => {
+          const stored = this.accounts.stored(account.id)
+          return stored?.friendCode && stored.friendSecret
+            ? this.friends.revokeChat({ code: stored.friendCode, secret: stored.friendSecret })
+            : Promise.resolve()
+        })
+        await Promise.all(revocations)
+      }
       // Apply the removal or reinstall before returning to the UI.
       try {
         await this.instances.list((id) => this.launcher.isRunning(id))

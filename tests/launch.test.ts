@@ -111,6 +111,7 @@ function makeService(root: string): {
   const logger = { info: () => undefined, warn: () => undefined, error: () => undefined, debug: () => undefined }
   const service = new LaunchService(
     makePaths(root),
+    root,
     installer,
     accounts,
     auth,

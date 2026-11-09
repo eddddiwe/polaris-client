@@ -100,6 +100,37 @@ export class FriendStore {
     }
   }
 
+  /** Revoke every live chat/presence token for this account. Best effort. */
+  async revokeChat(auth: FriendAuth): Promise<void> {
+    if (!FRIEND_CODE.test(auth.code) || !auth.secret) return
+    try {
+      await fetch(`${WORKER_BASE}/v1/chat/revoke`, {
+        method: 'POST',
+        headers: this.headers(auth),
+        signal: AbortSignal.timeout(5000)
+      })
+    } catch {
+      // Account removal must not fail because the Worker is offline.
+    }
+  }
+
+  /** Mint a presence-only token for the bundled config mod. */
+  async mintPresenceToken(auth: FriendAuth): Promise<string | null> {
+    if (!FRIEND_CODE.test(auth.code) || !auth.secret) return null
+    try {
+      const res = await fetch(`${WORKER_BASE}/v1/presence/token`, {
+        method: 'POST',
+        headers: this.headers(auth),
+        signal: AbortSignal.timeout(5000)
+      })
+      if (!res.ok) return null
+      const data = (await res.json()) as { token?: unknown }
+      return typeof data.token === 'string' && /^ps_[0-9a-f-]{36}$/i.test(data.token) ? data.token : null
+    } catch {
+      return null
+    }
+  }
+
   /** Bind the code to this account's secret. Idempotent while the secret matches. */
   async register(auth: FriendAuth, name: string, uuid?: string): Promise<boolean> {
     if (!FRIEND_CODE.test(auth.code) || !auth.secret) return false

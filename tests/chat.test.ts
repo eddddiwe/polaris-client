@@ -223,6 +223,67 @@ describe('Polaris chat transport', () => {
       env
     )
     expect(secondToken.status).toBe(401)
+
+    const revoke = await call('/v1/chat/revoke', {
+      method: 'POST',
+      code: ALICE,
+      secret: ALICE_SECRET
+    })
+    expect(revoke.status).toBe(200)
+    expect((await revoke.json()).revoked).toBeGreaterThan(0)
+    const revokedHistory = await (worker as any).fetch(
+      new Request(`https://polaris.test/v1/chat/history?friendCode=${BOB}`, { headers: chatHeaders }),
+      env
+    )
+    expect(revokedHistory.status).toBe(401)
+  })
+
+  it('mints a presence-scoped token that cannot access friends', async () => {
+    const response = await call('/v1/presence/token', {
+      method: 'POST',
+      code: ALICE,
+      secret: ALICE_SECRET
+    })
+    expect(response.status).toBe(200)
+    const { token } = await response.json()
+    expect(token).toMatch(/^ps_[0-9a-f-]{36}$/i)
+
+    const presence = await (worker as any).fetch(
+      new Request('https://polaris.test/v1/presence', {
+        method: 'POST',
+        headers: {
+          'X-Polaris-Code': ALICE,
+          'X-Polaris-Secret': token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ uuid: '11111111-1111-4111-8111-111111111111', name: 'Alice', server: 'play.example.org' })
+      }),
+      env
+    )
+    expect(presence.status).toBe(200)
+
+    const friends = await (worker as any).fetch(
+      new Request('https://polaris.test/v1/friends/list', {
+        headers: { 'X-Polaris-Code': ALICE, 'X-Polaris-Secret': token }
+      }),
+      env
+    )
+    expect(friends.status).toBe(401)
+
+    await call('/v1/chat/revoke', { method: 'POST', code: ALICE, secret: ALICE_SECRET })
+    const revoked = await (worker as any).fetch(
+      new Request('https://polaris.test/v1/presence', {
+        method: 'POST',
+        headers: {
+          'X-Polaris-Code': ALICE,
+          'X-Polaris-Secret': token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ uuid: '11111111-1111-4111-8111-111111111111', name: 'Alice', server: 'play.example.org' })
+      }),
+      env
+    )
+    expect(revoked.status).toBe(401)
   })
 
   it('requires authentication for ticket, history and send', async () => {
@@ -302,6 +363,24 @@ describe('Polaris chat transport', () => {
     expect(self.status).toBe(403)
   })
 
+  it('requires both friendship edges for chat', async () => {
+    const key = `friends:${ALICE}`
+    const original = kv.values.get(key)
+    kv.values.set(key, JSON.stringify([]))
+    try {
+      const send = await call('/v1/chat/send', {
+        method: 'POST',
+        code: ALICE,
+        secret: ALICE_SECRET,
+        body: { friendCode: BOB, text: 'one-sided' }
+      })
+      expect(send.status).toBe(403)
+    } finally {
+      if (original === undefined) kv.values.delete(key)
+      else kv.values.set(key, original)
+    }
+  })
+
   it('keeps line breaks and strips bidi controls', async () => {
     const response = await call('/v1/chat/send', {
       method: 'POST',
@@ -350,6 +429,55 @@ describe('Polaris chat transport', () => {
     expect(broadcasts).toEqual([
       { code: BOB, payload: { type: 'typing', from: ALICE, fromName: 'Alice' } }
     ])
+  })
+
+  it('blocks chat after removal even when one friendship edge survives', async () => {
+    const remove = await call('/v1/friends/remove-mutual', {
+      method: 'POST',
+      code: ALICE,
+      secret: ALICE_SECRET,
+      body: { friendCode: BOB }
+    })
+    expect(remove.status).toBe(200)
+
+    // Simulate a lost second write: Bob's edge comes back but Alice's stays gone.
+    kv.values.set(`friends:${BOB}`, JSON.stringify([ALICE]))
+    const blocked = await call('/v1/chat/send', {
+      method: 'POST',
+      code: ALICE,
+      secret: ALICE_SECRET,
+      body: { friendCode: BOB, text: 'should not arrive' }
+    })
+    expect(blocked.status).toBe(403)
+
+    // Re-friending clears the tombstones and restores chat.
+    expect(
+      (
+        await call('/v1/friends/request', {
+          method: 'POST',
+          code: ALICE,
+          secret: ALICE_SECRET,
+          body: { friendCode: BOB }
+        })
+      ).status
+    ).toBe(200)
+    expect(
+      (
+        await call('/v1/friends/respond', {
+          method: 'POST',
+          code: BOB,
+          secret: BOB_SECRET,
+          body: { friendCode: ALICE, action: 'accept' }
+        })
+      ).status
+    ).toBe(200)
+    const restored = await call('/v1/chat/send', {
+      method: 'POST',
+      code: ALICE,
+      secret: ALICE_SECRET,
+      body: { friendCode: BOB, text: 'back again' }
+    })
+    expect(restored.status).toBe(200)
   })
 
   it('returns only the newest page of messages in chronological order', async () => {
