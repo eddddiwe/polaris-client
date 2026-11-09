@@ -1,8 +1,10 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { stopChatAfterStart } from '../chat-lifecycle'
 import { errorMessage, useApp } from '../context'
 import { Icon } from '../components/Icons'
 import { Spinner } from '../components/Feedback'
 import { SkinAvatar } from '../components/SkinAvatar'
+import { settleChatSend } from './chatSendScope'
 import type { ChatMessage, Friend } from '@shared/types'
 
 type Connection = 'connecting' | 'connected' | 'disconnected'
@@ -149,9 +151,15 @@ export function ChatPage(): JSX.Element {
   const typingTimer = useRef<number | null>(null)
   const historySeq = useRef(0)
   const accountRef = useRef<string | null>(null)
+  const chatGeneration = useRef(0)
 
   const active = boot.accounts.find((account) => account.id === boot.activeAccountId)
   const myCode = active?.friendCode ?? null
+  // Update ownership before paint so a send reply that resolves between the
+  // account-switch commit and the passive reset below cannot be applied.
+  useLayoutEffect(() => {
+    accountRef.current = myCode
+  }, [myCode])
   const friendByCode = useMemo(() => {
     const map = new Map<string, Friend>()
     for (const friend of friends) map.set(friend.code, friend)
@@ -179,7 +187,13 @@ export function ChatPage(): JSX.Element {
   const sendMessage = useCallback(
     async (friendCode: string, snapshot: string): Promise<boolean> => {
       try {
-        const message = await api.chatSend(friendCode, snapshot.trim())
+        const message = await settleChatSend(
+          api.chatSend(friendCode, snapshot.trim()),
+          () => accountRef.current
+        )
+        // The account changed while the send was in flight; this reply belongs
+        // to the old account and must not touch the new account's threads.
+        if (!message) return false
         stickRef.current = true
         appendMessage(message, true)
         return true
@@ -229,7 +243,6 @@ export function ChatPage(): JSX.Element {
   // Load the friend list for this account.
   useEffect(() => {
     let cancelled = false
-    accountRef.current = myCode
     setFriends([])
     setThreads({})
     setUnread({})
@@ -263,6 +276,7 @@ export function ChatPage(): JSX.Element {
   // Connect while the Chat page is open; disconnect on leave.
   useEffect(() => {
     if (!myCode) return
+    const generation = ++chatGeneration.current
     const offMessage = api.onChatMessage((message) => {
       appendMessage(message, message.from === myCode)
     })
@@ -281,7 +295,9 @@ export function ChatPage(): JSX.Element {
       const openFriend = selectedRef.current
       if (openFriend) void loadHistory(openFriend, true)
     })
-    void api.chatStart().catch((error) => {
+    const starting = api.chatStart()
+    void starting.catch((error) => {
+      if (generation !== chatGeneration.current) return
       setConnection('disconnected')
       toast(errorMessage(error), 'error')
     })
@@ -293,6 +309,10 @@ export function ChatPage(): JSX.Element {
       typingTimer.current = null
       void api.chatStop()
       setConnection('disconnected')
+      // chat_start awaits account registration before opening the socket. If
+      // this page closes first, stop again once that start settles; a newer
+      // effect (account switch) owns chat and must not be stopped.
+      stopChatAfterStart(starting, () => generation === chatGeneration.current, () => void api.chatStop())
     }
   }, [api, myCode, appendMessage, loadHistory, toast])
 

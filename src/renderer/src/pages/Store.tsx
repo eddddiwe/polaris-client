@@ -1,10 +1,10 @@
-import { memo, useCallback, useEffect, useState, type CSSProperties } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import type { CosmeticItem, CosmeticSnapshot } from '@shared/types'
 import { errorMessage, formatPlaytime, useApp } from '../context'
 import { Icon } from '../components/Icons'
 import { CapeArt, CosmeticBadge } from '../components/Cosmetics'
 import { SkinAvatar } from '../components/SkinAvatar'
-import { Spinner } from '../components/Feedback'
+import { EmptyState, Spinner } from '../components/Feedback'
 
 type Filter = 'all' | 'badge' | 'cape'
 
@@ -106,39 +106,62 @@ const ClaimButton = memo(function ClaimButton({
 export function StorePage(): JSX.Element {
   const { api, boot, refresh, toast, openAccount } = useApp()
   const [snapshot, setSnapshot] = useState<CosmeticSnapshot | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
   const [busy, setBusy] = useState<string | null>(null)
+  const loadSeq = useRef(0)
   const active = boot.accounts.find((account) => account.id === boot.activeAccountId)
+  const accountRef = useRef(boot.activeAccountId)
 
-  useEffect(() => {
-    let cancelled = false
-    api
-      .cosmetics()
-      .then((value) => {
-        if (!cancelled) setSnapshot(value)
-      })
-      .catch((error) => {
-        if (!cancelled) toast(errorMessage(error), 'error')
-      })
-    return () => {
-      cancelled = true
+  const load = useCallback(async (): Promise<void> => {
+    const seq = ++loadSeq.current
+    setLoadError(null)
+    try {
+      const value = await api.cosmetics()
+      if (seq === loadSeq.current) setSnapshot(value)
+    } catch (error) {
+      if (seq !== loadSeq.current) return
+      // A toast disappears; without inline state the page would spin forever.
+      setLoadError(errorMessage(error))
+      toast(errorMessage(error), 'error')
     }
   }, [api, toast])
 
+  useLayoutEffect(() => {
+    // Never show the previous account's shard balance or owned cosmetics, and
+    // invalidate reads that were already in flight.
+    accountRef.current = boot.activeAccountId
+    loadSeq.current += 1
+    setSnapshot(null)
+    setLoadError(null)
+  }, [boot.activeAccountId])
+
+  useEffect(() => {
+    void load()
+    return () => {
+      loadSeq.current += 1
+    }
+  }, [load, boot.activeAccountId])
+
   useEffect(() => {
     return api.onShardsChanged(() => {
+      const seq = ++loadSeq.current
       void api
         .cosmetics()
-        .then(setSnapshot)
+        .then((next) => {
+          if (seq === loadSeq.current) setSnapshot(next)
+        })
         .catch((error) => toast(errorMessage(error), 'error'))
     })
   }, [api, toast])
 
   const unlock = useCallback(
     async (item: CosmeticItem): Promise<void> => {
+      const accountAtStart = accountRef.current
       setBusy(item.id)
       try {
         const next = await api.buyCosmetic(item.id)
+        if (accountRef.current !== accountAtStart) return
         setSnapshot(next)
         await refresh()
         toast(`${item.name} unlocked`, 'success')
@@ -153,9 +176,11 @@ export function StorePage(): JSX.Element {
 
   const equip = useCallback(
     async (item: CosmeticItem): Promise<void> => {
+      const accountAtStart = accountRef.current
       setBusy(item.id)
       try {
         const next = await api.equipCosmetic(item.id)
+        if (accountRef.current !== accountAtStart) return
         setSnapshot(next)
         await refresh()
         toast(`${item.name} equipped`, 'success')
@@ -169,8 +194,10 @@ export function StorePage(): JSX.Element {
   )
 
   const claim = useCallback(async (): Promise<void> => {
+    const accountAtStart = accountRef.current
     try {
       const result = await api.claimShards()
+      if (accountRef.current !== accountAtStart) return
       setSnapshot(result.snapshot)
       await refresh()
       toast(
@@ -191,7 +218,20 @@ export function StorePage(): JSX.Element {
             <h1>Cosmetics</h1>
           </div>
         </div>
-        <Spinner label="Opening the wardrobe" />
+        {loadError ? (
+          <EmptyState
+            icon="info"
+            title="Could not open the wardrobe"
+            body={loadError}
+            action={
+              <button className="btn btn-primary" onClick={() => void load()}>
+                Try again
+              </button>
+            }
+          />
+        ) : (
+          <Spinner label="Opening the wardrobe" />
+        )}
       </div>
     )
   }

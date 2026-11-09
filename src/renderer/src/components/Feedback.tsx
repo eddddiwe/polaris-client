@@ -43,7 +43,13 @@ export const ProgressDock = memo(
       <div className={`progress-dock ${progress.done ? 'done' : ''} ${progress.error ? 'failed' : ''}`}>
         <div className="progress-head">
           <span className="progress-label">
-            {progress.error ? <Icon name="info" size={14} /> : <span className="spinner spinner-sm" />}
+            {progress.error ? (
+              <Icon name="info" size={14} />
+            ) : progress.done ? (
+              <Icon name="check" size={14} />
+            ) : (
+              <span className="spinner spinner-sm" />
+            )}
             {progress.label}
           </span>
           <span className="progress-percent">{progress.error ? 'Failed' : `${percent}%`}</span>

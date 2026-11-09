@@ -53,8 +53,11 @@ function Link({
   )
 }
 
+// Link targets allow one level of balanced parentheses (e.g. Wikipedia's
+// `Foo_(bar)`); bare URLs do too, and stop at prose punctuation instead of
+// swallowing it. `<https://…>` autolinks are unwrapped before matching.
 const INLINE =
-  /!\[([^\]]*)\]\(([^)\s]+)\)|\[([^\]]+)\]\(([^)\s]+)\)|`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\s][^*]*)\*|_([^_\s][^_]*)_|(https?:\/\/[^\s<)]+)/g
+  /!\[([^\]]*)\]\(((?:[^()\s]|\([^()\s]*\))+)\)|\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)|`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\s][^*]*)\*|_([^_\s][^_]*)_|<(https?:\/\/[^>\s]{1,2048})>|(https?:\/\/(?:[^()\s<>]|\([^()\s]*\))+)/g
 
 function inline(text: string, onLink?: (url: string) => void): ReactNode[] {
   const nodes: ReactNode[] = []
@@ -64,7 +67,7 @@ function inline(text: string, onLink?: (url: string) => void): ReactNode[] {
   let match: RegExpExecArray | null
   while ((match = INLINE.exec(text)) !== null) {
     if (match.index > last) nodes.push(text.slice(last, match.index))
-    const [token, alt, imageUrl, label, linkUrl, code, boldA, boldB, italicA, italicB, bareUrl] = match
+    const [token, alt, imageUrl, label, linkUrl, code, boldA, boldB, italicA, italicB, angleUrl, bareUrl] = match
     if (imageUrl !== undefined) {
       nodes.push(
         safeImage(imageUrl) ? (
@@ -89,12 +92,23 @@ function inline(text: string, onLink?: (url: string) => void): ReactNode[] {
       nodes.push(<strong key={key++}>{boldA ?? boldB}</strong>)
     } else if (italicA !== undefined || italicB !== undefined) {
       nodes.push(<em key={key++}>{italicA ?? italicB}</em>)
-    } else if (bareUrl !== undefined) {
+    } else if (angleUrl !== undefined) {
       nodes.push(
-        <Link key={key++} url={bareUrl} onLink={onLink}>
-          {bareUrl.replace(/^https?:\/\//, '')}
+        <Link key={key++} url={angleUrl} onLink={onLink}>
+          {angleUrl.replace(/^https?:\/\//i, '')}
         </Link>
       )
+    } else if (bareUrl !== undefined) {
+      // Sentence punctuation is part of the matched token; keep it outside the
+      // anchor so the visible text and href stay intact.
+      const url = bareUrl.replace(/[.,;:!?]+$/, '')
+      const suffix = bareUrl.slice(url.length)
+      nodes.push(
+        <Link key={key++} url={url} onLink={onLink}>
+          {url.replace(/^https?:\/\//i, '')}
+        </Link>
+      )
+      if (suffix) nodes.push(suffix)
     } else {
       nodes.push(token)
     }

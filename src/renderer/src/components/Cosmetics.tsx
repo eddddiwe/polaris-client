@@ -204,6 +204,7 @@ function badgeGlyph(glyph: string): JSX.Element | null {
           <path d="M10 10l6 16 6-16M6 16h20" {...common} />
         </>
       )
+    case 'star':
       return (
         <path
           d="M16 6.1 18.4 13.6 25.9 16 18.4 18.4 16 25.9 13.6 18.4 6.1 16 13.6 13.6 16 6.1Z"

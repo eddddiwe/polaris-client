@@ -75,6 +75,19 @@ export function errorMessage(error: unknown): string {
   return String(error)
 }
 
+/**
+ * Latest-wins sequencing for async state writes.
+ *
+ * Call it before awaiting a request, then only apply the reply while the
+ * returned predicate is still true. Overlapping refreshes (settings toggles,
+ * mod installs, launch-state events) can resolve out of order, and the slower,
+ * older reply must not overwrite the newer snapshot.
+ */
+export function beginRequest(sequence: { current: number }): () => boolean {
+  const token = ++sequence.current
+  return () => sequence.current === token
+}
+
 export function formatRelative(timestamp?: number): string {
   if (!timestamp) return 'Never'
   const diff = Date.now() - timestamp

@@ -328,6 +328,19 @@ export function AccountModal({
     }
   }
 
+  // The main process owns the device-code poll. A terminal poll failure
+  // (expired, denied or a network error) only reaches App's toast; clear the
+  // dead code here so the panel stops waiting and Sign in becomes usable.
+  useEffect(
+    () =>
+      api.onAccountError((message) => {
+        setDevice(null)
+        setBusy(false)
+        setError(message)
+      }),
+    [api]
+  )
+
   return (
     <Modal title="Accounts" eyebrow="Identity" onClose={onClose} width={600}>
       <p className="modal-copy">
@@ -389,8 +402,6 @@ export function AccountModal({
           </button>
         </div>
       )}
-      {error && <p className="error-text">{error}</p>}
-
       {error && <div className="inline-error">{error}</div>}
       <div className="fine-print">
         Tokens are stored locally in your Polaris data folder. Polaris never sends them anywhere except Microsoft and Mojang

@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
   AccountSnapshot,
   Bootstrap,
@@ -664,6 +663,21 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 export function createMockApi(): Window['polaris'] {
   let launchState: LaunchState = { instanceId: null, status: 'idle' }
   let lastCode: DeviceCodeInfo | null = null
+  const launchListeners = new Set<(state: LaunchState) => void>()
+  const gameListeners = new Set<(state: { running: boolean; instanceId: string | null }) => void>()
+
+  /**
+   * Mirror main's LaunchService.setState(): every launch transition must reach
+   * subscribers, because the renderer stops showing "running" from the event,
+   * not from the resolved stop() call.
+   */
+  const setLaunchState = (next: LaunchState): LaunchState => {
+    launchState = next
+    const game = { running: next.status === 'running', instanceId: next.instanceId }
+    for (const listener of launchListeners) listener(launchState)
+    for (const listener of gameListeners) listener(game)
+    return launchState
+  }
 
   const snapshot = (): Bootstrap => ({
     appVersion: '0.3.0',
@@ -737,20 +751,20 @@ export function createMockApi(): Window['polaris'] {
       await sleep(150)
     },
     launch: async (id) => {
+      setLaunchState({ instanceId: id, status: 'preparing', message: 'Preparing game files' })
       await sleep(900)
       const instance = instances.find((item) => item.id === id)
       const isServer = instance?.kind === 'server'
-      launchState = {
+      return setLaunchState({
         instanceId: id,
         status: 'running',
         pid: 4212,
         startedAt: Date.now(),
         message: isServer ? `Server running on port ${instance?.port ?? 25565}` : 'Minecraft is running'
-      }
-      return launchState
+      })
     },
     stop: async () => {
-      launchState = { instanceId: null, status: 'exited', exitCode: 0, message: 'Game closed' }
+      setLaunchState({ instanceId: null, status: 'exited', exitCode: 0, message: 'Game closed' })
     },
     tailLogs: async (instanceId) => {
       const instance = instances.find((item) => item.id === instanceId)
@@ -1041,9 +1055,19 @@ export function createMockApi(): Window['polaris'] {
       return created
     },
     onProgress: () => () => undefined,
-    onLaunchState: () => () => undefined,
+    onLaunchState: (cb) => {
+      launchListeners.add(cb)
+      return () => {
+        launchListeners.delete(cb)
+      }
+    },
     onGameLog: () => () => undefined,
-    onGameState: () => () => undefined,
+    onGameState: (cb) => {
+      gameListeners.add(cb)
+      return () => {
+        gameListeners.delete(cb)
+      }
+    },
     onAccountChanged: () => () => undefined,
     onAccountError: () => () => undefined,
     onDeviceCode: () => () => undefined,

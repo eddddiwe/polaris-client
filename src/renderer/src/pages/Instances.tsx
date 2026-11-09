@@ -1,11 +1,17 @@
-import { memo, useCallback, useMemo, useState, type CSSProperties, type MouseEvent } from 'react'
-import type { InstanceSummary } from '@shared/types'
+import { memo, useCallback, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
+import type { InstanceSummary, LaunchState } from '@shared/types'
 import { useApp, formatRelative, errorMessage } from '../context'
 import { Icon } from '../components/Icons'
 import { EmptyState } from '../components/Feedback'
 
+/** The instance whose launch is still preparing, from a local click or the main process. */
+export function preparingInstanceId(localId: string | null, launchState: LaunchState): string | null {
+  if (localId) return localId
+  return launchState.status === 'preparing' ? launchState.instanceId : null
+}
+
 export function InstancesPage(): JSX.Element {
-  const { instances, navigate, launch, gameRunning, openNewInstance, api, refresh, toast, selectInstance, confirm, boot } = useApp()
+  const { instances, navigate, launch, gameRunning, launchState, openNewInstance, api, refresh, toast, selectInstance, confirm, boot } = useApp()
   const [query, setQuery] = useState('')
   const [updateInfo, setUpdateInfo] = useState<{
     hasUpdate: boolean
@@ -14,6 +20,12 @@ export function InstancesPage(): JSX.Element {
     releaseNotes?: string
   } | null>(null)
   const [installing, setInstalling] = useState(false)
+  const [launchingId, setLaunchingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  // Synchronous guards: state/props update after render, which is too late for a second click.
+  const launchTarget = useRef<string | null>(null)
+  const deleteTarget = useRef<string | null>(null)
+  const preparingId = preparingInstanceId(launchingId, launchState)
 
   const filtered = useMemo(
     () => instances.filter((instance) => `${instance.name} ${instance.mcVersion} ${instance.loader}`.toLowerCase().includes(query.toLowerCase())),
@@ -23,15 +35,28 @@ export function InstancesPage(): JSX.Element {
   const openInstance = useCallback((id: string) => navigate('instance', id), [navigate])
 
   const startInstance = useCallback(
-    (instance: InstanceSummary) => {
+    async (instance: InstanceSummary): Promise<void> => {
+      if (instance.running || launchTarget.current !== null || preparingId !== null || deleteTarget.current === instance.id) return
       selectInstance(instance.id)
-      if (!instance.running) void launch(instance.id)
+      launchTarget.current = instance.id
+      setLaunchingId(instance.id)
+      try {
+        await launch(instance.id)
+      } finally {
+        launchTarget.current = null
+        setLaunchingId(null)
+      }
     },
-    [launch, selectInstance]
+    [launch, preparingId, selectInstance]
   )
 
   const remove = useCallback(
     async (id: string, name: string): Promise<void> => {
+      if (deleteTarget.current === id) return
+      if (preparingId === id) {
+        toast('Wait for this instance to finish launching before deleting it.', 'error')
+        return
+      }
       const confirmed = await confirm({
         title: 'Delete instance?',
         message: `“${name}” and its saves, mods and configuration will be removed. This cannot be undone.`,
@@ -39,15 +64,25 @@ export function InstancesPage(): JSX.Element {
         danger: true
       })
       if (!confirmed) return
+      // A launch may have started while the confirm dialog was open.
+      if (launchTarget.current === id) {
+        toast('Wait for this instance to finish launching before deleting it.', 'error')
+        return
+      }
+      deleteTarget.current = id
+      setDeletingId(id)
       try {
         await api.deleteInstance(id)
         await refresh()
         toast('Instance deleted')
       } catch (error) {
         toast(errorMessage(error), 'error')
+      } finally {
+        deleteTarget.current = null
+        setDeletingId(null)
       }
     },
-    [api, confirm, refresh, toast]
+    [api, confirm, preparingId, refresh, toast]
   )
   const [importing, setImporting] = useState(false)
 
@@ -174,6 +209,8 @@ export function InstancesPage(): JSX.Element {
               key={instance.id}
               instance={instance}
               gameRunning={gameRunning}
+              preparingId={preparingId}
+              deletingId={deletingId}
               onOpen={openInstance}
               onRemove={remove}
               onLaunch={startInstance}
@@ -188,25 +225,31 @@ export function InstancesPage(): JSX.Element {
 interface InstanceCardProps {
   instance: InstanceSummary
   gameRunning: boolean
+  preparingId: string | null
+  deletingId: string | null
   onOpen: (id: string) => void
   onRemove: (id: string, name: string) => Promise<void>
-  onLaunch: (instance: InstanceSummary) => void
+  onLaunch: (instance: InstanceSummary) => Promise<void>
 }
 
 const InstanceCard = memo(function InstanceCard({
   instance,
   gameRunning,
+  preparingId,
+  deletingId,
   onOpen,
   onRemove,
   onLaunch
 }: InstanceCardProps): JSX.Element {
+  const preparing = preparingId === instance.id
+  const deleting = deletingId === instance.id
   const handleRemove = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation()
     void onRemove(instance.id, instance.name)
   }
   const handleLaunch = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation()
-    onLaunch(instance)
+    void onLaunch(instance)
   }
 
   return (
@@ -245,7 +288,12 @@ const InstanceCard = memo(function InstanceCard({
                 : `${instance.modCount} mods · ${Math.round(instance.memoryMb / 1024)} GB heap`}
             </span>
           </div>
-          <button className="icon-btn" aria-label={`Delete ${instance.name}`} onClick={handleRemove}>
+          <button
+            className="icon-btn"
+            aria-label={`Delete ${instance.name}`}
+            onClick={handleRemove}
+            disabled={preparing || deleting}
+          >
             <Icon name="trash" size={15} />
           </button>
         </div>
@@ -254,10 +302,14 @@ const InstanceCard = memo(function InstanceCard({
           <button
             className={`btn btn-sm ${instance.running ? 'btn-ghost' : 'btn-soft'}`}
             onClick={handleLaunch}
-            disabled={gameRunning && !instance.running}
+            disabled={preparingId !== null || deleting || (gameRunning && !instance.running)}
           >
-            <Icon name={instance.running ? 'monitor' : instance.kind === 'server' ? 'server' : 'play'} size={12} />
-            {instance.running ? 'Running' : instance.kind === 'server' ? 'Start' : 'Play'}
+            {preparing ? (
+              <span className="spinner spinner-sm" />
+            ) : (
+              <Icon name={instance.running ? 'monitor' : instance.kind === 'server' ? 'server' : 'play'} size={12} />
+            )}
+            {preparing ? 'Preparing…' : instance.running ? 'Running' : instance.kind === 'server' ? 'Start' : 'Play'}
           </button>
         </div>
       </div>

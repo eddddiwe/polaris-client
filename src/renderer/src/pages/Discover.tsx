@@ -93,6 +93,11 @@ export function DiscoverPage(): JSX.Element {
         })
         .catch((err) => {
           if (seq !== searchSeq.current) return
+          // A failed search must not leave the previous query's page behind as
+          // this query's first page: Load more would then request page two of
+          // the new query and append it to the old query's results.
+          setHits([])
+          setTotal(0)
           setError(errorMessage(err))
           setLoading(false)
         })
@@ -288,9 +293,7 @@ export function DiscoverPage(): JSX.Element {
         </div>
       )}
 
-      {error && <div className="inline-error">{error}</div>}
-
-      {loading ? (
+      {loading || (searching && hits.length === 0) ? (
         <div className="result-grid">
           {Array.from({ length: 6 }).map((_, index) => (
             <div key={index} className="result-card skeleton-card">
@@ -303,6 +306,8 @@ export function DiscoverPage(): JSX.Element {
             </div>
           ))}
         </div>
+      ) : error ? (
+        <EmptyState icon="info" title="Search failed" body={error} />
       ) : hits.length === 0 ? (
         <EmptyState
           icon="search"

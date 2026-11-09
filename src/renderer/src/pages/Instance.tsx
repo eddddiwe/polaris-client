@@ -15,6 +15,7 @@ import type { PolarisAPI } from '@shared/api'
 import { errorMessage, formatBytes, formatPlaytime, formatRelative, useApp, type AppContextValue } from '../context'
 import { Icon } from '../components/Icons'
 import { EmptyState, Spinner, Switch } from '../components/Feedback'
+import { isInstanceRunning } from './instance-state'
 
 type Tab = 'overview' | 'mods' | 'performance' | 'logs'
 type ModsTabApp = Pick<AppContextValue, 'detail' | 'api' | 'reloadDetail' | 'refresh' | 'toast' | 'gameRunning' | 'confirm'>
@@ -1334,6 +1335,11 @@ const LogsTab = memo(function LogsTab({ detail, api, toast, launchState, refresh
   const [lines, setLines] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [command, setCommand] = useState('')
+  const instanceId = detail?.instance.id
+  // The launch state describes the one running process, not this tab's
+  // instance. Scope it so a stopped server cannot accept commands that the
+  // main process would route to another running server.
+  const runningHere = isInstanceRunning(launchState, instanceId)
 
   useEffect(() => {
     if (!detail) return
@@ -1350,13 +1356,13 @@ const LogsTab = memo(function LogsTab({ detail, api, toast, launchState, refresh
     }
     void load()
     const interval = window.setInterval(() => {
-      if (launchState.status === 'running') void load()
+      if (runningHere) void load()
     }, 4000)
     return () => {
       cancelled = true
       window.clearInterval(interval)
     }
-  }, [api, detail, launchState.status, toast])
+  }, [api, detail, runningHere, toast])
 
   const [crashes, setCrashes] = useState<{ name: string; path: string; size: number; modified: number }[]>([])
   const [safeMode, setSafeMode] = useState(false)
@@ -1381,7 +1387,7 @@ const LogsTab = memo(function LogsTab({ detail, api, toast, launchState, refresh
 
   const send = async (): Promise<void> => {
     const value = command.trim()
-    if (!value) return
+    if (!value || !runningHere) return
     try {
       await api.serverCommand(detail.instance.id, value)
       setCommand('')
@@ -1450,12 +1456,12 @@ const LogsTab = memo(function LogsTab({ detail, api, toast, launchState, refresh
           <span className="console-prompt">›</span>
           <input
             value={command}
-            placeholder={launchState.status === 'running' ? 'say Hello, list, whitelist add Steve…' : 'Start the server to send commands'}
-            disabled={launchState.status !== 'running'}
+            placeholder={runningHere ? 'say Hello, list, whitelist add Steve…' : 'Start the server to send commands'}
+            disabled={!runningHere}
             onChange={(event) => setCommand(event.target.value)}
             aria-label="Server command"
           />
-          <button className="btn btn-soft btn-sm" disabled={launchState.status !== 'running' || !command.trim()}>
+          <button className="btn btn-soft btn-sm" disabled={!runningHere || !command.trim()}>
             Send
           </button>
         </form>

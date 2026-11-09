@@ -2,21 +2,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { Component, lazy, Suspense, type ErrorInfo, type ReactNode } from 'react'
 import type { Bootstrap, InstanceDetail, LaunchState, ProgressEvent, Settings } from '@shared/types'
 import type { PolarisAPI } from '@shared/api'
-import { AppContext, errorMessage, type Page, type Toast, type ToastKind, type ConfirmFn, type ConfirmOptions } from './context'
+import { AppContext, beginRequest, errorMessage, type Page, type Toast, type ToastKind, type ConfirmFn, type ConfirmOptions } from './context'
 import { loadPage, preloadPage } from './routes'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
 import { Toasts, ProgressDock } from './components/Feedback'
 import { Wallpaper } from './components/Wallpaper'
 import { HomePage } from './pages/Home'
-const InstancesPage = lazy(() => loadPage('instances'))
-const InstancePage = lazy(() => loadPage('instance'))
-const DiscoverPage = lazy(() => loadPage('discover'))
-const PerformancePage = lazy(() => loadPage('performance'))
-const StorePage = lazy(() => loadPage('store'))
-const SettingsPage = lazy(() => loadPage('settings'))
-const FriendsPage = lazy(() => loadPage('friends'))
-const ChatPage = lazy(() => loadPage('chat'))
 import { AccountModal, ConfirmModal, NewInstanceModal } from './components/Modals'
 import { PolarisMark } from './components/Icons'
 
@@ -29,10 +21,30 @@ function getApi(): PolarisAPI {
   throw new Error('Polaris API not available. Run in Electron or use npm run dev:web for preview.')
 }
 
+/**
+ * Route components must be created in one place so a crashed page can be
+ * rebuilt. React.lazy caches a rejected loader forever, so reusing the same
+ * lazy component after a chunk load failure makes "Try again" a no-op.
+ */
+function createPageComponents() {
+  return {
+    instances: lazy(() => loadPage('instances')),
+    instance: lazy(() => loadPage('instance')),
+    discover: lazy(() => loadPage('discover')),
+    performance: lazy(() => loadPage('performance')),
+    store: lazy(() => loadPage('store')),
+    settings: lazy(() => loadPage('settings')),
+    friends: lazy(() => loadPage('friends')),
+    chat: lazy(() => loadPage('chat'))
+  }
+}
+
 interface PageErrorBoundaryProps {
   children: ReactNode
   /** Changing this clears a previous crash without remounting healthy pages. */
   resetKey: string
+  /** Rebuild lazy route components so a failed chunk load can be retried. */
+  onRetry?: () => void
 }
 
 interface PageErrorBoundaryState {
@@ -70,7 +82,10 @@ class PageErrorBoundary extends Component<PageErrorBoundaryProps, PageErrorBound
     console.error('Page crashed:', error, info.componentStack)
   }
 
-  private retry = (): void => this.setState({ error: null })
+  private retry = (): void => {
+    this.props.onRetry?.()
+    this.setState({ error: null })
+  }
 
   render(): ReactNode {
     if (this.state.error) {
@@ -149,10 +164,15 @@ export default function App(): JSX.Element {
   const [accountOpen, setAccountOpen] = useState(false)
   const [confirmRequest, setConfirmRequest] = useState<(ConfirmOptions & { resolve: (value: boolean) => void }) | null>(null)
   const toastId = useRef(0)
+  const refreshSeq = useRef(0)
   const toastTimers = useRef<Set<number>>(new Set())
   const autoUpdated = useRef<Set<string>>(new Set())
   const lastDetailId = useRef<string | null>(null)
   const mainRef = useRef<HTMLElement | null>(null)
+  // Bumped by the page boundary's retry button. A new map gives the failed
+  // route a fresh React.lazy instance instead of its cached rejection.
+  const [pageEpoch, setPageEpoch] = useState(0)
+  const pages = useMemo(createPageComponents, [pageEpoch])
 
   // Start every route at the top instead of inheriting the previous page's
   // scroll position. Force an instant scroll: `.main` sets
@@ -187,24 +207,30 @@ export default function App(): JSX.Element {
   }
 
   const refresh = useCallback(async () => {
+    const isCurrent = beginRequest(refreshSeq)
     try {
       const snapshot = await api.bootstrap()
+      // A slower, older bootstrap must not resurrect a deleted instance or
+      // revert a setting that a newer refresh already applied.
+      if (!isCurrent()) return
       setBoot(snapshot)
       setActiveInstanceId((current) => {
         if (current && snapshot.instances.some((instance) => instance.id === current)) return current
         return snapshot.instances[0]?.id ?? null
       })
     } catch (error) {
+      if (!isCurrent()) return
       toast(`Could not refresh client data: ${errorMessage(error)}`, 'error')
     }
   }, [api, toast])
 
   useEffect(() => {
     let cancelled = false
+    const isCurrent = beginRequest(refreshSeq)
     api
       .bootstrap()
       .then((snapshot) => {
-        if (cancelled) return
+        if (cancelled || !isCurrent()) return
         setBoot(snapshot)
         setActiveInstanceId(snapshot.instances[0]?.id ?? null)
         setLaunchState(snapshot.launch)
@@ -375,15 +401,6 @@ export default function App(): JSX.Element {
     }
   }, [api, toast])
 
-  const updateSettings = useCallback(
-    async (patch: Partial<Settings>) => {
-      const updated = await api.updateSettings(patch)
-      setBoot((current) => (current ? { ...current, settings: updated } : current))
-      return updated
-    },
-    [api]
-  )
-
   if (fatal) {
     return (
       <div className="splash">
@@ -417,6 +434,16 @@ export default function App(): JSX.Element {
 
   const activeInstance = boot.instances.find((instance) => instance.id === activeInstanceId)
   const style = { '--accent': boot.settings.accent } as CSSProperties
+  const {
+    instances: InstancesPage,
+    instance: InstancePage,
+    discover: DiscoverPage,
+    performance: PerformancePage,
+    store: StorePage,
+    settings: SettingsPage,
+    friends: FriendsPage,
+    chat: ChatPage
+  } = pages
   // Route, selected instance, and signed-in account are the inputs that make a
   // page's rendered content stale. Changing any of them clears a crash.
   // JSON encoding avoids delimiter collisions in user/account identifiers.
@@ -467,7 +494,10 @@ export default function App(): JSX.Element {
             </div>
           )}
           <div className="page" key={page}>
-            <PageErrorBoundary resetKey={boundaryResetKey}>
+            <PageErrorBoundary
+              resetKey={boundaryResetKey}
+              onRetry={() => setPageEpoch((epoch) => epoch + 1)}
+            >
               {page === 'home' && <HomePage />}
               {page === 'instances' && <Suspense fallback={<div className="page-loading">Loading...</div>}><InstancesPage /></Suspense>}
               {page === 'instance' && <Suspense fallback={<div className="page-loading">Loading...</div>}><InstancePage /></Suspense>}

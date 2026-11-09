@@ -50,9 +50,12 @@ export function Wallpaper(): JSX.Element | null {
   const active = custom && mediaOk
   const playing = active && !still
 
+  // Forget a failed media URL when the selection changes. Preset changes are
+  // also a retry: without this, one transient load error leaves custom media
+  // blank for the rest of the session even after switching away and back.
   useEffect(() => {
     setFailedUrl('')
-  }, [url])
+  }, [url, preset])
 
   useEffect(() => {
     const video = videoRef.current

@@ -4,6 +4,7 @@ import { formatPlaytime, formatRelative, useApp } from '../context'
 import { Icon, PolarisMark } from '../components/Icons'
 import { CosmeticBadge } from '../components/Cosmetics'
 import { EmptyState } from '../components/Feedback'
+import { canLaunchFromHome } from './homeLaunch'
 
 // Constructing an Intl.DateTimeFormat is much pricier than using one, so build
 // it once at module scope.
@@ -79,13 +80,18 @@ export function HomePage(): JSX.Element {
     (event: ChangeEvent<HTMLSelectElement>) => selectInstance(event.target.value),
     [selectInstance]
   )
+  // The launcher owns one process at a time. A second request during
+  // "preparing" is not rejected yet (the child is spawned only after install),
+  // so a row click there used to start a parallel install/JVM.
+  const launchReady = canLaunchFromHome(gameRunning, launchState.status)
   const playFromList = useCallback(
     (event: MouseEvent<HTMLButtonElement>, id: string) => {
       event.stopPropagation()
+      if (!launchReady) return
       selectInstance(id)
       void launch(id)
     },
-    [launch, selectInstance]
+    [launchReady, launch, selectInstance]
   )
 
   if (instances.length === 0) {
@@ -345,6 +351,7 @@ export function HomePage(): JSX.Element {
                 className="icon-btn play-mini"
                 aria-label={`${instance.kind === 'server' ? 'Start' : 'Play'} ${instance.name}`}
                 onClick={(event) => playFromList(event, instance.id)}
+                disabled={!launchReady}
               >
                 <Icon name={instance.kind === 'server' ? 'server' : 'play'} size={13} />
               </button>

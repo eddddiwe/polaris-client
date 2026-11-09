@@ -73,15 +73,17 @@ export function Sidebar(): JSX.Element {
 
       <SidebarNav page={page} instanceCount={boot.instances.length} onNavigate={navigate} />
 
-      {gameRunning && runningInstance && (
+      {gameRunning && launchState.instanceId && (
         <div className="sidebar-game">
           <div className="sidebar-game-top">
             <span className="status-dot status-dot-live" />
             <span>Running</span>
           </div>
-          <strong>{runningInstance.name}</strong>
+          <strong>{runningInstance?.name ?? 'Minecraft'}</strong>
           <span className="sidebar-game-meta">
-            {runningInstance.mcVersion} · {runningInstance.loader === 'fabric' ? 'Fabric' : 'Vanilla'}
+            {runningInstance
+              ? `${runningInstance.mcVersion} · ${runningInstance.loader === 'fabric' ? 'Fabric' : 'Vanilla'}`
+              : 'Instance details unavailable'}
           </span>
           <button className="btn btn-ghost btn-sm" onClick={() => void stop()}>
             <Icon name="stop" size={12} /> Stop

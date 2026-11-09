@@ -1,8 +1,9 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { errorMessage, useApp } from '../context'
 import { Icon } from '../components/Icons'
 import { Modal, Spinner } from '../components/Feedback'
 import { SkinAvatar } from '../components/SkinAvatar'
+import { settleForAccount } from './friendsMutation'
 import type { Friend } from '@shared/types'
 
 type PresenceEntry = { server: string; lastSeen: number }
@@ -76,6 +77,10 @@ export function FriendsPage(): JSX.Element {
   const active = boot.accounts.find((account) => account.id === boot.activeAccountId)
   const myCode = active?.friendCode ?? null
   const accountRef = useRef(myCode)
+  // Keep ownership accurate from commit, before a late mutation can resolve.
+  useLayoutEffect(() => {
+    accountRef.current = myCode
+  }, [myCode])
 
   const refresh = useCallback(async (silent = false): Promise<void> => {
     const seq = ++refreshSeq.current
@@ -128,7 +133,6 @@ export function FriendsPage(): JSX.Element {
     // The page stays mounted across account switches. Invalidate in-flight
     // responses, then clear so one account never shows another account's
     // friend list while the API loads.
-    accountRef.current = myCode
     refreshSeq.current += 1
     requestsSeq.current += 1
     setFriends([])
@@ -188,8 +192,10 @@ export function FriendsPage(): JSX.Element {
       return
     }
     setBusy(true)
+    const accountAtSend = myCode
     try {
-      await api.friendsRequest(c)
+      const sent = await settleForAccount(api.friendsRequest(c), accountAtSend, () => accountRef.current)
+      if (!sent) return
       setCode('')
       setAddOpen(false)
       toast('Friend request sent', 'success')
@@ -204,7 +210,12 @@ export function FriendsPage(): JSX.Element {
   const respondRequest = async (friendCode: string, action: 'accept' | 'decline'): Promise<void> => {
     if (!myCode) return
     try {
-      await api.friendsRespond(friendCode, action)
+      const handled = await settleForAccount(
+        api.friendsRespond(friendCode, action),
+        myCode,
+        () => accountRef.current
+      )
+      if (!handled) return
       await refresh()
       void loadRequests()
       const actionText = action === 'accept' ? 'accepted' : 'declined'
@@ -227,7 +238,14 @@ export function FriendsPage(): JSX.Element {
       })
       if (!confirmed || accountRef.current !== accountAtConfirm) return
       try {
-        const result = await api.friendsRemoveMutual(friendCode)
+        const result = await settleForAccount(
+          api.friendsRemoveMutual(friendCode),
+          accountAtConfirm,
+          () => accountRef.current
+        )
+        if (!result) return
+        // A poll that started before the removal must not put the friend back.
+        refreshSeq.current += 1
         setFriends(result.friends)
         if (result.synced) {
           toast('Friend removed', 'success')
