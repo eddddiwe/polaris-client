@@ -44,9 +44,14 @@ export interface DownloadFileOptions {
 
 export type ProgressFn = (progress: DownloadProgress) => void
 
+/** The bytes on disk are complete but do not match the published digest. */
+class DownloadDigestError extends Error {}
+
 export class Downloader {
   private active = 0
   private readonly fileDownloads = new Map<string, Promise<number>>()
+  /** Serializes `downloadAll` work per destination; see `withDestLock`. */
+  private readonly destLocks = new Map<string, Promise<void>>()
 
   constructor(
     private readonly concurrency: number,
@@ -139,7 +144,7 @@ export class Downloader {
     const worker = async (): Promise<void> => {
       while (next < unique.length) {
         const item = unique[next++]
-        const result = await this.downloadOne(item)
+        const result = await this.withDestLock(item.dest, () => this.downloadOne(item))
         if (result === 'reused') reused++
         else downloaded++
         completedBytes += item.size ?? 0
@@ -180,7 +185,8 @@ export class Downloader {
   private async downloadFileResumable(
     url: string,
     dest: string,
-    options: DownloadFileOptions | number
+    options: DownloadFileOptions | number,
+    allowRestart = true
   ): Promise<number> {
     const opts = typeof options === 'number' ? { timeoutMs: options } : options
     const timeoutMs = opts.timeoutMs ?? 10 * 60_000
@@ -188,9 +194,25 @@ export class Downloader {
     const partial = `${dest}.part`
 
     let offset = (await stat(partial).catch(() => null))?.size ?? 0
+
+    // A `.part` left by a previous release can resume against a changed file
+    // and splice two builds together. The digest detects that, but failing the
+    // update outright leaves the user stuck, so retry once from scratch.
+    const finish = async (digest?: string): Promise<number> => {
+      try {
+        return await this.finalizeDownload(partial, dest, opts, digest)
+      } catch (error) {
+        if (allowRestart && offset > 0 && error instanceof DownloadDigestError) {
+          this.logger.warn('Discarding a partial download that failed verification', { dest })
+          return await this.downloadFileResumable(url, dest, options, false)
+        }
+        throw error
+      }
+    }
+
     if (opts.expectedSize && opts.expectedSize > 0) {
       if (offset === opts.expectedSize) {
-        return await this.finalizeDownload(partial, dest, opts)
+        return await finish()
       }
       if (offset > opts.expectedSize) {
         await rm(partial, { force: true })
@@ -255,7 +277,7 @@ export class Downloader {
       throw new Error(`Incomplete download: expected ${expected} bytes, received ${written}`)
     }
 
-    return await this.finalizeDownload(partial, dest, opts, hasher?.digest('hex'))
+    return await finish(hasher?.digest('hex'))
   }
 
   private async finalizeDownload(
@@ -272,11 +294,34 @@ export class Downloader {
       const actual = digest ?? (await hashFile(partial, 'sha256'))
       if (actual.toLowerCase() !== opts.sha256.toLowerCase()) {
         await rm(partial, { force: true })
-        throw new Error('Downloaded installer failed its SHA-256 check')
+        throw new DownloadDigestError('Downloaded installer failed its SHA-256 check')
       }
     }
     await replaceFile(partial, dest)
     return written
+  }
+
+  /**
+   * `dedupeByDest` only covers one `downloadAll` call. Independent callers
+   * (two mod installs, or two modpack installs sharing the downloaded
+   * archive) would otherwise stream into the same `${dest}.part`, truncate
+   * each other's bytes or consume the temp file first, and fail with ENOENT
+   * or a checksum mismatch. Queue work per destination; the next caller then
+   * sees a valid destination and reuses it instead of downloading again.
+   */
+  private withDestLock<T>(dest: string, task: () => Promise<T>): Promise<T> {
+    const key = dest.toLowerCase()
+    const previous = this.destLocks.get(key) ?? Promise.resolve()
+    const run = previous.then(task, task)
+    const tail = run.then(
+      () => undefined,
+      () => undefined
+    )
+    this.destLocks.set(key, tail)
+    void tail.then(() => {
+      if (this.destLocks.get(key) === tail) this.destLocks.delete(key)
+    })
+    return run
   }
 
   private async downloadOne(item: DownloadItem): Promise<'downloaded' | 'reused'> {

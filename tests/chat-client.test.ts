@@ -1,9 +1,15 @@
 ﻿import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ChatService } from '../src/core/chat'
+import { ChatService, mintChatSession } from '../src/core/chat'
 import type { ChatMessage } from '../src/shared/types'
 
 const AUTH = { code: 'POLARIS-AAAA-AAAA', secret: 'a'.repeat(43) }
 const BOB = 'POLARIS-BBBB-BBBB'
+const ACCOUNT = {
+  ...AUTH,
+  name: 'Alice',
+  uuid: '11111111-1111-4111-8111-111111111111'
+}
+const TOKEN = 'pc_11111111-1111-4111-8111-111111111111'
 
 function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
@@ -129,6 +135,22 @@ describe('ChatService', () => {
       )
       expect(seen).toHaveLength(1)
       expect(seen[0]).toMatchObject({ id: message().id, text: 'hello' })
+    } finally {
+      service.stop()
+    }
+  })
+
+  it('ignores a JSON null frame without throwing out of the listener', async () => {
+    const { service, socket } = await connected(ticketRoute())
+    const seen: ChatMessage[] = []
+    service.on('message', (value) => seen.push(value))
+    try {
+      // A bare `null` frame parses successfully but is not an object; the
+      // listener must drop it instead of raising a TypeError.
+      expect(() => socket.dispatch('message', { data: 'null' })).not.toThrow()
+      socket.dispatch('message', { data: JSON.stringify({ type: 'message', message: message() }) })
+      expect(seen).toHaveLength(1)
+      expect(seen[0]).toMatchObject({ id: message().id })
     } finally {
       service.stop()
     }
@@ -354,3 +376,57 @@ describe('ChatService', () => {
   })
 })
 
+describe('mintChatSession', () => {
+  it('registers the friend profile before minting the game token', async () => {
+    const order: string[] = []
+    const friends = {
+      register: vi.fn(async () => {
+        order.push('register')
+        return true
+      })
+    }
+    const chat = {
+      session: vi.fn(async () => {
+        order.push('session')
+        return { token: TOKEN, code: AUTH.code, expiresAt: 1 }
+      })
+    }
+    await expect(mintChatSession(chat, friends, ACCOUNT)).resolves.toEqual({
+      token: TOKEN,
+      code: AUTH.code,
+      expiresAt: 1
+    })
+    expect(order).toEqual(['register', 'session'])
+    expect(friends.register).toHaveBeenCalledWith(
+      { code: AUTH.code, secret: AUTH.secret },
+      'Alice',
+      ACCOUNT.uuid
+    )
+    expect(chat.session).toHaveBeenCalledWith({ code: AUTH.code, secret: AUTH.secret })
+  })
+
+  it('still asks for a token when registration fails offline', async () => {
+    const friends = {
+      register: vi.fn(async () => {
+        throw new TypeError('Failed to fetch')
+      })
+    }
+    const chat = {
+      session: vi.fn(async () => ({ token: TOKEN, code: AUTH.code, expiresAt: 1 }))
+    }
+    await expect(mintChatSession(chat, friends, ACCOUNT)).resolves.toEqual({
+      token: TOKEN,
+      code: AUTH.code,
+      expiresAt: 1
+    })
+    expect(chat.session).toHaveBeenCalledWith({ code: AUTH.code, secret: AUTH.secret })
+  })
+
+  it('refuses a token minted for another account', async () => {
+    const friends = { register: vi.fn(async () => true) }
+    const chat = {
+      session: vi.fn(async () => ({ token: TOKEN, code: BOB, expiresAt: 1 }))
+    }
+    await expect(mintChatSession(chat, friends, ACCOUNT)).resolves.toBeNull()
+  })
+})

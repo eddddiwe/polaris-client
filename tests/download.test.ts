@@ -120,6 +120,43 @@ describe('Downloader.downloadFile', () => {
     )
   })
 
+  it('restarts from scratch when a stale partial fails the digest', async () => {
+    const body = 'n'.repeat(16 * 1024)
+    const ranges: Array<string | undefined> = []
+    await withServer(
+      (req, res) => {
+        ranges.push(req.headers.range)
+        const range = req.headers.range
+        if (range) {
+          const start = Number(/bytes=(\d+)-/.exec(range)?.[1] ?? 0)
+          res.writeHead(206, {
+            'Content-Type': 'application/octet-stream',
+            'Content-Range': `bytes ${start}-${body.length - 1}/${body.length}`
+          })
+          res.end(body.slice(start))
+          return
+        }
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream' })
+        res.end(body)
+      },
+      async (baseUrl, dir) => {
+        const downloader = new Downloader(1, new Logger(dir))
+        const dest = join(dir, 'installer.exe')
+        // Left behind by an older build: same size prefix, different bytes.
+        await writeFile(`${dest}.part`, 's'.repeat(4096))
+        const digest = createHash('sha256').update(body).digest('hex')
+        const written = await downloader.downloadFile(`${baseUrl}/installer.exe`, dest, {
+          expectedSize: body.length,
+          sha256: digest
+        })
+        expect(written).toBe(body.length)
+        expect(ranges[0]).toBe('bytes=4096-')
+        expect(ranges.at(-1)).toBeUndefined()
+        expect(await readFile(dest, 'utf8')).toBe(body)
+      }
+    )
+  })
+
   it('lets concurrent downloads to the same destination finish', async () => {
     const body = 'x'.repeat(16 * 1024)
     await withServer(
@@ -179,6 +216,64 @@ describe('Downloader.downloadAll', () => {
         ).rejects.toThrow(/Checksum mismatch/)
         await expect(readFile(dest)).rejects.toThrow()
         await expect(readFile(`${dest}.part`)).rejects.toThrow()
+      }
+    )
+  })
+
+  it('serializes overlapping calls that share one destination', async () => {
+    const body = 'x'.repeat(64 * 1024)
+    const digest = createHash('sha1').update(body).digest('hex')
+    let requests = 0
+    let release = (): void => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let firstStarted = (): void => undefined
+    const firstStartedPromise = new Promise<void>((resolve) => {
+      firstStarted = resolve
+    })
+    let secondStarted = (): void => undefined
+    const secondStartedPromise = new Promise<void>((resolve) => {
+      secondStarted = resolve
+    })
+
+    await withServer(
+      (_req, res) => {
+        requests += 1
+        res.writeHead(200, {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': body.length
+        })
+        if (requests === 1) {
+          res.write(body.slice(0, 32 * 1024))
+          firstStarted()
+          void gate.then(() => res.end(body.slice(32 * 1024)))
+          return
+        }
+        // Only reachable before the fix: the second caller must not start a
+        // request while the first is writing the shared `.part` file.
+        secondStarted()
+        res.end(body)
+      },
+      async (baseUrl, dir) => {
+        const downloader = new Downloader(1, new Logger(dir))
+        const dest = join(dir, 'library.jar')
+        const item = { url: `${baseUrl}/library.jar`, dest, size: body.length, sha1: digest }
+        const first = downloader.downloadAll([item])
+        await firstStartedPromise
+        const second = downloader.downloadAll([item])
+        await Promise.race([
+          secondStartedPromise,
+          new Promise<void>((resolve) => setTimeout(resolve, 250))
+        ])
+        release()
+        const results = await Promise.all([first, second])
+        expect(results).toEqual([
+          { downloaded: 1, reused: 0 },
+          { downloaded: 0, reused: 1 }
+        ])
+        expect(requests).toBe(1)
+        expect((await readFile(dest, 'utf8')).length).toBe(body.length)
       }
     )
   })

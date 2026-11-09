@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -14,7 +14,7 @@ import {
   type VersionJson
 } from '../src/core/version'
 import { compactUuid, offlineUuid } from '../src/core/accounts'
-import { selectJava } from '../src/core/java'
+import { extractedJavaHome, javaArchiveExtension, selectJava } from '../src/core/java'
 import {
   GAME_UI_DEFAULTS,
   buildJvmFlags,
@@ -29,6 +29,10 @@ import { CosmeticsService } from '../src/core/cosmetics'
 import { SettingsStore, defaultSettings, normalizeSettings } from '../src/core/settings'
 import { polarisChatFile, supportsInGameChat } from '../src/core/instances'
 import { assertSafeSegment, isSafeSegment, readJson, writeJson } from '../src/core/fsutil'
+import { ServerService } from '../src/core/server'
+import { ProgressHub } from '../src/core/events'
+import { Logger } from '../src/core/logger'
+import type { InstanceConfig } from '../src/shared/types'
 import {
   buildSearchFacets,
   mapVersionEntry,
@@ -745,5 +749,84 @@ describe('Java runtime selection', () => {
 
   it('auto-picks a newer runtime when the configured one is too old', () => {
     expect(selectJava(runtimes, 25, 'C:/java21/bin/java.exe').major).toBe(25)
+  })
+})
+
+describe('server runtime files', () => {
+  it('applies a changed port on the next start without touching user settings', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'polaris-server-'))
+    try {
+      const instances = join(root, 'instances')
+      const dir = join(instances, 'srv')
+      await mkdir(dir, { recursive: true })
+      const properties = join(dir, 'server.properties')
+      await writeFile(properties, 'motd=Custom\r\nserver-port=25565\r\nonline-mode=false\r\n', 'utf8')
+      const instance: InstanceConfig = {
+        id: 'srv',
+        name: 'Server',
+        mcVersion: '1.21.10',
+        loader: 'vanilla',
+        kind: 'server',
+        createdAt: 0,
+        playtimeMs: 0,
+        memoryMb: 2048,
+        perfProfile: 'balanced',
+        jvmPreset: 'aikar',
+        customJvmArgs: '',
+        width: 1280,
+        height: 720,
+        fullscreen: false,
+        extraGameArgs: '',
+        packs: [],
+        autoUpdate: false,
+        accent: '#34d399',
+        notes: '',
+        port: 25570,
+        eulaAccepted: true
+      }
+      const service = new ServerService(
+        { instances, versions: join(root, 'versions') } as unknown as ConstructorParameters<typeof ServerService>[0],
+        {} as unknown as ConstructorParameters<typeof ServerService>[1],
+        {
+          fetchVersionJson: async () => ({ id: instance.mcVersion, javaVersion: { majorVersion: 21 } }),
+          downloadServer: async () => join(root, 'server.jar')
+        } as unknown as ConstructorParameters<typeof ServerService>[2],
+        {} as unknown as ConstructorParameters<typeof ServerService>[3],
+        new ProgressHub(),
+        new Logger(join(root, 'logs'))
+      )
+
+      await service.ensureRuntime(instance)
+
+      const text = await readFile(properties, 'utf8')
+      expect(text.startsWith('motd=Custom\r\n')).toBe(true)
+      expect(text).toContain('server-port=25570')
+      expect(text).toContain('online-mode=false')
+      expect(text.includes('\r\n')).toBe(true)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('Java runtime download', () => {
+  it('uses the archive format Adoptium publishes for each platform', () => {
+    expect(javaArchiveExtension('win32')).toBe('zip')
+    expect(javaArchiveExtension('linux')).toBe('tar.gz')
+    expect(javaArchiveExtension('darwin')).toBe('tar.gz')
+  })
+
+  it('finds the runtime inside a macOS Contents/Home bundle', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'polaris-java-home-'))
+    try {
+      const home = join(dir, 'jdk-21.0.13+9', 'Contents', 'Home')
+      await mkdir(join(home, 'bin'), { recursive: true })
+      // Windows looks for java.exe; Linux/macOS look for java.
+      await writeFile(join(home, 'bin', 'java'), '')
+      await writeFile(join(home, 'bin', 'java.exe'), '')
+      await expect(extractedJavaHome(dir)).resolves.toBe(home)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

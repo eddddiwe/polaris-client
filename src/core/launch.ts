@@ -10,7 +10,8 @@ import type { Installer } from './install'
 import type { ServerService } from './server'
 import type { AccountStore } from './accounts'
 import type { AuthService } from './auth'
-import type { ChatService } from './chat'
+import { mintChatSession, type ChatService } from './chat'
+import type { FriendStore } from './friends'
 import { supportsInGameChat } from './instances'
 import { selectJava } from './java'
 import { buildJvmFlags } from './performance'
@@ -41,6 +42,7 @@ export class LaunchService {
   private logBuffer: string[] = []
   private startedAt = 0
   private finishing = false
+  private launching = false
   private serverMode = false
 
   constructor(
@@ -49,6 +51,7 @@ export class LaunchService {
     private readonly accounts: AccountStore,
     private readonly auth: AuthService,
     private readonly chatService: ChatService,
+    private readonly friends: FriendStore,
     private readonly logger: Logger,
     private readonly hooks: LaunchHooks = {}
   ) {}
@@ -73,7 +76,9 @@ export class LaunchService {
   }
 
   async launch(instance: InstanceConfig, settings: Settings, javaList: JavaInfo[]): Promise<LaunchState> {
-    if (this.child) throw new Error('A game is already running.')
+    // Preparation is asynchronous and the child process only exists after the
+    // install/auth work finishes, so `child` alone cannot reject a second call.
+    if (this.child || this.launching) throw new Error('A game is already running.')
     const stored = this.accounts.activeStored()
     if (!stored) throw new Error('Add a Minecraft account first (offline mode works instantly).')
 
@@ -86,6 +91,7 @@ export class LaunchService {
       exitCode: undefined
     })
 
+    this.launching = true
     try {
       this.finishing = false
       this.serverMode = false
@@ -134,11 +140,16 @@ export class LaunchService {
           gameEnv.POLARIS_FRIEND_SECRET = account.friendSecret
         }
         if (settings.inGameChat !== false && supportsInGameChat(instance.mcVersion) && hasChat && account.friendSecret) {
-          const session = await this.chatService.session({
+          // The Worker only mints a chat token for a registered profile.
+          // Users can launch without ever opening Chat or Friends, so bind
+          // the account first (best effort; the token request decides).
+          const session = await mintChatSession(this.chatService, this.friends, {
             code: account.friendCode,
-            secret: account.friendSecret
+            secret: account.friendSecret,
+            name: account.name,
+            uuid: account.uuid
           })
-          if (session && session.code === account.friendCode) {
+          if (session) {
             gameEnv.POLARIS_FRIEND_CODE = account.friendCode
             gameEnv.POLARIS_CHAT_TOKEN = session.token
           }
@@ -167,7 +178,7 @@ export class LaunchService {
       this.hooks.onStarted?.(instance.id, child.pid ?? 0)
 
       child.once('error', (error) => {
-        this.logger.error('Game process error', String(error))
+        this.logger.error('Game process error', { instanceId: instance.id, error })
         this.finish(instance, null, error.message, true)
       })
       child.once('exit', (code) => {
@@ -178,9 +189,16 @@ export class LaunchService {
       return this.getState()
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      this.logger.error('Launch failed', message)
+      this.logger.error('Launch failed', {
+        instanceId: instance.id,
+        error: error instanceof Error ? error : String(error)
+      })
       this.setState({ status: 'crashed', message })
       throw error
+    } finally {
+      // The child guard takes over once spawn succeeds; this only closes the
+      // asynchronous preparation window.
+      this.launching = false
     }
   }
 
@@ -190,7 +208,7 @@ export class LaunchService {
     javaList: JavaInfo[],
     server: ServerService
   ): Promise<{ state: LaunchState; loaderVersion?: string }> {
-    if (this.child) throw new Error('A game or server is already running.')
+    if (this.child || this.launching) throw new Error('A game or server is already running.')
 
     this.setState({
       instanceId: instance.id,
@@ -201,6 +219,7 @@ export class LaunchService {
       exitCode: undefined
     })
 
+    this.launching = true
     try {
       this.finishing = false
       this.serverMode = true
@@ -231,7 +250,7 @@ export class LaunchService {
       this.hooks.onStarted?.(instance.id, child.pid ?? 0)
 
       child.once('error', (error) => {
-        this.logger.error('Server process error', String(error))
+        this.logger.error('Server process error', { instanceId: instance.id, error })
         this.finish(instance, null, error.message, true)
       })
       child.once('exit', (code) => {
@@ -242,9 +261,14 @@ export class LaunchService {
       return { state: this.getState(), loaderVersion: runtime.loaderVersion }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      this.logger.error('Server launch failed', message)
+      this.logger.error('Server launch failed', {
+        instanceId: instance.id,
+        error: error instanceof Error ? error : String(error)
+      })
       this.setState({ status: 'crashed', message })
       throw error
+    } finally {
+      this.launching = false
     }
   }
 

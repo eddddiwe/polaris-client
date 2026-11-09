@@ -1,5 +1,5 @@
-import { join } from 'node:path'
-import { rm, writeFile, readFile, stat } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { mkdtemp, rename, rm, writeFile, readFile, stat } from 'node:fs/promises'
 import os from 'node:os'
 import AdmZip from 'adm-zip'
 import type { DownloadItem, Downloader } from './http'
@@ -60,8 +60,13 @@ export class Installer {
       if (cached.baseVersionId !== instance.mcVersion) return null
       // Verify loader matches
       if (instance.loader === 'fabric' && !cached.versionId.includes('fabric')) return null
-      // Verify all files exist in parallel (fast check)
-      const allPaths = [cached.jarPath, ...cached.classpath]
+      // Verify all files exist in parallel (fast check). Native archives are not
+      // on the classpath but launch cannot work without them.
+      const allPaths = [
+        cached.jarPath,
+        ...cached.classpath,
+        ...(cached.natives ?? []).map((native) => native.path)
+      ]
       const checks = await Promise.all(allPaths.map(async (p) => {
         try {
           const s = await stat(p)
@@ -214,7 +219,11 @@ export class Installer {
         javaMajor: requiredJavaMajor(version)
       }
     } catch (error) {
-      this.logger.error('Install failed', String(error))
+      this.logger.error('Install failed', {
+        instanceId: instance.id,
+        mcVersion: instance.mcVersion,
+        error: error instanceof Error ? error : String(error)
+      })
       this.progress.fail(taskId, label, error instanceof Error ? error.message : String(error))
       throw error
     }
@@ -282,22 +291,41 @@ export class Installer {
   }
 
   async extractNatives(natives: NativeEntry[], destination: string): Promise<void> {
-    await rm(destination, { recursive: true, force: true })
-    await ensureDir(destination)
+    // A missing archive used to be skipped, which started the game with no
+    // natives. Fail before replacing the current directory so the caller can
+    // repair the install instead of launching a broken game.
     for (const entry of natives) {
-      if (!(await pathExists(entry.path))) continue
-      const zip = new AdmZip(entry.path)
-      for (const zipEntry of zip.getEntries()) {
-        if (zipEntry.isDirectory) continue
-        const name = zipEntry.entryName.replace(/\\/g, '/')
-        if (name.startsWith('META-INF/')) continue
-        if (entry.exclude?.some((exclude) => name.startsWith(exclude))) continue
-        const normalized = name.replace(/\.\./g, '')
-        const target = join(destination, normalized)
-        if (!target.toLowerCase().startsWith(destination.toLowerCase())) continue
-        await ensureDir(join(target, '..'))
-        await zip.extractEntryTo(zipEntry, destination, true, true)
+      if (!(await pathExists(entry.path))) {
+        throw new Error(`Missing native library archive: ${entry.path}`)
       }
+    }
+
+    // Extract into a sibling directory and swap it in only after every archive
+    // succeeds. Launch treats the presence of lwjgl.dll as "already extracted",
+    // so a failed in-place extraction would leave a partial directory that is
+    // never retried.
+    await ensureDir(dirname(destination))
+    const staging = await mkdtemp(join(dirname(destination), '.natives-'))
+    try {
+      for (const entry of natives) {
+        const zip = new AdmZip(entry.path)
+        for (const zipEntry of zip.getEntries()) {
+          if (zipEntry.isDirectory) continue
+          const name = zipEntry.entryName.replace(/\\/g, '/')
+          if (name.startsWith('META-INF/')) continue
+          if (entry.exclude?.some((exclude) => name.startsWith(exclude))) continue
+          const normalized = name.replace(/\.\./g, '')
+          const target = join(staging, normalized)
+          if (!target.toLowerCase().startsWith(staging.toLowerCase())) continue
+          await ensureDir(dirname(target))
+          await zip.extractEntryTo(zipEntry, staging, true, true)
+        }
+      }
+      await rm(destination, { recursive: true, force: true })
+      await rename(staging, destination)
+    } catch (error) {
+      await rm(staging, { recursive: true, force: true }).catch(() => undefined)
+      throw error
     }
   }
 }

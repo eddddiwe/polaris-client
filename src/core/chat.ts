@@ -13,6 +13,16 @@ const HANDSHAKE_TIMEOUT_MS = 12_000
 const STABLE_CONNECTION_MS = 10_000
 const STALE_SOCKET_MS = 60_000
 
+/** The subset of FriendStore needed to bind an account before minting a token. */
+export interface FriendRegistrar {
+  register(auth: FriendAuth, name: string, uuid?: string): Promise<boolean>
+}
+
+export interface ChatAccount extends FriendAuth {
+  name: string
+  uuid: string
+}
+
 function validMessage(value: unknown): ChatMessage | null {
   if (!value || typeof value !== 'object') return null
   const item = value as {
@@ -197,11 +207,21 @@ export class ChatService extends EventEmitter {
       socket.addEventListener('message', (event) => {
         if (!isCurrent()) return
         lastInbound = Date.now()
-        let payload: { type?: unknown; message?: unknown; from?: unknown; fromName?: unknown }
+        let parsed: unknown
         try {
-          payload = JSON.parse(String(event.data))
+          parsed = JSON.parse(String(event.data))
         } catch {
           return
+        }
+        // JSON.parse('null') yields null; reading .type off it would throw out
+        // of the listener (an uncaught exception in the main process). Frames
+        // are untrusted input, so reject every non-object shape here.
+        if (!parsed || typeof parsed !== 'object') return
+        const payload = parsed as {
+          type?: unknown
+          message?: unknown
+          from?: unknown
+          fromName?: unknown
         }
         if (payload.type === 'message') {
           const message = validMessage(payload.message)
@@ -289,4 +309,26 @@ export class ChatService extends EventEmitter {
       // Typing is best-effort.
     }
   }
+}
+
+/**
+ * Mint a chat token for the game process. The Worker only issues a token for
+ * an account whose friend profile is registered, and a user can launch a
+ * Fabric instance without ever opening the launcher's Chat or Friends tabs.
+ * Binding the profile here is best-effort: an offline registration must not
+ * stop the token request when the worker already knows the account.
+ */
+export async function mintChatSession(
+  chat: Pick<ChatService, 'session'>,
+  friends: FriendRegistrar,
+  account: ChatAccount
+): Promise<{ token: string; code: string; expiresAt: number } | null> {
+  const auth = { code: account.code, secret: account.secret }
+  try {
+    await friends.register(auth, account.name, account.uuid)
+  } catch {
+    // Keep the launch path offline-tolerant; session() decides.
+  }
+  const session = await chat.session(auth)
+  return session && session.code === account.code ? session : null
 }

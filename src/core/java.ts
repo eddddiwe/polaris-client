@@ -1,10 +1,10 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { ensureDir } from './fsutil'
-import { access, readdir, rm, stat } from 'node:fs/promises'
+import { access, readdir, rename, rm, stat } from 'node:fs/promises'
 import { createWriteStream, constants } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, delimiter, join } from 'node:path'
+import { basename, delimiter, dirname, join } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
@@ -37,7 +37,13 @@ function javaHomeFromExecutable(executable: string): string {
 async function isJavaExecutable(path: string): Promise<boolean> {
   const name = basename(path).toLowerCase()
   if (name !== 'java' && name !== 'java.exe' && name !== 'javaw.exe') return false
-  return exists(path)
+  // A directory can be named `java` (`C:\Program Files\Java`, `/opt/java`);
+  // only a regular file can be spawned. This keeps those roots walkable.
+  try {
+    return (await stat(path)).isFile()
+  } catch {
+    return false
+  }
 }
 
 async function locateJavaHome(home: string): Promise<string | null> {
@@ -211,11 +217,27 @@ async function binarySignature(path: string): Promise<string | null> {
 }
 
 export async function inspectJava(home: string, source = 'detected'): Promise<JavaInfo | null> {
-  const binDir = join(home, 'bin')
-  const java = join(binDir, isWindows ? 'java.exe' : 'java')
+  // detectJavaHomes yields three layouts: <home>/bin/java, a PATH shim's
+  // executable (Oracle java8path/javapath, Chocolatey) because it has no
+  // `bin` segment to strip, and a flat directory holding java[.exe] directly.
+  // Accept all of them instead of dropping runtimes whose layout is not `<home>/bin`.
+  const homeIsExecutable = await isJavaExecutable(home)
+  const dirs = homeIsExecutable ? [dirname(home)] : [join(home, 'bin'), home]
+  let binDir = dirs[0]
+  let executable = ''
+  for (const dir of dirs) {
+    for (const name of isWindows ? ['java.exe', 'javaw.exe'] : ['java']) {
+      const candidate = join(dir, name)
+      if (await exists(candidate)) {
+        binDir = dir
+        executable = candidate
+        break
+      }
+    }
+    if (executable) break
+  }
+  if (!executable) return null
   const javaw = isWindows ? join(binDir, 'javaw.exe') : ''
-  const executable = (await exists(java)) ? java : javaw
-  if (!executable || !(await exists(executable))) return null
 
   const cacheKey = normalizePath(executable)
   const signature = await binarySignature(executable)
@@ -242,7 +264,7 @@ export async function inspectJava(home: string, source = 'detected'): Promise<Ja
     // javaw often has no console; fall back to path parsing
   }
   if (!version) {
-    const inferred = inferVersionFromPath(home)
+    const inferred = inferVersionFromPath(homeIsExecutable ? dirname(home) : home)
     if (!inferred) return null
     version = inferred.version
   }
@@ -356,7 +378,99 @@ interface AdoptiumAsset {
   }
 }
 
-export async function downloadJava(
+export function javaArchiveExtension(platform: NodeJS.Platform = process.platform): 'zip' | 'tar.gz' {
+  return platform === 'win32' ? 'zip' : 'tar.gz'
+}
+
+/** Locate the runtime root inside an extracted Temurin archive (handles macOS bundles). */
+export async function extractedJavaHome(root: string): Promise<string | null> {
+  const candidates = [root]
+  for (const entry of await readdir(root).catch(() => [] as string[])) {
+    candidates.push(join(root, entry))
+    candidates.push(join(root, entry, 'Contents', 'Home'))
+  }
+  for (const home of candidates) {
+    const executable = await locateJavaHome(home)
+    if (executable) return javaHomeFromExecutable(executable)
+  }
+  return null
+}
+
+/**
+ * Extract through a staging directory so a failed, corrupt or interrupted
+ * extraction never leaves a half-written runtime in the final location, and
+ * only return a path that actually contains a java executable.
+ */
+export async function installJavaArchive(
+  archivePath: string,
+  destination: string,
+  onProgress?: (progress: JavaDownloadProgress) => void
+): Promise<string> {
+  const staging = `${destination}.tmp`
+  await ensureDir(destination)
+  await rm(staging, { recursive: true, force: true })
+  try {
+    if (archivePath.endsWith('.zip')) {
+      const AdmZip = (await import('adm-zip')).default
+      const zip = new AdmZip(archivePath)
+      const files = assertSafeZip(zip, 'Java runtime archive', JAVA_ZIP_LIMITS).filter(
+        (entry) => !entry.isDirectory
+      )
+      for (const [index, entry] of files.entries()) {
+        zip.extractEntryTo(entry, staging, true, true)
+        onProgress?.({
+          stage: 'extracting',
+          percent: 85 + Math.round(((index + 1) / Math.max(1, files.length)) * 15),
+          message: `Extracting... ${index + 1}/${files.length}`
+        })
+      }
+    } else {
+      // Linux and macOS ship tar.gz; the platform tar preserves the
+      // executable bit on bin/java and both targets include it.
+      await execFileAsync('tar', ['-xzf', archivePath, '-C', staging], {
+        timeout: 5 * 60_000,
+        maxBuffer: 1024 * 1024
+      })
+    }
+    const home = await extractedJavaHome(staging)
+    if (!home) throw new Error('Java runtime archive did not contain a usable java executable')
+    if (home === staging) {
+      await rm(destination, { recursive: true, force: true })
+      await rename(staging, destination)
+      return destination
+    }
+    const target = join(destination, basename(home))
+    await rm(target, { recursive: true, force: true })
+    await rename(home, target)
+    return target
+  } finally {
+    await rm(staging, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
+
+// Concurrent installs to one destination would share the temp archive and
+// staging directory, so callers share the in-flight install instead.
+const javaInstalls = new Map<string, Promise<string>>()
+
+export function downloadJava(
+  major: number,
+  destination: string,
+  onProgress?: (progress: JavaDownloadProgress) => void
+): Promise<string> {
+  // The renderer supplies this value; keep it from escaping the Java directory
+  // through `temurin-<major>` or the staging path.
+  if (!Number.isInteger(major) || major < 6 || major > 40) {
+    return Promise.reject(new Error('Unsupported Java major version'))
+  }
+  const key = `${normalizePath(destination)}:${major}`
+  const task =
+    javaInstalls.get(key) ??
+    downloadJavaUnlocked(major, destination, onProgress).finally(() => javaInstalls.delete(key))
+  javaInstalls.set(key, task)
+  return task
+}
+
+async function downloadJavaUnlocked(
   major: number,
   destination: string,
   onProgress?: (progress: JavaDownloadProgress) => void
@@ -384,7 +498,8 @@ export async function downloadJava(
   if (!response.ok) throw new Error(`Failed to download Java: ${response.status}`)
   if (!response.body) throw new Error('Empty Java download response')
 
-  const tempZip = join(destination, `java-${major}.zip`)
+  const extension = javaArchiveExtension()
+  const tempArchive = join(destination, `java-${major}.${extension}`)
   await ensureDir(destination)
   const hash = createHash('sha256')
   let downloaded = 0
@@ -408,7 +523,7 @@ export async function downloadJava(
   })
 
   try {
-    await pipeline(Readable.fromWeb(response.body as never), verifier, createWriteStream(tempZip))
+    await pipeline(Readable.fromWeb(response.body as never), verifier, createWriteStream(tempArchive))
     if (downloaded !== expectedSize) {
       throw new Error(`Incomplete Java download: expected ${expectedSize} bytes, received ${downloaded}`)
     }
@@ -416,37 +531,18 @@ export async function downloadJava(
       throw new Error('Java runtime failed its SHA-256 verification')
     }
   } catch (error) {
-    await rm(tempZip, { force: true }).catch(() => undefined)
+    await rm(tempArchive, { force: true }).catch(() => undefined)
     throw error
   }
 
   onProgress?.({ stage: 'extracting', percent: 85, message: 'Extracting Java runtime...' })
   try {
-    const archive = await stat(tempZip)
+    const archive = await stat(tempArchive)
     if (archive.size > 512 * 1024 * 1024) throw new Error('Java runtime archive is too large')
-    const AdmZip = (await import('adm-zip')).default
-    const zip = new AdmZip(tempZip)
-    const entries = assertSafeZip(zip, 'Java runtime archive', JAVA_ZIP_LIMITS)
-    let extracted = 0
-    const total = entries.filter((entry) => !entry.isDirectory).length
-    for (const entry of entries) {
-      if (entry.isDirectory) continue
-      zip.extractEntryTo(entry, destination, true, true)
-      extracted++
-      onProgress?.({
-        stage: 'extracting',
-        percent: 85 + Math.round((extracted / Math.max(1, total)) * 15),
-        message: `Extracting... ${extracted}/${total}`
-      })
-    }
+    const javaPath = await installJavaArchive(tempArchive, destination, onProgress)
+    onProgress?.({ stage: 'done', percent: 100, message: 'Java runtime installed' })
+    return javaPath
   } finally {
-    await rm(tempZip, { force: true }).catch(() => undefined)
+    await rm(tempArchive, { force: true }).catch(() => undefined)
   }
-
-  const entries = await readdir(destination)
-  const javaHome = entries.find((entry) => /jdk|jre|java/i.test(entry))
-  const javaPath = javaHome ? join(destination, javaHome) : destination
-
-  onProgress?.({ stage: 'done', percent: 100, message: 'Java runtime installed' })
-  return javaPath
 }

@@ -145,6 +145,7 @@ export class AppServices extends EventEmitter {
       this.accounts,
       this.auth,
       this.chat,
+      this.friends,
       this.logger.child('launch'),
       {
         onStarted: (instanceId, pid) => this.emit('game-started', { instanceId, pid }),

@@ -232,6 +232,15 @@ describe('Polaris chat transport', () => {
     expect((await call('/v1/chat/typing', { method: 'POST', body: {} })).status).toBe(401)
   })
 
+  it('withholds a chat token until the profile is registered', async () => {
+    const response = await call('/v1/chat/token', {
+      method: 'POST',
+      code: 'POLARIS-DDDD-DDDD',
+      secret: 'd'.repeat(43)
+    })
+    expect(response.status).toBe(401)
+  })
+
   it('stores a friend message for 30 days and pushes it to both inboxes', async () => {
     broadcasts.length = 0
     const response = await call('/v1/chat/send', {
