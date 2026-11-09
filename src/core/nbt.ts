@@ -1,11 +1,10 @@
-import { gzipSync } from 'node:zlib'
-import { writeFile, readFile } from 'node:fs/promises'
+import { readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathExists } from './fsutil'
 
 /**
  * Minimal NBT encoder for Minecraft's servers.dat format.
- * Creates a gzipped NBT compound containing a single server entry.
+ * Minecraft reads servers.dat as an uncompressed NBT compound.
  */
 
 function writeString(buf: Buffer, offset: number, str: string): number {
@@ -55,9 +54,8 @@ export function encodeServersDat(servers: { name: string; ip: string; icon?: str
     b.writeUInt8(10, off); off += 1 // list type: compound (10)
     off = writeInt(b, off, servers.length) // count
     for (const server of servers) {
-      // Compound in list (empty name)
-      b.writeUInt8(10, off); off += 1
-      off = writeString(b, off, '')
+      // List elements carry only the compound payload: the list header already
+      // declares the element type, and list entries have no name tag.
       // name (string)
       off = writeTag(b, off, 8, 'name', (bb, o) => writeString(bb, o, server.name))
       // ip (string)
@@ -75,8 +73,7 @@ export function encodeServersDat(servers: { name: string; ip: string; icon?: str
   // End of root compound
   buf.writeUInt8(0, offset); offset += 1
 
-  const nbtData = buf.subarray(0, offset)
-  return gzipSync(nbtData)
+  return buf.subarray(0, offset)
 }
 
 /**
@@ -84,8 +81,17 @@ export function encodeServersDat(servers: { name: string; ip: string; icon?: str
  */
 export async function ensureServersDat(instanceDir: string): Promise<void> {
   const serversPath = join(instanceDir, 'servers.dat')
-  // Only create if it doesn't exist (don't overwrite user's servers)
-  if (await pathExists(serversPath)) return
+  // Only create if it doesn't exist (don't overwrite user's servers), but
+  // repair the gzip-wrapped file written by 0.4.4, which Minecraft cannot read.
+  if (await pathExists(serversPath)) {
+    try {
+      const head = (await readFile(serversPath)).subarray(0, 2)
+      if (!(head[0] === 0x1f && head[1] === 0x8b)) return
+      await rename(serversPath, `${serversPath}.gzip-backup-${Date.now()}`)
+    } catch {
+      return
+    }
+  }
 
   const data = encodeServersDat([
     { name: 'CobbleClash', ip: 'cobbleclash.kinetic.host', icon: '', acceptTextures: true }

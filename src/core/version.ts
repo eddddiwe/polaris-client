@@ -97,13 +97,23 @@ export function dedupeLibraries(libraries: Library[]): Library[] {
     let key = library.name
     try {
       const parsed = parseMaven(library.name)
-      key = `${parsed.group}:${parsed.artifact}:${parsed.classifier ?? ''}`
+      // Keep the version in the key: metadata publishes OS-exclusive variants
+      // under different versions (e.g. LWJGL 3.2.1 for macOS, 3.2.2 elsewhere),
+      // and merging them would drop every variant but one.
+      key = `${parsed.group}:${parsed.artifact}:${parsed.version}:${parsed.classifier ?? ''}:${parsed.extension}`
     } catch {
       // keep raw name as the key
     }
-    byKey.set(key, library)
+    // The same coordinate may still appear twice, once with natives/classifiers
+    // and once without; never let the poorer entry hide the richer one.
+    const existing = byKey.get(key)
+    byKey.set(key, existing && libraryRank(existing) > libraryRank(library) ? existing : library)
   }
   return [...byKey.values()]
+}
+
+function libraryRank(library: Library): number {
+  return (library.natives ? 2 : 0) + (library.downloads?.classifiers ? 1 : 0)
 }
 
 export function resolveLibraryArtifacts(library: Library, osName: string, arch: string): ResolvedArtifact[] {

@@ -37,26 +37,65 @@ export async function readJson<T>(path: string, fallback: T): Promise<T> {
   }
 }
 
+const writeQueues = new Map<string, Promise<void>>()
+let atomicTempSeq = 0
+
+/**
+ * Serialize writers per destination and give each one its own temp file.
+ * Windows rejects concurrent renames to the same target with EPERM, and a
+ * shared `${path}.tmp` lets one save truncate or rename another's payload, so
+ * a save can reject with ENOENT after writing bytes that overwrite the winner.
+ * Queueing also keeps the last call, rather than the last completion, on disk.
+ */
+async function writeFileAtomic(path: string, value: string): Promise<void> {
+  const previous = writeQueues.get(path) ?? Promise.resolve()
+  const pending = previous.catch(() => undefined).then(async () => {
+    await ensureDir(dirname(path))
+    const tmp = `${path}.${process.pid}-${atomicTempSeq++}.tmp`
+    try {
+      await writeFile(tmp, value, 'utf8')
+      await rename(tmp, path)
+    } catch (error) {
+      await rm(tmp, { force: true }).catch(() => undefined)
+      throw error
+    }
+  })
+  writeQueues.set(path, pending)
+  try {
+    await pending
+  } finally {
+    if (writeQueues.get(path) === pending) writeQueues.delete(path)
+  }
+}
+
 export async function writeJson(path: string, value: unknown): Promise<void> {
-  await ensureDir(dirname(path))
-  const tmp = `${path}.tmp`
-  await writeFile(tmp, JSON.stringify(value, null, 2), 'utf8')
-  await rename(tmp, path)
+  await writeFileAtomic(path, JSON.stringify(value, null, 2))
 }
 
 export async function writeTextAtomic(path: string, value: string): Promise<void> {
-  await ensureDir(dirname(path))
-  const tmp = `${path}.tmp`
-  await writeFile(tmp, value, 'utf8')
-  await rename(tmp, path)
+  await writeFileAtomic(path, value)
 }
 
 export async function copyOrLink(source: string, dest: string): Promise<void> {
   await ensureDir(dirname(dest))
   try {
     await link(source, dest)
+    return
   } catch {
-    await copyFile(source, dest)
+    // Cross-device links are unsupported; fall back to a staged copy.
+  }
+  // Copy to a unique sibling and rename only after it is complete. A kill
+  // mid-copy must never publish a truncated file at `dest`: the install cache
+  // only checks that classpath files exist and are non-empty, so a partial
+  // library there would be accepted on every later launch. The unique name
+  // also avoids colliding with the downloader's `${dest}.part`.
+  const partial = `${dest}.${process.pid}-${atomicTempSeq++}.part`
+  try {
+    await copyFile(source, partial)
+    await rename(partial, dest)
+  } catch (error) {
+    await rm(partial, { force: true }).catch(() => undefined)
+    throw error
   }
 }
 

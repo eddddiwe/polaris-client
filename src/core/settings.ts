@@ -41,12 +41,20 @@ export function defaultSettings(root: string): Settings {
 
 export class SettingsStore {
   private value: Settings
+  /** One queue for every write so a save can never overwrite a newer update. */
+  private writes: Promise<unknown> = Promise.resolve()
 
   constructor(
     private readonly path: string,
     private readonly root: string
   ) {
     this.value = defaultSettings(root)
+  }
+
+  private queue<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.writes.then(task)
+    this.writes = run.catch(() => undefined)
+    return run
   }
 
   async load(): Promise<Settings> {
@@ -59,14 +67,22 @@ export class SettingsStore {
     return this.value
   }
 
-  async update(patch: Partial<Settings>): Promise<Settings> {
-    this.value = normalizeSettings({ ...this.value, ...patch, dataDir: this.root }, this.root)
-    await this.save()
-    return this.value
+  async update(patch: Partial<Settings> | ((current: Settings) => Partial<Settings>)): Promise<Settings> {
+    return await this.queue(async () => {
+      const current = this.value
+      const resolved = typeof patch === 'function' ? patch(current) : patch
+      const next = normalizeSettings({ ...current, ...resolved, dataDir: this.root }, this.root)
+      // Publish only after the write succeeds. A read-only root, locked file or
+      // full disk must not leave the change visible in memory for a later save
+      // to persist even though the caller was told it failed.
+      await writeJson(this.path, next)
+      this.value = next
+      return next
+    })
   }
 
   async save(): Promise<void> {
-    await writeJson(this.path, this.value)
+    await this.queue(() => writeJson(this.path, this.value))
   }
 
   async ensure(): Promise<void> {
@@ -96,7 +112,7 @@ export function normalizeSettings(input: Settings, root: string): Settings {
     shards: clamp(input.shards, 0, 1_000_000_000),
     shardsClaimedMs: clamp(input.shardsClaimedMs, 0, Number.MAX_SAFE_INTEGER),
     appliedShardGrants: Array.isArray(input.appliedShardGrants)
-      ? [...new Set(input.appliedShardGrants.filter((id) => typeof id === 'string'))].slice(-500)
+      ? [...new Set(input.appliedShardGrants.filter((id) => typeof id === 'string'))]
       : []
   }
 }

@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { vanillaMinecraftRoot } from './vanilla'
 
 export interface Paths {
@@ -20,8 +20,13 @@ export interface Paths {
 
 export function resolveRoot(): string {
   if (process.env.POLARIS_HOME) return process.env.POLARIS_HOME
-  const portable = join(process.execPath, '..', 'portable.txt')
-  if (existsSync(portable)) return join(process.execPath, '..', 'data')
+  // electron-builder's portable target extracts the app to %TEMP% and launches it
+  // from there, so process.execPath is not beside the portable .exe. The stub
+  // passes the real folder through PORTABLE_EXECUTABLE_DIR.
+  const portableDir = process.env.PORTABLE_EXECUTABLE_DIR
+  if (portableDir) return join(portableDir, 'data')
+  const exeDir = dirname(process.execPath)
+  if (existsSync(join(exeDir, 'portable.txt'))) return join(exeDir, 'data')
   return join(app.getPath('appData'), 'Polaris')
 }
 

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
+import { readFile, writeFile } from 'node:fs/promises'
 import type { Account } from '../shared/types'
-import { readJson, writeJson } from './fsutil'
+import { writeJson } from './fsutil'
 
 export const ENCRYPTED_PREFIX = 'enc:v1:'
 const PLAINTEXT_PREFIX = 'plain:'
@@ -31,6 +32,8 @@ interface AccountFile {
 
 export class AccountStore {
   private data: AccountFile = { activeId: null, accounts: [] }
+  /** Set when the on-disk file cannot be read or safely backed up. */
+  private blockedWrite?: string
   /** Encrypted values kept if the OS keychain cannot decrypt them yet. */
   private readonly originalTokens = new Map<
     string,
@@ -43,8 +46,29 @@ export class AccountStore {
   ) {}
 
   async load(): Promise<void> {
-    const loaded = await readJson<AccountFile | null>(this.path, null)
-    if (loaded && Array.isArray(loaded.accounts)) this.data = loaded
+    const result = await this.readAccountsFile()
+    this.blockedWrite = undefined
+    if (result.readFailed) {
+      // A missing file is a fresh install, but an unreadable one may still
+      // hold every account and token. Never replace it with an empty store.
+      this.blockedWrite = 'The accounts file could not be read, so Polaris will not overwrite it.'
+      return
+    }
+    this.data = result.file ?? { activeId: null, accounts: [] }
+    if (result.damaged !== undefined) {
+      // Keep a recovery copy before save() rewrites the file without the
+      // damaged parts (for example a truncated write or a partial entry).
+      try {
+        await writeFile(`${this.path}.corrupt-${Date.now()}`, result.damaged, { mode: 0o600 })
+      } catch {
+        this.blockedWrite = 'The accounts file is damaged and could not be backed up, so Polaris will not overwrite it.'
+        return
+      }
+    }
+    // Recover a missing or dangling active id so existing accounts stay launchable.
+    if (!this.data.accounts.some((account) => account.id === this.data.activeId)) {
+      this.data.activeId = this.data.accounts[0]?.id ?? null
+    }
     const usedCodes = this.data.accounts.map((a) => a.friendCode).filter((c) => c)
     for (const account of this.data.accounts) {
       account.active = account.id === this.data.activeId
@@ -83,7 +107,46 @@ export class AccountStore {
     await this.save()
   }
 
+  /** Reads the file directly so an unreadable file is not mistaken for an empty one. */
+  private async readAccountsFile(): Promise<{ file?: AccountFile; damaged?: Buffer; readFailed?: boolean }> {
+    let raw: Buffer
+    try {
+      raw = await readFile(this.path)
+    } catch (error) {
+      return { readFailed: (error as NodeJS.ErrnoException).code !== 'ENOENT' }
+    }
+    const text = raw.toString('utf8')
+    // A present but empty file is more likely truncation than a fresh install;
+    // keep a recovery copy instead of silently overwriting it.
+    if (!text.trim()) return { damaged: raw }
+    let parsed: AccountFile | null = null
+    try {
+      // Windows editors may save UTF-8 with a BOM, which JSON.parse rejects.
+      parsed = JSON.parse(text.replace(/^\uFEFF/, '')) as AccountFile
+    } catch {
+      return { damaged: raw }
+    }
+    if (!parsed || !Array.isArray(parsed.accounts)) return { damaged: raw }
+    const accounts = parsed.accounts.filter(isStoredAccount)
+    return {
+      file: {
+        activeId: typeof parsed.activeId === 'string' ? parsed.activeId : null,
+        accounts
+      },
+      damaged: accounts.length === parsed.accounts.length ? undefined : raw
+    }
+  }
+
+  private saving: Promise<void> = Promise.resolve()
+
   async save(): Promise<void> {
+    if (this.blockedWrite) throw new Error(this.blockedWrite)
+    const run = this.saving.then(() => this.saveNow())
+    this.saving = run.catch(() => undefined)
+    await run
+  }
+
+  private async saveNow(): Promise<void> {
     const accounts: StoredAccount[] = []
     for (const account of this.data.accounts) {
       const copy: StoredAccount = { ...account }
@@ -210,6 +273,23 @@ export class AccountStore {
     await this.save()
     return account
   }
+}
+
+/** Rejects partially written or hand-edited entries before they reach load(). */
+function isStoredAccount(value: unknown): value is StoredAccount {
+  if (!value || typeof value !== 'object') return false
+  const account = value as StoredAccount
+  return (
+    typeof account.id === 'string' &&
+    account.id.length > 0 &&
+    (account.type === 'microsoft' || account.type === 'offline') &&
+    typeof account.name === 'string' &&
+    typeof account.uuid === 'string' &&
+    typeof account.accessToken === 'string' &&
+    [account.refreshToken, account.friendCode, account.friendSecret, account.clientId, account.xuid, account.skinUrl]
+      .every((field) => field === undefined || typeof field === 'string') &&
+    (account.expiresAt === undefined || typeof account.expiresAt === 'number')
+  )
 }
 
 export function generateFriendCode(): string {

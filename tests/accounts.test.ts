@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -114,6 +114,59 @@ describe('AccountStore token encryption', () => {
       await reloaded.load()
       expect(reloaded.stored('microsoft:abc')?.accessToken).toBe('access-token')
       expect(reloaded.stored('microsoft:abc')?.friendSecret).toBeUndefined()
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('AccountStore damaged file recovery', () => {
+  async function backupFor(dir: string): Promise<string | undefined> {
+    const entries = await readdir(dir)
+    return entries.find((name) => name.startsWith('accounts.json.corrupt-'))
+  }
+
+  it('backs up a truncated file instead of treating it as an empty account list', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'polaris-accounts-'))
+    try {
+      const path = join(dir, 'accounts.json')
+      const truncated = JSON.stringify({
+        activeId: 'microsoft:abc',
+        accounts: [microsoftAccount()]
+      }).slice(0, 80)
+      await writeFile(path, truncated, 'utf8')
+
+      const store = new AccountStore(path, new FakeCipher())
+      await store.load()
+
+      expect(store.list()).toEqual([])
+      const backup = await backupFor(dir)
+      expect(backup).toBeTruthy()
+      expect(await readFile(join(dir, backup as string), 'utf8')).toBe(truncated)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('skips a partially written entry but keeps the valid accounts', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'polaris-accounts-'))
+    try {
+      const path = join(dir, 'accounts.json')
+      const partial = { id: 'microsoft:missing-token', type: 'microsoft' }
+      await writeFile(
+        path,
+        JSON.stringify({ activeId: 'microsoft:abc', accounts: [microsoftAccount(), partial] }),
+        'utf8'
+      )
+
+      const store = new AccountStore(path, new FakeCipher())
+      await store.load()
+
+      expect(store.list().map((account) => account.id)).toEqual(['microsoft:abc'])
+      expect(store.activeStored()?.id).toBe('microsoft:abc')
+      expect(await backupFor(dir)).toBeTruthy()
+      const saved = JSON.parse(await readFile(path, 'utf8'))
+      expect(saved.accounts.map((account: { id: string }) => account.id)).toEqual(['microsoft:abc'])
     } finally {
       await rm(dir, { recursive: true, force: true })
     }

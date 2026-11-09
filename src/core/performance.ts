@@ -334,7 +334,33 @@ export function estimatedScore(hardware: Pick<HardwareInfo, 'tier' | 'threads' |
   return Math.min(100, Math.round(base + threadBonus + ramBonus))
 }
 
+/**
+ * Serialize options.txt read-modify-write cycles per file. applyOptions uses
+ * the shared fixed temp path from writeTextAtomic, so overlapping calls could
+ * otherwise lose one update or make the second rename fail with ENOENT.
+ */
+const optionsWriteQueues = new Map<string, Promise<void>>()
+
+function withOptionsLock<T>(file: string, task: () => Promise<T>): Promise<T> {
+  const previous = optionsWriteQueues.get(file) ?? Promise.resolve()
+  const run = previous.then(task, task)
+  const tail = run.then(
+    () => undefined,
+    () => undefined
+  )
+  optionsWriteQueues.set(file, tail)
+  void tail.then(() => {
+    if (optionsWriteQueues.get(file) === tail) optionsWriteQueues.delete(file)
+  })
+  return run
+}
+
 export async function applyOptions(instanceDir: string, options: Record<string, string>): Promise<{ changed: number; backup?: string }> {
+  const file = join(instanceDir, 'options.txt')
+  return await withOptionsLock(file, () => applyOptionsUnlocked(instanceDir, options))
+}
+
+async function applyOptionsUnlocked(instanceDir: string, options: Record<string, string>): Promise<{ changed: number; backup?: string }> {
   const file = join(instanceDir, 'options.txt')
   const existing: Record<string, string> = (await pathExists(file))
     ? parseOptions(await readFile(file, 'utf8'))

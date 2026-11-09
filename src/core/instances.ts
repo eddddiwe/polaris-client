@@ -77,8 +77,24 @@ export function polarisChatFile(mcVersion: string): string {
 export class InstanceStore {
   /** Updated by AppServices when the in-game chat setting changes. */
   chatModEnabled = true
+  /** Serializes read-modify-write operations per instance id. */
+  private readonly locks = new Map<string, Promise<void>>()
 
   constructor(private readonly paths: Paths) {}
+
+  private withLock<T>(id: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.locks.get(id) ?? Promise.resolve()
+    const run = previous.then(task, task)
+    const tail = run.then(
+      () => undefined,
+      () => undefined
+    )
+    this.locks.set(id, tail)
+    void tail.then(() => {
+      if (this.locks.get(id) === tail) this.locks.delete(id)
+    })
+    return run
+  }
 
   setChatModEnabled(enabled: boolean): void {
     this.chatModEnabled = enabled
@@ -182,10 +198,12 @@ export class InstanceStore {
       port: kind === 'server' ? clampPort(input.port) : undefined,
       eulaAccepted: kind === 'server' ? Boolean(input.eulaAccepted) : undefined
     }
-    await this.ensureLayout(id)
-    await writeJson(this.configPath(id), config)
-    await this.syncPolarisConfig(config, true)
-    return config
+    return await this.withLock(id, async () => {
+      await this.ensureLayout(id)
+      await writeJson(this.configPath(id), config)
+      await this.syncPolarisConfig(config, true)
+      return config
+    })
   }
 
   async update(id: string, patch: Partial<InstanceConfig>): Promise<InstanceConfig> {
@@ -201,24 +219,28 @@ export class InstanceStore {
     if (patch.memoryMb !== undefined) {
       patch = { ...patch, memoryMb: Math.min(32768, Math.max(1024, Math.round(Number(patch.memoryMb) || 2048))) }
     }
-    const current = await this.get(id)
-    const next: InstanceConfig = {
-      ...current,
-      ...patch,
-      id: current.id,
-      createdAt: current.createdAt
-    }
-    await writeJson(this.configPath(id), next)
-    return next
+    return await this.withLock(id, async () => {
+      const current = await this.get(id)
+      const next: InstanceConfig = {
+        ...current,
+        ...patch,
+        id: current.id,
+        createdAt: current.createdAt
+      }
+      await writeJson(this.configPath(id), next)
+      return next
+    })
   }
 
   async remove(id: string): Promise<void> {
-    await rm(this.dir(id), { recursive: true, force: true })
-    dirBytesCache.delete(id)
-    const prefix = this.dir(id) + sep
-    for (const key of bundledModHashes.keys()) {
-      if (key.startsWith(prefix)) bundledModHashes.delete(key)
-    }
+    await this.withLock(id, async () => {
+      await rm(this.dir(id), { recursive: true, force: true })
+      dirBytesCache.delete(id)
+      const prefix = this.dir(id) + sep
+      for (const key of bundledModHashes.keys()) {
+        if (key.startsWith(prefix)) bundledModHashes.delete(key)
+      }
+    })
   }
 
   async ensureLayout(id: string): Promise<void> {

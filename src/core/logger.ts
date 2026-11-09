@@ -6,7 +6,8 @@ type Level = 'info' | 'warn' | 'error' | 'debug'
 export class Logger {
   private stream?: WriteStream
 
-  constructor(private dir: string, private scope = 'polaris') {
+  constructor(private dir: string, private scope = 'polaris', openSink = true) {
+    if (!openSink) return
     try {
       mkdirSync(dir, { recursive: true })
       const stream = createWriteStream(join(dir, 'launcher.log'), { flags: 'a' })
@@ -22,7 +23,10 @@ export class Logger {
   }
 
   child(scope: string): Logger {
-    const logger = new Logger(this.dir, `${this.scope}:${scope}`)
+    // Children write through the parent's sink. Opening a second stream for
+    // launcher.log here used to leak one file handle per child, because the
+    // fresh stream was replaced immediately and never closed.
+    const logger = new Logger(this.dir, `${this.scope}:${scope}`, false)
     logger.stream = this.stream
     return logger
   }
@@ -65,7 +69,14 @@ export class Logger {
 
 function safeStringify(value: unknown): string {
   try {
-    return JSON.stringify(value)
+    // Error fields are non-enumerable, so plain JSON.stringify turns the most
+    // useful diagnostic value into "{}". Emit only name/message/stack; other
+    // fields (for example child_process spawnargs) can contain credentials.
+    return JSON.stringify(value, (_key, item: unknown) =>
+      item instanceof Error
+        ? { name: item.name, message: item.message, stack: item.stack }
+        : item
+    )
   } catch {
     return String(value)
   }

@@ -19,6 +19,14 @@ export class FriendStore {
   private data: FriendFile = { friends: [] }
   /** Code + secret pairs already registered successfully in this process. */
   private readonly registered = new Set<string>()
+  /**
+   * Bumped when local state changes. A list sync that started before the
+   * change must not apply its stale snapshot: the 15s Friends poll could
+   * otherwise restore a friend removed while the request was in flight.
+   */
+  private revision = 0
+  /** Latest-wins token for overlapping list requests. */
+  private syncSeq = 0
 
   constructor(private readonly path: string) {}
 
@@ -41,6 +49,7 @@ export class FriendStore {
    */
   async useAccount(code: string): Promise<void> {
     if (this.data.owner === code) return
+    this.revision += 1
     this.data = { owner: code, friends: [] }
     await this.save()
   }
@@ -48,6 +57,7 @@ export class FriendStore {
   async clear(): Promise<void> {
     if (!this.data.owner && this.data.friends.length === 0) return
     // Drop the owner as well: the next account must establish a fresh scope.
+    this.revision += 1
     this.data = { friends: [] }
     await this.save()
   }
@@ -61,6 +71,8 @@ export class FriendStore {
   }
 
   async syncFromServer(auth: FriendAuth): Promise<void> {
+    const revision = this.revision
+    const seq = ++this.syncSeq
     try {
       const res = await fetch(`${WORKER_BASE}/v1/friends/list`, {
         headers: this.headers(auth),
@@ -69,6 +81,9 @@ export class FriendStore {
       if (!res.ok) return
       const data = (await res.json()) as { friends?: unknown }
       if (!Array.isArray(data.friends)) return
+      // A removal/account switch landed while this request was in flight, or a
+      // newer list request superseded this one.
+      if (revision !== this.revision || seq !== this.syncSeq) return
       this.data.owner = auth.code
       this.data.friends = data.friends.map((value) => {
         const f = value as { code?: unknown; name?: unknown; uuid?: unknown; addedAt?: unknown }
@@ -125,6 +140,7 @@ export class FriendStore {
         throw error
       }
     }
+    this.revision += 1
     this.data.friends = this.data.friends.filter((f) => f.code !== friendCode)
     await this.save()
     return { synced }
@@ -154,6 +170,9 @@ export class FriendStore {
       const data = (await res.json().catch(() => null)) as { error?: string } | null
       throw new Error(data?.error || `Could not respond to friend request (${res.status})`)
     }
+    // Accepting changes the server-side graph. Invalidate list syncs that were
+    // already in flight so they cannot drop the new friend until the next poll.
+    if (action === 'accept') this.revision += 1
   }
 
   async getRequests(

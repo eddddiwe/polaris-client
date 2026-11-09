@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -28,7 +28,7 @@ import {
 import { CosmeticsService } from '../src/core/cosmetics'
 import { SettingsStore, defaultSettings, normalizeSettings } from '../src/core/settings'
 import { polarisChatFile, supportsInGameChat } from '../src/core/instances'
-import { assertSafeSegment, isSafeSegment, readJson } from '../src/core/fsutil'
+import { assertSafeSegment, isSafeSegment, readJson, writeJson } from '../src/core/fsutil'
 import {
   buildSearchFacets,
   mapVersionEntry,
@@ -139,6 +139,82 @@ describe('version metadata', () => {
     expect(merged.libraries?.filter((lib) => lib.name.startsWith('com.mojang:brigadier'))).toHaveLength(1)
     expect(merged.arguments?.game).toEqual(['--username', '${auth_player_name}', '--fabric'])
     expect(merged.inheritsFrom).toBeUndefined()
+  })
+
+  it('keeps OS-exclusive library versions when a loader profile is merged', () => {
+    // Vanilla 1.14-1.18 publishes LWJGL 3.2.1 for macOS and 3.2.2 elsewhere.
+    const parent: VersionJson = {
+      id: '1.16.5',
+      mainClass: 'net.minecraft.client.main.Main',
+      libraries: [
+        {
+          name: 'org.lwjgl:lwjgl:3.2.1',
+          rules: [{ action: 'allow', os: { name: 'osx' } }],
+          natives: { osx: 'natives-macos' },
+          downloads: {
+            artifact: { path: 'org/lwjgl/lwjgl/3.2.1/lwjgl-3.2.1.jar', url: 'https://example.test/lwjgl-3.2.1.jar' },
+            classifiers: {
+              'natives-macos': {
+                path: 'org/lwjgl/lwjgl/3.2.1/lwjgl-3.2.1-natives-macos.jar',
+                url: 'https://example.test/lwjgl-3.2.1-natives-macos.jar'
+              }
+            }
+          }
+        },
+        {
+          name: 'org.lwjgl:lwjgl:3.2.2',
+          rules: [{ action: 'allow' }, { action: 'disallow', os: { name: 'osx' } }],
+          downloads: {
+            artifact: { path: 'org/lwjgl/lwjgl/3.2.2/lwjgl-3.2.2.jar', url: 'https://example.test/lwjgl-3.2.2.jar' }
+          }
+        }
+      ]
+    }
+    const child: VersionJson = {
+      id: 'fabric-loader-0.15.0-1.16.5',
+      mainClass: 'net.fabricmc.loader.impl.launch.knot.KnotClient',
+      inheritsFrom: '1.16.5',
+      libraries: [{ name: 'net.fabricmc:fabric-loader:0.15.0', url: 'https://maven.fabricmc.net/' }],
+      arguments: { game: [], jvm: [] }
+    }
+    const merged = mergeVersions(child, parent)
+    expect(merged.libraries?.map((lib) => lib.name)).toEqual(
+      expect.arrayContaining(['org.lwjgl:lwjgl:3.2.1', 'org.lwjgl:lwjgl:3.2.2'])
+    )
+    const macCtx = { osName: 'osx' as const, osVersion: '14.0', arch: 'arm64', features: {} }
+    const mac = (merged.libraries ?? []).filter(
+      (lib) => lib.name.startsWith('org.lwjgl:lwjgl:') && rulesAllow(lib.rules, macCtx)
+    )
+    expect(mac.map((lib) => lib.name)).toEqual(['org.lwjgl:lwjgl:3.2.1'])
+    expect(resolveLibraryArtifacts(mac[0], 'osx', 'arm64').map((item) => item.relativePath)).toEqual([
+      'org/lwjgl/lwjgl/3.2.1/lwjgl-3.2.1.jar',
+      'org/lwjgl/lwjgl/3.2.1/lwjgl-3.2.1-natives-macos.jar'
+    ])
+  })
+
+  it('keeps the natives entry when duplicate coordinates are merged', () => {
+    const artifact = { path: 'ca/weblite/java-objc-bridge/1.0.0/java-objc-bridge-1.0.0.jar', url: 'https://example.test/objc.jar' }
+    const parent: VersionJson = {
+      id: '1.16.5',
+      mainClass: 'net.minecraft.client.main.Main',
+      libraries: [
+        {
+          name: 'ca.weblite:java-objc-bridge:1.0.0',
+          natives: { osx: 'natives-osx' },
+          downloads: {
+            artifact,
+            classifiers: {
+              'natives-osx': { path: 'ca/weblite/java-objc-bridge/1.0.0/java-objc-bridge-1.0.0-natives-osx.jar', url: 'https://example.test/objc-natives.jar' }
+            }
+          }
+        },
+        { name: 'ca.weblite:java-objc-bridge:1.0.0', downloads: { artifact } }
+      ]
+    }
+    const merged = mergeVersions({ id: 'fabric-loader-x-1.16.5', mainClass: 'KnotClient', libraries: [] }, parent)
+    const kept = merged.libraries?.find((lib) => lib.name === 'ca.weblite:java-objc-bridge:1.0.0')
+    expect(kept?.natives).toEqual({ osx: 'natives-osx' })
+    expect(kept?.downloads?.classifiers?.['natives-osx']?.path).toContain('natives-osx.jar')
   })
 
   it('resolves modern and legacy native artifacts together', () => {
@@ -365,6 +441,24 @@ describe('filesystem guards', () => {
       await expect(readJson(file, { ok: false })).resolves.toEqual({ ok: true })
       await writeFile(file, 'not json', 'utf8')
       await expect(readJson(file, { ok: false })).resolves.toEqual({ ok: false })
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps overlapping atomic saves from clobbering each other', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'polaris-atomic-'))
+    const file = join(dir, 'config.json')
+    try {
+      await writeJson(file, { n: -1, payload: '' })
+      const payload = 'x'.repeat(16_000)
+      const saves = await Promise.allSettled(
+        Array.from({ length: 8 }, (_, n) => writeJson(file, { n, payload }))
+      )
+      expect(saves.filter((save) => save.status === 'rejected')).toEqual([])
+      const saved = await readJson<{ n: number; payload: string } | null>(file, null)
+      expect(saved?.payload).toBe(payload)
+      expect((await readdir(dir)).filter((name) => name !== 'config.json')).toEqual([])
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
