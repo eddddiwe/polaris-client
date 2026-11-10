@@ -7,4 +7,4 @@ pluginManagement {
 }
 
 rootProject.name = "polaris-chat"
-include 'common', 'v1211', 'v12111', 'v26'
+include 'common', 'v1211', 'v1216', 'v1219', 'v12111', 'v26', 'v261', 'v262'

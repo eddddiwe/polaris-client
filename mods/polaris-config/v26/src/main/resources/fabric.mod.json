@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "polarisconfig",
+  "version": "${version}",
+  "name": "PolarisConfig",
+  "description": "Polaris launcher configuration shortcut. Press Right Shift to open.",
+  "authors": [
+    "Polaris Client Contributors"
+  ],
+  "contact": {
+    "homepage": "https://github.com/eddddiwe/polaris-client",
+    "sources": "https://github.com/eddddiwe/polaris-client"
+  },
+  "license": "GPL-3.0-only",
+  "environment": "client",
+  "entrypoints": {
+    "main": [
+      "dev.polaris.config.PolarisConfigMod"
+    ],
+    "client": [
+      "dev.polaris.config.PolarisConfigClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.14.0",
+    "minecraft": ">=26.3 <26.4",
+    "java": ">=25"
+  },
+  "recommends": {
+    "fabric-api": "*"
+  }
+}

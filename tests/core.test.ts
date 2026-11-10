@@ -347,24 +347,89 @@ describe('bundled chat compatibility', () => {
     expect(supportsInGameChat('1.21.0')).toBe(false)
     expect(supportsInGameChat('1.21.1')).toBe(true)
     expect(supportsInGameChat('1.21.8')).toBe(true)
-    expect(supportsInGameChat('1.21.9')).toBe(false)
-    expect(supportsInGameChat('1.21.10')).toBe(false)
+    expect(supportsInGameChat('1.21.9')).toBe(true)
+    expect(supportsInGameChat('1.21.10')).toBe(true)
     expect(supportsInGameChat('1.21.11')).toBe(true)
-    expect(supportsInGameChat('26.1')).toBe(false)
-    expect(supportsInGameChat('26.2')).toBe(false)
+    expect(supportsInGameChat('26.1')).toBe(true)
+    expect(supportsInGameChat('26.2')).toBe(true)
     expect(supportsInGameChat('26.3')).toBe(true)
     expect(supportsInGameChat('26.4')).toBe(false)
+    expect(supportsInGameChat('1.22')).toBe(false)
+    expect(supportsInGameChat('27.1')).toBe(false)
+    expect(polarisChatFile('26.4')).toBe('')
+    expect(polarisChatFile('1.22')).toBe('')
+    expect(polarisChatFile('27.1')).toBe('')
     expect(polarisChatFile('1.21.1')).toBe('polaris-chat-1.0.0.jar')
+    expect(polarisChatFile('1.21.5')).toBe('polaris-chat-1.0.0.jar')
+    expect(polarisChatFile('1.21.6')).toBe('polaris-chat-1.0.0-1216.jar')
+    expect(polarisChatFile('1.21.7')).toBe('polaris-chat-1.0.0-1216.jar')
+    expect(polarisChatFile('1.21.8')).toBe('polaris-chat-1.0.0-1216.jar')
+    expect(polarisChatFile('1.21.9')).toBe('polaris-chat-1.0.0-1219.jar')
+    expect(polarisChatFile('1.21.10')).toBe('polaris-chat-1.0.0-1219.jar')
     expect(polarisChatFile('1.21.11')).toBe('polaris-chat-1.0.0-modern.jar')
+    expect(polarisChatFile('26.1')).toBe('polaris-chat-1.0.0-261.jar')
+    expect(polarisChatFile('26.2')).toBe('polaris-chat-1.0.0-262.jar')
     expect(polarisChatFile('26.3')).toBe('polaris-chat-1.0.0-official.jar')
-    expect(polarisChatFile('26.1')).toBe('')
-    // 1.21.9 changed mouse input; the intermediary screen accepts no clicks there.
-    expect(polarisConfigFile('1.21.8')).toBe('polaris-config-1.2.1.jar')
-    expect(polarisConfigFile('1.21.9')).toBe('polaris-config-1.2.1-modern.jar')
-    expect(polarisConfigFile('1.21.11')).toBe('polaris-config-1.2.1-modern.jar')
-    expect(polarisConfigFile('26.3')).toBe('polaris-config-1.2.1-official.jar')
-    expect(polarisConfigFile('26.2')).toBe('')
+    expect(polarisConfigFile('1.21.5')).toBe('polaris-config-1.2.2.jar')
+    expect(polarisConfigFile('1.21.6')).toBe('polaris-config-1.2.2-1216.jar')
+    expect(polarisConfigFile('1.21.7')).toBe('polaris-config-1.2.2-1216.jar')
+    expect(polarisConfigFile('1.21.8')).toBe('polaris-config-1.2.2-1216.jar')
+    expect(polarisConfigFile('1.21.9')).toBe('polaris-config-1.2.2-modern.jar')
+    expect(polarisConfigFile('1.21.11')).toBe('polaris-config-1.2.2-modern.jar')
+    expect(polarisConfigFile('26.1')).toBe('polaris-config-1.2.2-261.jar')
+    expect(polarisConfigFile('26.2')).toBe('polaris-config-1.2.2-262.jar')
+    expect(polarisConfigFile('26.3')).toBe('polaris-config-1.2.2-official.jar')
+    expect(polarisConfigFile('26.4')).toBe('')
+    expect(polarisConfigFile('1.20.1')).toBe('')
+    expect(polarisConfigFile('1.21.0')).toBe('')
+    expect(polarisConfigFile('1.22')).toBe('')
+    expect(polarisConfigFile('27.1')).toBe('')
+    expect(polarisConfigFile('1.21.11-pre1')).toBe('')
+    expect(polarisConfigFile('26.1-snapshot-11')).toBe('')
+    expect(polarisConfigFile('26.2-pre-1')).toBe('')
+    expect(polarisConfigFile('26.3-rc-1')).toBe('')
+    expect(supportsInGameChat('26.1-snapshot-11')).toBe(false)
+    expect(supportsInGameChat('26.3-rc-1')).toBe(false)
+    expect(polarisChatFile('26.1-snapshot-11')).toBe('')
+    expect(polarisChatFile('1.21.11-pre1')).toBe('')
   })
+
+  it('ships the jar that every mapped version selects', async () => {
+    const shipped = await readdir(join(process.cwd(), 'resources', 'mods'))
+    for (const version of ['1.21.1', '1.21.5', '1.21.6', '1.21.8', '1.21.9', '1.21.11', '26.1', '26.2', '26.3']) {
+      expect(shipped).toContain(polarisConfigFile(version))
+      expect(shipped).toContain(polarisChatFile(version))
+    }
+  })
+})
+
+describe('bundled mod metadata', () => {
+  const cases: Array<[string, string, string, string]> = [
+    ['config', 'v1211', '>=1.21.1 <1.21.6', '>=21'],
+    ['config', 'v1216', '>=1.21.6 <1.21.9', '>=21'],
+    ['config', 'v1219', '>=1.21.9 <1.21.12', '>=21'],
+    ['config', 'v26', '>=26.3 <26.4', '>=25'],
+    ['config', 'v261', '>=26.1 <26.2', '>=25'],
+    ['config', 'v262', '>=26.2 <26.3', '>=25'],
+    ['chat', 'v1211', '>=1.21.1 <1.21.6', '>=21'],
+    ['chat', 'v1216', '>=1.21.6 <1.21.9', '>=21'],
+    ['chat', 'v1219', '>=1.21.9 <1.21.11', '>=21'],
+    ['chat', 'v12111', '>=1.21.11 <26', '>=21'],
+    ['chat', 'v26', '>=26.3 <26.4', '>=25'],
+    ['chat', 'v261', '>=26.1 <26.2', '>=25'],
+    ['chat', 'v262', '>=26.2 <26.3', '>=25']
+  ]
+  for (const [kind, module, range, java] of cases) {
+    it(`${kind} ${module} declares ${range}`, async () => {
+      const path = join(process.cwd(), 'mods', `polaris-${kind}`, module, 'src/main/resources/fabric.mod.json')
+      const meta = JSON.parse(await readFile(path, 'utf8'))
+      expect(meta.depends.minecraft).toBe(range)
+      expect(meta.depends.java).toBe(java)
+      // PolarisConfig falls back when Fabric API is absent; a hard dependency
+      // would stop bare Fabric instances from launching.
+      if (kind === 'config') expect(meta.depends['fabric-api']).toBeUndefined()
+    })
+  }
 })
 
 describe('settings', () => {

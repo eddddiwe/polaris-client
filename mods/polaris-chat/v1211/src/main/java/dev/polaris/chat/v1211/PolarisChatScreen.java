@@ -101,11 +101,32 @@ public final class PolarisChatScreen extends Screen {
         return false;
     }
 
+    /** Prevents Enter spam from sending the same draft twice while a POST is in flight. */
+    private boolean sending;
+
     private void sendDraft() {
-        if (!input.text().trim().isEmpty()) {
-            PolarisChat.INSTANCE.send(input.text());
-            input.clear();
-        }
+        if (sending) return;
+        String draft = input.text();
+        if (draft == null || draft.trim().isEmpty()) return;
+        sending = true;
+        String target = PolarisChat.INSTANCE.selected();
+        // Keep the draft visible until the Worker confirms delivery. A failed
+        // or timed-out send must never erase what the player typed.
+        PolarisChat.INSTANCE.send(draft, ok -> {
+            this.client.execute(() -> {
+                sending = false;
+                // Ignore a late result after the user switched conversations.
+                if (!ok || target == null || !target.equals(PolarisChat.INSTANCE.selected())) return;
+                String current = input.text();
+                if (current.equals(draft)) {
+                    input.clear();
+                } else if (current.startsWith(draft)) {
+                    // The player kept typing while the send was in flight;
+                    // keep only the new suffix.
+                    input.setText(current.substring(draft.length()));
+                }
+            });
+        });
     }
 
     /** One Paint adapter per screen, rebound to the current frame's context. */

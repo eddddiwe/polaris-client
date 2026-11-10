@@ -32,4 +32,14 @@ class ChatInputTest {
         for (int i = 0; i < ChatCodes.MAX_TEXT + 20; i++) input.append('x');
         assertEquals(ChatCodes.MAX_TEXT, input.text().length());
     }
+
+    @Test
+    void setTextReplacesContentsWithoutSplittingCodePoints() {
+        ChatInput input = new ChatInput();
+        input.append('o');
+        input.setText("hi \uD83D\uDE00");
+        assertEquals("hi \uD83D\uDE00", input.text());
+        input.setText(null);
+        assertTrue(input.isEmpty());
+    }
 }

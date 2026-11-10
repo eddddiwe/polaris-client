@@ -1,0 +1,28 @@
+subprojects {
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+    }
+}
+
+tasks.register('syncMods', Copy) {
+    dependsOn ':v1211:remapJar', ':v1216:remapJar', ':v1219:remapJar', ':v26:jar', ':v261:jar', ':v262:jar'
+    into file('../../resources/mods')
+    from(project(':v1211').tasks.named('remapJar')) {
+        rename { 'polaris-config-1.2.2.jar' }
+    }
+    from(project(':v1216').tasks.named('remapJar')) {
+        rename { 'polaris-config-1.2.2-1216.jar' }
+    }
+    from(project(':v1219').tasks.named('remapJar')) {
+        rename { 'polaris-config-1.2.2-modern.jar' }
+    }
+    from(project(':v26').tasks.named('jar')) {
+        rename { 'polaris-config-1.2.2-official.jar' }
+    }
+    from(project(':v261').tasks.named('jar')) {
+        rename { 'polaris-config-1.2.2-261.jar' }
+    }
+    from(project(':v262').tasks.named('jar')) {
+        rename { 'polaris-config-1.2.2-262.jar' }
+    }
+}

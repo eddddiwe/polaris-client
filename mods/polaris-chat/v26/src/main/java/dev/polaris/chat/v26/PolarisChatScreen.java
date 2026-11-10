@@ -10,7 +10,7 @@ import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
-import dev.polaris.chat.Keys;
+import org.lwjgl.sdl.SDLScancode;
 
 public final class PolarisChatScreen extends Screen {
     private final ChatUi ui = new ChatUi();
@@ -110,15 +110,15 @@ public final class PolarisChatScreen extends Screen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
-        if (event.key() == Keys.ESCAPE) {
+        if (event.isEscape()) {
             onClose();
             return true;
         }
-        if (event.key() == Keys.ENTER || event.key() == Keys.KP_ENTER) {
+        if (event.isConfirmation()) {
             sendDraft();
             return true;
         }
-        if (event.key() == Keys.BACKSPACE) {
+        if (event.key() == SDLScancode.SDL_SCANCODE_BACKSPACE) {
             input.backspace();
             return true;
         }
@@ -140,10 +140,31 @@ public final class PolarisChatScreen extends Screen {
         return false;
     }
 
+    /** Prevents Enter spam from sending the same draft twice while a POST is in flight. */
+    private boolean sending;
+
     private void sendDraft() {
-        if (!input.text().trim().isEmpty()) {
-            PolarisChat.INSTANCE.send(input.text());
-            input.clear();
-        }
+        if (sending) return;
+        String draft = input.text();
+        if (draft == null || draft.trim().isEmpty()) return;
+        sending = true;
+        String target = PolarisChat.INSTANCE.selected();
+        // Keep the draft visible until the Worker confirms delivery. A failed
+        // or timed-out send must never erase what the player typed.
+        PolarisChat.INSTANCE.send(draft, ok -> {
+            this.minecraft.execute(() -> {
+                sending = false;
+                // Ignore a late result after the user switched conversations.
+                if (!ok || target == null || !target.equals(PolarisChat.INSTANCE.selected())) return;
+                String current = input.text();
+                if (current.equals(draft)) {
+                    input.clear();
+                } else if (current.startsWith(draft)) {
+                    // The player kept typing while the send was in flight;
+                    // keep only the new suffix.
+                    input.setText(current.substring(draft.length()));
+                }
+            });
+        });
     }
 }

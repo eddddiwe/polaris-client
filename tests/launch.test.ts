@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { LaunchService } from '../src/core/launch'
+import { LaunchService, stripPolarisCredentials } from '../src/core/launch'
 import type { InstalledGame, Installer } from '../src/core/install'
 import type { AccountStore } from '../src/core/accounts'
 import type { AuthService } from '../src/core/auth'
@@ -157,5 +157,19 @@ describe('LaunchService lifecycle', () => {
     } finally {
       await rm(root, { recursive: true, force: true })
     }
+  })
+})
+
+describe('launch environment', () => {
+  it('strips inherited Polaris credentials case-insensitively', () => {
+    const env: NodeJS.ProcessEnv = {
+      PATH: '/bin',
+      KEEP: 'yes',
+      POLARIS_FRIEND_CODE: 'ABC123',
+      polaris_friend_secret: 'ps_secret',
+      Polaris_Chat_Token: 'pc_token'
+    }
+    stripPolarisCredentials(env)
+    expect(env).toEqual({ PATH: '/bin', KEEP: 'yes' })
   })
 })

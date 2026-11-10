@@ -484,7 +484,7 @@ public final class ChatUi {
         }
         for (ChatMessage message : messages) {
             boolean mine = message.from().equals(chat.myCode());
-            String name = mine ? "You" : message.fromName();
+            String name = chat.displayName(message);
             int nameColor = mine ? ACCENT_SOFT : ACCENT;
             List<String> wrapped = wrapCached(paint, message.text(), width - size(16));
             int offset = 0;

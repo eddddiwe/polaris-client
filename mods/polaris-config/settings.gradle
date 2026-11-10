@@ -1,0 +1,10 @@
+pluginManagement {
+    repositories {
+        maven { url = "https://maven.fabricmc.net/" }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+rootProject.name = "polaris-config"
+include 'common', 'v1211', 'v1216', 'v1219', 'v26', 'v261', 'v262'

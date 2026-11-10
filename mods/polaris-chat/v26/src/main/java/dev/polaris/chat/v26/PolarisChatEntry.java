@@ -8,7 +8,7 @@ import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
-import dev.polaris.chat.Keys;
+import org.lwjgl.sdl.SDLScancode;
 
 public final class PolarisChatEntry implements ClientModInitializer {
     private KeyMapping openKey;
@@ -28,7 +28,8 @@ public final class PolarisChatEntry implements ClientModInitializer {
         openKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.polarischat.open",
                 InputConstants.Type.KEYBOARD,
-                Keys.F9,
+                // 26.x serializes keyboard mappings as SDL scancodes.
+                SDLScancode.SDL_SCANCODE_F9,
                 KeyMapping.Category.MISC
         ));
 

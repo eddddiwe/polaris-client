@@ -5,15 +5,27 @@ subprojects {
 }
 
 tasks.register('syncMods', Copy) {
-    dependsOn ':v1211:remapJar', ':v12111:remapJar', ':v26:jar'
+    dependsOn ':v1211:remapJar', ':v1216:remapJar', ':v1219:remapJar', ':v12111:remapJar', ':v26:jar', ':v261:jar', ':v262:jar'
     into file('../../resources/mods')
     from(project(':v1211').tasks.named('remapJar')) {
         rename { 'polaris-chat-1.0.0.jar' }
+    }
+    from(project(':v1216').tasks.named('remapJar')) {
+        rename { 'polaris-chat-1.0.0-1216.jar' }
+    }
+    from(project(':v1219').tasks.named('remapJar')) {
+        rename { 'polaris-chat-1.0.0-1219.jar' }
     }
     from(project(':v12111').tasks.named('remapJar')) {
         rename { 'polaris-chat-1.0.0-modern.jar' }
     }
     from(project(':v26').tasks.named('jar')) {
         rename { 'polaris-chat-1.0.0-official.jar' }
+    }
+    from(project(':v261').tasks.named('jar')) {
+        rename { 'polaris-chat-1.0.0-261.jar' }
+    }
+    from(project(':v262').tasks.named('jar')) {
+        rename { 'polaris-chat-1.0.0-262.jar' }
     }
 }

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { copyFile, readdir, rm, stat } from 'node:fs/promises'
+import { copyFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { join, sep } from 'node:path'
 import type { CreateInstanceInput, InstanceConfig, InstanceSummary } from '../shared/types'
 import { assertSafeSegment, dirSize, ensureDir, hashFile, isSafeSegment, pathExists, readJson, writeJson } from './fsutil'
@@ -7,15 +7,40 @@ import { ensureServersDat } from './nbt'
 import type { Paths } from './paths'
 import type { Settings } from '../shared/types'
 
-const POLARIS_CONFIG_INTERMEDIARY = 'polaris-config-1.2.1.jar'
-const POLARIS_CONFIG_MODERN = 'polaris-config-1.2.1-modern.jar'
-const POLARIS_CONFIG_OFFICIAL = 'polaris-config-1.2.1-official.jar'
+const POLARIS_CONFIG_INTERMEDIARY = 'polaris-config-1.2.2.jar'
+const POLARIS_CONFIG_1216 = 'polaris-config-1.2.2-1216.jar'
+const POLARIS_CONFIG_MODERN = 'polaris-config-1.2.2-modern.jar'
+const POLARIS_CONFIG_OFFICIAL = 'polaris-config-1.2.2-official.jar'
+const POLARIS_CONFIG_261 = 'polaris-config-1.2.2-261.jar'
+const POLARIS_CONFIG_262 = 'polaris-config-1.2.2-262.jar'
 const POLARIS_CONFIG_PATTERN = /^polaris-config-.*\.jar$/i
 
 const POLARIS_CHAT_INTERMEDIARY = 'polaris-chat-1.0.0.jar'
+const POLARIS_CHAT_1216 = 'polaris-chat-1.0.0-1216.jar'
+const POLARIS_CHAT_1219 = 'polaris-chat-1.0.0-1219.jar'
 const POLARIS_CHAT_MODERN = 'polaris-chat-1.0.0-modern.jar'
+const POLARIS_CHAT_261 = 'polaris-chat-1.0.0-261.jar'
+const POLARIS_CHAT_262 = 'polaris-chat-1.0.0-262.jar'
 const POLARIS_CHAT_OFFICIAL = 'polaris-chat-1.0.0-official.jar'
 const POLARIS_CHAT_PATTERN = /^polaris-chat-.*\.jar$/i
+
+/** One-time marker so 26.1/26.2 instances gain the newly built mods once. */
+const NEWLY_SUPPORTED_MARKER = '.polaris-mods-26x-sync'
+
+/**
+ * Fabric version ids are exact stable ids here; snapshots and pre-releases
+ * ("26.1-snapshot-11", "1.21.11-pre1") must never be guessed into a jar.
+ */
+function stableVersion(mcVersion: string): [number, number, number] | null {
+  const match = /^(\d+)\.(\d+)(?:\.(\d+))?$/.exec(mcVersion)
+  if (!match) return null
+  return [Number(match[1]), Number(match[2]), Number(match[3] ?? 0)]
+}
+
+function isNewlySupportedVersion(mcVersion: string): boolean {
+  const parts = stableVersion(mcVersion)
+  return parts !== null && parts[0] === 26 && (parts[1] === 1 || parts[1] === 2)
+}
 
 /** Cache jar hashes; the same bundled jar is compared for every instance. */
 const bundledModHashes = new Map<string, { size: number; mtimeMs: number; hash: string }>()
@@ -50,32 +75,49 @@ async function cachedHash(path: string, info: { size: number; mtimeMs: number })
 }
 
 export function polarisConfigFile(mcVersion: string): string {
-  const [major = 0, minor = 0, patch = 0] = mcVersion.split('.').map(Number)
-  if (major >= 26) return major === 26 && minor === 3 ? POLARIS_CONFIG_OFFICIAL : ''
+  const parts = stableVersion(mcVersion)
+  if (parts === null) return ''
+  const [major, minor, patch] = parts
+  if (major === 26) {
+    if (minor === 1) return POLARIS_CONFIG_261
+    if (minor === 2) return POLARIS_CONFIG_262
+    if (minor === 3) return POLARIS_CONFIG_OFFICIAL
+    // 26.0 and 26.4+ have no verified build yet. Returning '' removes the
+    // bundled jar instead of letting an untested adapter load.
+    return ''
+  }
+  if (major !== 1 || minor !== 21 || patch < 1 || patch > 11) return ''
   // 1.21.9 changed mouse/key input to event objects; the modern screen covers
-  // 1.21.9 through 1.21.11. The intermediary screen only accepts clicks up to
-  // 1.21.8.
-  if (major === 1 && (minor > 21 || (minor === 21 && patch >= 9))) return POLARIS_CONFIG_MODERN
+  // 1.21.9 through 1.21.11. 1.21.6 changed DrawContext text methods from int to
+  // void, so 1.21.6-1.21.8 get their own build; the base jar only works up to
+  // 1.21.5.
+  if (patch >= 9) return POLARIS_CONFIG_MODERN
+  if (patch >= 6) return POLARIS_CONFIG_1216
   return POLARIS_CONFIG_INTERMEDIARY
 }
 
 export function supportsInGameChat(mcVersion: string): boolean {
-  const [major = 0, minor = 0, patch = 0] = mcVersion.split('.').map(Number)
-  // The official entrypoint/screen is a 26.3 port; 26.1/26.2 use APIs that do
-  // not exist there. Do not claim the whole 26.x line until each minor is built.
-  if (major >= 26) return major === 26 && minor === 3
-  if (major !== 1) return false
-  if (minor > 21) return true
-  if (minor !== 21) return false
-  // 1.21.9/1.21.10 changed KeyBinding category types; 1.21.11 changed input.
-  return (patch >= 1 && patch <= 8) || patch >= 11
+  const parts = stableVersion(mcVersion)
+  if (parts === null) return false
+  const [major, minor, patch] = parts
+  if (major === 26) return minor >= 1 && minor <= 3
+  if (major !== 1 || minor !== 21) return false
+  return patch >= 1 && patch <= 11
 }
 
 export function polarisChatFile(mcVersion: string): string {
-  if (!supportsInGameChat(mcVersion)) return ''
-  const [major = 0, minor = 0, patch = 0] = mcVersion.split('.').map(Number)
-  if (major >= 26) return POLARIS_CHAT_OFFICIAL
-  if (major === 1 && (minor > 21 || (minor === 21 && patch >= 11))) return POLARIS_CHAT_MODERN
+  const parts = stableVersion(mcVersion)
+  if (parts === null || !supportsInGameChat(mcVersion)) return ''
+  const [major, minor, patch] = parts
+  if (major === 26) {
+    if (minor === 1) return POLARIS_CHAT_261
+    if (minor === 2) return POLARIS_CHAT_262
+    if (minor === 3) return POLARIS_CHAT_OFFICIAL
+    return ''
+  }
+  if (minor === 21 && patch >= 9 && patch <= 10) return POLARIS_CHAT_1219
+  if (minor === 21 && patch >= 11) return POLARIS_CHAT_MODERN
+  if (minor === 21 && patch >= 6) return POLARIS_CHAT_1216
   return POLARIS_CHAT_INTERMEDIARY
 }
 
@@ -274,7 +316,17 @@ export class InstanceStore {
       )
       const chatExisting = chatEntries.filter((name) => !name.endsWith('.disabled'))
       const chatDisabled = chatEntries.some((name) => name.endsWith('.disabled'))
+      const configDisabled = modFiles.some((name) => /^polaris-config-.*\.jar\.disabled$/i.test(name))
       const hasFabricApi = modFiles.some((name) => /^fabric-api-.*\.jar$/i.test(name))
+      // 0.4.6 removed the config jar from 26.1/26.2 because no build existed.
+      // Install the new adapters once for those existing instances; the marker
+      // preserves the normal "deleted stays deleted" behavior afterwards.
+      const marker = join(this.dir(config.id), NEWLY_SUPPORTED_MARKER)
+      const migrating =
+        !installIfMissing &&
+        isNewlySupportedVersion(config.mcVersion) &&
+        !configDisabled &&
+        !(await pathExists(marker))
       const configName = polarisConfigFile(config.mcVersion)
       if (configName) {
         await this.syncBundledMod(
@@ -282,11 +334,17 @@ export class InstanceStore {
           modsDir,
           configName,
           POLARIS_CONFIG_PATTERN,
-          configExisting.length > 0 || installIfMissing
+          configExisting.length > 0 || installIfMissing || migrating
         )
+        if (migrating && (await pathExists(join(modsDir, configName)))) {
+          await writeFile(marker, '1')
+        }
+        if (installIfMissing && isNewlySupportedVersion(config.mcVersion) && (await pathExists(join(modsDir, configName)))) {
+          await writeFile(marker, '1')
+        }
       } else {
-        // No verified build for this Minecraft line (26.1/26.2): remove the
-        // bundled copy instead of leaving a jar whose menu cannot open.
+        // No verified build for this Minecraft version: remove the bundled
+        // copy instead of leaving a jar Fabric will refuse to load.
         for (const name of configExisting) {
           await rm(join(modsDir, name), { force: true })
         }
@@ -307,7 +365,7 @@ export class InstanceStore {
       // Instances created before 0.4.5 only carry PolarisConfig; they still
       // receive the chat companion once. Deleting both jars opts out.
       const chatBundled =
-        chatExisting.length > 0 || installIfMissing || configExisting.length > 0
+        chatExisting.length > 0 || installIfMissing || configExisting.length > 0 || migrating
       if (chatBundled) {
         await this.syncBundledMod(
           app.getAppPath(),

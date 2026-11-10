@@ -28,6 +28,15 @@ import {
 import { createRuleContext, defaultFeatures, rulesAllow } from './rules'
 import { compactUuid } from './accounts'
 import { ensureDir, isSafeSegment, pathExists } from './fsutil'
+
+const POLARIS_ENV_KEYS = /^POLARIS_(FRIEND_CODE|FRIEND_SECRET|CHAT_TOKEN)$/i
+
+/** Removes inherited Polaris credentials; Windows env lookup is case-insensitive. */
+export function stripPolarisCredentials(env: NodeJS.ProcessEnv): void {
+  for (const key of Object.keys(env)) {
+    if (POLARIS_ENV_KEYS.test(key)) delete env[key]
+  }
+}
 import type { Logger } from './logger'
 
 export interface LaunchHooks {
@@ -131,6 +140,10 @@ export class LaunchService {
       const account = await this.auth.refreshIfNeeded(stored)
       const args = this.buildArguments(instance, settings, installed.version, installed.classpath, installed.assetIndexId, nativesDir, account, java, jvmTuning)
       const gameEnv: NodeJS.ProcessEnv = { ...process.env, POLARIS_CLIENT: '1' }
+      // Never inherit credentials from the launcher's own environment. Only
+      // the scoped tokens below may reach the game, and only after the bytes
+      // of the bundled mod have been verified.
+      stripPolarisCredentials(gameEnv)
       // Only Fabric instances that contain verified bundled mods receive
       // credentials. The game process never gets the master account secret:
       // config gets a presence-scoped token, chat a chat-scoped token.
@@ -250,9 +263,11 @@ export class LaunchService {
       ]
 
       this.setState({ status: 'running', message: `Server running on Java ${java.major}`, startedAt: Date.now() })
+      const serverEnv: NodeJS.ProcessEnv = { ...process.env, POLARIS_SERVER: '1' }
+      stripPolarisCredentials(serverEnv)
       const child = spawn(java.path, args, {
         cwd: instanceDir,
-        env: { ...process.env, POLARIS_SERVER: '1' },
+        env: serverEnv,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true
       })

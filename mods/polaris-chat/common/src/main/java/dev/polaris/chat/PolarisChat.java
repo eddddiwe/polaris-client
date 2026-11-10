@@ -192,12 +192,24 @@ public final class PolarisChat {
     }
 
     public void send(String text) {
+        send(text, null);
+    }
+
+    public void send(String text, java.util.function.Consumer<Boolean> callback) {
         String code = selected;
         String clean = text == null ? "" : text.trim();
-        if (code == null || clean.isEmpty()) return;
-        if (clean.length() > ChatCodes.MAX_TEXT) clean = clean.substring(0, ChatCodes.MAX_TEXT);
+        if (code == null || clean.isEmpty()) {
+            if (callback != null) callback.accept(false);
+            return;
+        }
+        if (clean.codePointCount(0, clean.length()) > ChatCodes.MAX_TEXT) {
+            clean = clean.substring(0, clean.offsetByCodePoints(0, ChatCodes.MAX_TEXT));
+        }
         String message = clean;
-        Thread thread = new Thread(() -> sendNow(code, message), "PolarisChatSend");
+        Thread thread = new Thread(() -> {
+            boolean ok = sendNow(code, message);
+            if (callback != null) callback.accept(ok);
+        }, "PolarisChatSend");
         thread.setDaemon(true);
         thread.start();
     }
@@ -259,6 +271,9 @@ public final class PolarisChat {
                 status = "connecting";
                 String ticket = requestTicket();
                 if (!running) break;
+                // Load the friend graph before the socket opens so the first
+                // live frames are not dropped by the sender-binding filter.
+                refreshFriends();
                 CountDownLatch closed = new CountDownLatch(1);
                 Listener listener = new Listener(closed);
                 WebSocket ws = http.newWebSocketBuilder()
@@ -270,10 +285,9 @@ public final class PolarisChat {
                 error = "";
                 connectedAt = System.currentTimeMillis();
                 lastInbound = connectedAt;
-                refreshFriends();
                 String code = selected;
                 if (code != null) loadHistory(code);
-                startHeartbeat(ws);
+                startHeartbeat(ws, closed);
                 closed.await();
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
@@ -374,7 +388,7 @@ public final class PolarisChat {
                 List<ChatMessage> fetched = new ArrayList<>();
                 for (Object item : Json.array(Json.object(Json.parse(response.body())).get("messages"))) {
                     ChatMessage message = ChatMessage.from(item);
-                    if (message != null) fetched.add(message);
+                    if (message != null && accepts(message, code)) fetched.add(message);
                 }
                 merge(code, fetched);
             } catch (Exception failure) {
@@ -387,7 +401,7 @@ public final class PolarisChat {
         thread.start();
     }
 
-    private void sendNow(String code, String text) {
+    private boolean sendNow(String code, String text) {
         try {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("friendCode", code);
@@ -401,18 +415,27 @@ public final class PolarisChat {
                     // A proxy or edge error page is not JSON.
                 }
                 error = ChatCodes.plain(detail);
-                return;
+                return false;
             }
             Map<String, Object> root = Json.object(Json.parse(response.body()));
             ChatMessage sent = ChatMessage.from(root.get("message"));
-            if (sent != null) receive(sent);
+            if (sent == null || !sent.from().equals(myCode) || !sent.to().equals(code)) {
+                // A 200 without an echo for this exact conversation is not
+                // delivery, and must not clear the draft.
+                error = "Polaris chat did not confirm the message.";
+                return false;
+            }
+            merge(code, List.of(sent));
+            resortFriends();
             error = "";
+            return true;
         } catch (Exception failure) {
             error = ChatCodes.plain(friendly(failure));
+            return false;
         }
     }
 
-    private void startHeartbeat(WebSocket ws) {
+    private void startHeartbeat(WebSocket ws, CountDownLatch closed) {
         stopHeartbeat();
         ScheduledExecutorService executor = heartbeat;
         if (executor == null || executor.isShutdown()) {
@@ -427,14 +450,19 @@ public final class PolarisChat {
         // cancelled-but-running tick can never abort a newer connection.
         heartbeatTask = executor.scheduleAtFixedRate(() -> {
             if (System.currentTimeMillis() - lastInbound > 60_000L) {
+                closed.countDown();
                 ws.abort();
                 return;
             }
             try {
                 ws.sendText("{\"type\":\"ping\"}", true).whenComplete((ignored, failure) -> {
-                    if (failure != null) ws.abort();
+                    if (failure != null) {
+                        closed.countDown();
+                        ws.abort();
+                    }
                 });
             } catch (Exception failure) {
+                closed.countDown();
                 ws.abort();
             }
         }, 20, 20, TimeUnit.SECONDS);
@@ -471,12 +499,43 @@ public final class PolarisChat {
         }
     }
 
+    public String displayName(ChatMessage message) {
+        if (message.from().equals(myCode)) return "You";
+        for (Friend friend : friends) {
+            if (friend.code().equals(message.from())) return friend.name();
+        }
+        // Unknown senders show their code, never a self-asserted display name.
+        return message.from();
+    }
+
+    private boolean isFriend(String code) {
+        for (Friend friend : friends) {
+            if (friend.code().equals(code)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * True when a frame is a message between this account and one current
+     * friend, in either direction. History, live frames and send echoes all
+     * use this so a relay cannot move a conversation into another thread.
+     */
+    private boolean accepts(ChatMessage message, String peer) {
+        if (peer == null || peer.isEmpty() || peer.equals(myCode) || !isFriend(peer)) return false;
+        if (message.from().equals(myCode)) return message.to().equals(peer);
+        return message.from().equals(peer) && message.to().equals(myCode);
+    }
+
     private void receive(ChatMessage message) {
+        // Bind a frame to this account and to the friend graph. The Worker
+        // enforces this today, but a compromised relay must not be able to
+        // inject a stranger or a third-party conversation into the UI.
         String peer = message.from().equals(myCode) ? message.to() : message.from();
+        if (!accepts(message, peer)) return;
         merge(peer, List.of(message));
         if (!message.from().equals(myCode)) {
             if (!screenOpen) {
-                sink.system("[Polaris] " + message.fromName() + ": " + ChatCodes.oneLine(message.text()));
+                sink.system("[Polaris] " + displayName(message) + ": " + ChatCodes.oneLine(message.text()));
                 unread.merge(peer, 1, Integer::sum);
             } else if (!peer.equals(selected)) {
                 unread.merge(peer, 1, Integer::sum);
@@ -575,6 +634,12 @@ public final class PolarisChat {
         @Override
         public java.util.concurrent.CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
             buffer.append(data);
+            if (buffer.length() > 64 * 1024) {
+                buffer.setLength(0);
+                closed.countDown();
+                webSocket.abort();
+                return null;
+            }
             if (last) {
                 String frame = buffer.toString();
                 buffer.setLength(0);
@@ -606,11 +671,12 @@ public final class PolarisChat {
                 if (message != null) receive(message);
             } else if ("typing".equals(type)) {
                 String from = Json.string(root.get("from"), "").toUpperCase(Locale.ROOT);
-                if (ChatCodes.isCode(from)) {
+                if (ChatCodes.isCode(from) && isFriend(from)) {
+                    if (typingUntil.size() >= 200) typingUntil.clear();
                     typingUntil.put(from, System.currentTimeMillis() + TYPING_WINDOW_MS);
                 }
             }
-        } catch (Exception ignored) {
+        } catch (Exception | StackOverflowError ignored) {
             // Ignore malformed frames.
         }
     }

@@ -16,6 +16,13 @@ public final class ChatInput {
         text.setLength(0);
     }
 
+    /** Replaces the composer contents, keeping the same printable/limit rules. */
+    public void setText(String value) {
+        text.setLength(0);
+        if (value == null) return;
+        value.codePoints().forEach(this::append);
+    }
+
     public void append(int codePoint) {
         if (codePoint < 32 || codePoint == 127) return;
         if (text.codePointCount(0, text.length()) >= ChatCodes.MAX_TEXT) return;
